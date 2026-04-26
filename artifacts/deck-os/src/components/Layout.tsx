@@ -61,7 +61,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [eventLogOpen, setEventLogOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const { mode, setMode } = useVisualMode();
+  const { mode, setMode, particlePrefs, setParticlePrefs } = useVisualMode();
   const cfg = useMemo(() => getStoredConfig(), []);
   const aiName   = cfg?.aiName ?? cfg?.systemName ?? "JARVIS";
   const userName = cfg?.userName ?? null;
@@ -416,6 +416,52 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   icon={Film}
                   onSelect={setMode}
                 />
+
+                {mode === "cinematic" && (
+                  <div className="mt-2 border border-primary/15 bg-background/40 px-2.5 py-2 font-mono text-xs">
+                    <div className="text-primary/35 uppercase tracking-wider text-[10px] mb-2">Particles</div>
+
+                    <div className="mb-2">
+                      <div className="flex justify-between text-[10px] mb-1">
+                        <span className="text-primary/40 uppercase tracking-wider">Density</span>
+                        <span className="text-primary/70">{particlePrefs.density}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={10}
+                        max={300}
+                        step={10}
+                        value={particlePrefs.density}
+                        onChange={(e) => setParticlePrefs({ density: Number(e.target.value) })}
+                        className="w-full h-1 appearance-none bg-primary/15 rounded accent-primary cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[9px] text-primary/20 mt-0.5">
+                        <span>sparse</span>
+                        <span>dense</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-[10px] mb-1">
+                        <span className="text-primary/40 uppercase tracking-wider">Speed</span>
+                        <span className="text-primary/70">{particlePrefs.speed}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={10}
+                        max={300}
+                        step={10}
+                        value={particlePrefs.speed}
+                        onChange={(e) => setParticlePrefs({ speed: Number(e.target.value) })}
+                        className="w-full h-1 appearance-none bg-primary/15 rounded accent-primary cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[9px] text-primary/20 mt-0.5">
+                        <span>slow</span>
+                        <span>fast</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

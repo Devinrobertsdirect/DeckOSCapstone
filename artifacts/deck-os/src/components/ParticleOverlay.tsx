@@ -41,22 +41,22 @@ function readPrimaryRgb(): string {
 }
 
 export function ParticleOverlay() {
-  const { mode } = useVisualMode();
+  const { mode, particlePrefs } = useVisualMode();
   const activity = useActivityLevel();
 
   const canvasRef      = useRef<HTMLCanvasElement>(null);
   const rafRef         = useRef<number>(0);
   const particlesRef   = useRef<Particle[]>([]);
   const streaksRef     = useRef<Streak[]>([]);
-  /** Live activity level (0–1) readable inside the animation loop */
   const activityRef    = useRef<number>(0);
-  /** Smoothed multiplier applied to particle speed */
   const multiplierRef  = useRef<number>(1);
+  const densityRef     = useRef<number>(particlePrefs.density);
+  const speedRef       = useRef<number>(particlePrefs.speed);
 
-  // Keep the ref in sync whenever React re-renders with a new activity value
-  useEffect(() => {
-    activityRef.current = activity;
-  }, [activity]);
+  useEffect(() => { activityRef.current = activity; }, [activity]);
+
+  useEffect(() => { densityRef.current = particlePrefs.density; }, [particlePrefs.density]);
+  useEffect(() => { speedRef.current   = particlePrefs.speed;   }, [particlePrefs.speed]);
 
   useEffect(() => {
     if (mode !== "cinematic") return;
@@ -71,22 +71,19 @@ export function ParticleOverlay() {
     const colorObs = new MutationObserver(() => { cachedRgb = readPrimaryRgb(); });
     colorObs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-color"] });
 
-    function resize() {
-      if (!canvas) return;
-      canvas.width  = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
-      initParticles();
+    function getTargetCount(w: number, h: number): number {
+      const base  = Math.max(Math.floor((w * h) / 9000), 32);
+      return Math.max(4, Math.round(base * (densityRef.current / 100)));
     }
 
     function spawnParticle(w: number, h: number, randomY = false): Particle {
-      // 60% background, 30% mid, 10% accent
       const r = Math.random();
       const tier: Particle["tier"] = r < 0.60 ? "bg" : r < 0.90 ? "mid" : "accent";
 
       const tiers = {
-        bg:     { opacity: [0.04, 0.12], speed: [0.25, 0.7],  size: [7,  10], trail: [2, 5] },
-        mid:    { opacity: [0.10, 0.24], speed: [0.5,  1.4],  size: [9,  13], trail: [3, 7] },
-        accent: { opacity: [0.30, 0.55], speed: [0.8,  1.8],  size: [10, 14], trail: [4, 9] },
+        bg:     { opacity: [0.04, 0.12], speed: [0.25, 0.7 ], size: [7,  10], trail: [2, 5] },
+        mid:    { opacity: [0.10, 0.24], speed: [0.5,  1.4 ], size: [9,  13], trail: [3, 7] },
+        accent: { opacity: [0.30, 0.55], speed: [0.8,  1.8 ], size: [10, 14], trail: [4, 9] },
       };
       const t = tiers[tier];
 
@@ -118,11 +115,17 @@ export function ParticleOverlay() {
 
     function initParticles() {
       if (!canvas) return;
-      const area = canvas.width * canvas.height;
-      const count = Math.floor(area / 9000);
-      particlesRef.current = Array.from({ length: Math.max(count, 32) }, () =>
-        spawnParticle(canvas.width, canvas.height, true)
+      particlesRef.current = Array.from(
+        { length: getTargetCount(canvas.width, canvas.height) },
+        () => spawnParticle(canvas.width, canvas.height, true)
       );
+    }
+
+    function resize() {
+      if (!canvas) return;
+      canvas.width  = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+      initParticles();
     }
 
     let frameCount = 0;
@@ -132,7 +135,6 @@ export function ParticleOverlay() {
       frameCount++;
 
       // ── Activity multiplier ───────────────────────────────────────────
-      // Target: 1.0 at idle → up to 3.5x at full activity (smoothly lerped)
       const targetMultiplier = 1 + activityRef.current * 2.5;
       multiplierRef.current += (targetMultiplier - multiplierRef.current) * 0.04;
       const mult = multiplierRef.current;
@@ -142,8 +144,19 @@ export function ParticleOverlay() {
       const h = canvas.height;
       const rgb = cachedRgb;
 
+      // ── Adjust particle count when density preference changes ─────────
+      const target = getTargetCount(w, h);
+      const particles = particlesRef.current;
+      if (particles.length < target) {
+        const toAdd = target - particles.length;
+        for (let i = 0; i < toAdd; i++) {
+          particles.push(spawnParticle(w, h, true));
+        }
+      } else if (particles.length > target) {
+        particles.splice(target);
+      }
+
       // ── Horizontal streaks ───────────────────────────────────────────
-      // Spawn interval shrinks from 180 frames (idle) down to 60 frames (full activity)
       const streakInterval = Math.max(60, Math.round(180 - activityRef.current * 120));
       if (frameCount % streakInterval === 0 && Math.random() < 0.7) {
         streaksRef.current.push(spawnStreak(w, h));
@@ -171,7 +184,7 @@ export function ParticleOverlay() {
       });
 
       // ── Falling character particles ───────────────────────────────────
-      const particles = particlesRef.current;
+      const speedMult = speedRef.current / 100;
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
 
@@ -192,15 +205,13 @@ export function ParticleOverlay() {
           ctx.fillText(p.char, p.x, trailY);
         }
 
-        // Leading char brighter for accent tier
         if (p.tier === "accent") {
           ctx.fillStyle = `rgba(${rgb}, ${Math.min(p.opacity * 1.8, 0.9)})`;
           ctx.fillText(p.char, p.x, p.y);
         }
 
         p.x += p.vx;
-        // Scale vertical speed by the smoothed multiplier
-        p.y += p.vy * mult;
+        p.y += p.vy * mult * speedMult;
 
         if (p.y - p.trail * p.size * 1.35 > h || p.x < -20 || p.x > w + 20) {
           particles[i] = spawnParticle(w, h, false);
