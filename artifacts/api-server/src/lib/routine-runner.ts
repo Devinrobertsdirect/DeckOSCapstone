@@ -114,13 +114,15 @@ async function executeAction(actionType: string, params: ActionParams): Promise<
     case "send_notification": {
       const title   = (params["title"]   as string) || "JARVIS Notification";
       const message = (params["message"] as string) || "Routine notification fired.";
+      // Store in memory bus so it appears in the memory/event log
+      // Intentionally does NOT emit routine lifecycle events to avoid cross-trigger
       bus.emit({
         source: "routine-runner",
         target: null,
-        type: "routine.triggered",
-        payload: { notificationType: "routine", title, message, timestamp: new Date().toISOString() },
+        type: "memory.stored",
+        payload: { notificationType: "routine", title, message, layer: "episodic", timestamp: new Date().toISOString() },
       });
-      return `Notification dispatched: ${title}`;
+      return `Notification queued: ${title} — ${message}`;
     }
 
     case "refresh_memory": {
@@ -208,13 +210,24 @@ export class RoutineRunner {
       const routines = await db.select().from(routinesTable)
         .where(eq(routinesTable.triggerType, "event"));
 
+      // Internal lifecycle events must never be used as triggers — doing so causes
+      // unbounded self-trigger cascades (every execution fires another execution).
+      const BLOCKED_TRIGGERS = new Set(["routine.triggered", "routine.completed"]);
+
       for (const r of routines) {
         if (!r.enabled) continue;
+        if (BLOCKED_TRIGGERS.has(r.triggerValue)) {
+          logger.warn({ routineId: r.id, triggerValue: r.triggerValue },
+            "RoutineRunner: skipping subscription to internal lifecycle event — would cause infinite loop");
+          continue;
+        }
         this.eventRoutineIds.add(r.id);
         // bus.subscribe accepts EventType | string — no cast needed
         const subId = bus.subscribe(r.triggerValue, async (event: BusEvent) => {
           if (!r.enabled) return;
           if (event.type !== r.triggerValue) return;
+          // Reject events sourced from routine-runner to prevent cross-trigger cascades
+          if ((event.source as string) === "routine-runner") return;
           logger.info({ routineId: r.id, event: r.triggerValue }, "RoutineRunner: event trigger fired");
           await this.executeRoutine(r);
         });

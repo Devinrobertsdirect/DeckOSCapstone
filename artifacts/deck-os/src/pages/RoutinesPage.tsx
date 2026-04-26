@@ -50,10 +50,12 @@ const CRON_PRESETS = [
   { label: "Custom…",           value: "__custom__"  },
 ];
 
+// Internal lifecycle events (routine.triggered, routine.completed) are intentionally
+// excluded — subscribing to them as triggers causes infinite execution cascades.
 const EVENT_TYPES = [
   "device.connected", "device.disconnected", "device.reading",
   "device.geofence.triggered", "system.boot", "system.shutdown",
-  "routine.completed", "goal.created", "goal.completed",
+  "goal.created", "goal.completed",
   "ai.chat.request", "memory.stored",
 ];
 
