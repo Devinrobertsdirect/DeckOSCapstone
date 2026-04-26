@@ -40,6 +40,7 @@ export const DeviceEventTypeSchema = z.enum([
   "device.reading",
   "device.command_sent",
   "device.command.send",
+  "device.command.ack",
   "device.state.changed",
   "device.error",
   "device.list.request",

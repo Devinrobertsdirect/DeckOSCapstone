@@ -61,7 +61,7 @@ export class DeviceManager {
           this.bus.emit({
             source: "device-manager",
             target: null,
-            type: "device.command.ack" as string,
+            type: "device.command.ack",
             payload: { deviceId, action: p.action, success: true, commandId: randomUUID() },
           });
         } catch (err) {
