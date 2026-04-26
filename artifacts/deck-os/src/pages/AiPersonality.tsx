@@ -250,7 +250,7 @@ function LocalVoicePreview({ gender }: { gender: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/config/features`)
+    fetch(`${API_BASE}/features`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.tts?.local) setAvailable(true); })
       .catch(() => {});

@@ -508,7 +508,7 @@ function useElevenLabsVoices() {
 function useLocalTtsAvailable() {
   const [available, setAvailable] = useState(false);
   useEffect(() => {
-    fetch(`${API_BASE}/config/features`)
+    fetch(`${API_BASE}/features`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d?.tts?.local) setAvailable(true); })
       .catch(() => {});
