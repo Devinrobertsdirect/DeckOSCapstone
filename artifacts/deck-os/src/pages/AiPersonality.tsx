@@ -358,16 +358,20 @@ function RecalibrateTab() {
       localStorage.setItem("jarvis.user", JSON.stringify({ ...currentCfg, aiName: trimmed, systemName: trimmed }));
     }
     window.dispatchEvent(new Event(AI_NAME_UPDATED_EVENT));
-    setNameSaving(false);
-    setNameSaved(true);
-    setTimeout(() => setNameSaved(false), 2000);
     try {
-      await fetch(`${API_BASE}/ucm/identity`, {
+      const res = await fetch(`${API_BASE}/ucm/identity`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ data: { aiName: trimmed }, merge: true }),
       });
-    } catch { /* silently ignore — localStorage already updated */ }
+      if (!res.ok) console.warn("[deckos] UCM identity PATCH failed:", res.status);
+    } catch (e) {
+      console.warn("[deckos] UCM identity PATCH error:", e);
+    } finally {
+      setNameSaving(false);
+      setNameSaved(true);
+      setTimeout(() => setNameSaved(false), 2000);
+    }
   }
 
   function resetQuiz() {
