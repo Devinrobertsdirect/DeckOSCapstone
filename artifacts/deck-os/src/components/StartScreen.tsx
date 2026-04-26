@@ -49,13 +49,33 @@ function HudCorners() {
   );
 }
 
+const TITLE = "DECK OS";
+const SUBTITLE = "INTELLIGENCE COMMAND SYSTEM";
+
 export function StartScreen({ onStart }: Props) {
   const [settingsOpen, setSettingsOpen]   = useState(false);
   const [activeColor, setActiveColor]     = useState<ColorScheme>(getStoredColor());
   const [apiStatus, setApiStatus]         = useState<"checking" | "online" | "offline">("checking");
   const [blink, setBlink]                 = useState(true);
+  const [typedTitle, setTypedTitle]       = useState("");
+  const [typedSub, setTypedSub]           = useState("");
   const { mode, setMode }                 = useVisualMode();
   const returning                         = isInitialized();
+
+  useEffect(() => {
+    if (typedTitle.length < TITLE.length) {
+      const id = setTimeout(() => setTypedTitle(TITLE.slice(0, typedTitle.length + 1)), 75);
+      return () => clearTimeout(id);
+    }
+  }, [typedTitle]);
+
+  useEffect(() => {
+    if (typedTitle.length < TITLE.length) return;
+    if (typedSub.length < SUBTITLE.length) {
+      const id = setTimeout(() => setTypedSub(SUBTITLE.slice(0, typedSub.length + 1)), 28);
+      return () => clearTimeout(id);
+    }
+  }, [typedTitle, typedSub]);
 
   useEffect(() => {
     applyColor(getStoredColor());
@@ -160,17 +180,38 @@ export function StartScreen({ onStart }: Props) {
           // COMMAND LAYER — ONLINE
         </div>
 
-        {/* Logo */}
-        <img
-          src="/logo.png"
-          alt="Deck OS"
-          className="select-none"
-          style={{
-            width: "clamp(180px, 55vw, 280px)",
-            filter: "drop-shadow(0 0 18px hsl(var(--primary) / 0.55))",
-            animation: "ss-logo-pulse 3s ease-in-out infinite",
-          }}
-        />
+        {/* Identity — minimal typed title replaces large logo */}
+        <div className="flex flex-col items-center gap-1 select-none">
+          <div
+            className="font-mono font-black tracking-[0.3em] uppercase"
+            style={{
+              fontSize: "clamp(2rem, 9vw, 3.25rem)",
+              color: "hsl(var(--primary))",
+              textShadow: "0 0 24px rgba(var(--primary-rgb),0.65), 0 0 60px rgba(var(--primary-rgb),0.25)",
+              minHeight: "1.2em",
+              letterSpacing: "0.3em",
+            }}
+          >
+            {typedTitle}
+            {typedTitle.length < TITLE.length && (
+              <span style={{ opacity: blink ? 1 : 0 }}>▍</span>
+            )}
+          </div>
+          <div
+            className="font-mono tracking-[0.25em] uppercase"
+            style={{
+              fontSize: "clamp(7px, 1.5vw, 10px)",
+              color: "rgba(var(--primary-rgb),0.35)",
+              minHeight: "1em",
+              letterSpacing: "0.25em",
+            }}
+          >
+            {typedSub}
+            {typedTitle.length >= TITLE.length && typedSub.length < SUBTITLE.length && (
+              <span style={{ opacity: blink ? 1 : 0 }}>▍</span>
+            )}
+          </div>
+        </div>
 
         {/* Divider */}
         <div className="flex items-center gap-3 w-full">

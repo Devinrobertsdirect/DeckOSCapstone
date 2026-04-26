@@ -3,6 +3,7 @@ import { Brain, Zap, Database, Globe, CheckCircle2, XCircle, ChevronRight, Loade
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWebSocket, useLatestPayload, useWsEvents } from "@/contexts/WebSocketContext";
+import { AIFace, useFaceStyle } from "@/components/AIFace";
 
 const MODES = ["DIRECT_EXECUTION", "LIGHT_REASONING", "DEEP_REASONING", "HYBRID_MODE"] as const;
 type Mode = typeof MODES[number];
@@ -60,6 +61,7 @@ export default function AiControl() {
   const [streamingText, setStreamingText] = useState("");
   const [tierStatus, setTierStatus] = useState<TierStatus | null>(null);
   const processedTokenKeysRef = useRef(new Set<string>());
+  const faceStyle = useFaceStyle();
 
   useEffect(() => {
     const fetchTiers = () => {
@@ -161,6 +163,24 @@ export default function AiControl() {
         <Brain className="w-4 h-4 text-primary" />
         <span>AI.ROUTER // INTELLIGENCE CONTROL LAYER</span>
       </div>
+
+      {sending && (
+        <div className="flex items-center gap-4 px-4 py-2 border border-primary/20 bg-primary/[0.03]">
+          <AIFace
+            style={faceStyle}
+            speaking={true}
+            size={faceStyle === "iris" ? 48 : 72}
+            color="var(--color-primary)"
+          />
+          <div className="font-mono text-xs flex flex-col gap-0.5">
+            <span className="text-primary uppercase tracking-widest">
+              {streamingText ? "STREAMING RESPONSE" : "PROCESSING REQUEST"}
+            </span>
+            <span className="text-primary/40">// JARVIS ACTIVE</span>
+          </div>
+          <Loader2 className="w-3 h-3 text-primary/30 animate-spin ml-auto" />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatusTile label="OLLAMA.LOCAL" value={ollamaOk ? "CONNECTED" : "OFFLINE"} ok={ollamaOk} />

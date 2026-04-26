@@ -4,6 +4,7 @@ import { VoiceMicButton } from "@/components/VoiceMicButton";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWebSocket, useWsEvents } from "@/contexts/WebSocketContext";
+import { AIFace, useFaceStyle } from "@/components/AIFace";
 
 type ChatResponsePayload = {
   response?: string;
@@ -48,6 +49,7 @@ export default function CommandConsole() {
   const [aiMode, setAiMode] = useState<AiMode>("DIRECT_EXECUTION");
   const [lines, setLines] = useState<ConsoleLine[]>([]);
   const outputRef = useRef<HTMLDivElement>(null);
+  const faceStyle = useFaceStyle();
 
   const chatRequests   = useWsEvents((e) => e.type === "ai.chat.request");
   const chatTokens     = useWsEvents((e) => e.type === "ai.chat.token");
@@ -185,6 +187,8 @@ export default function CommandConsole() {
   };
 
   const hasPending = hasPendingLines;
+  const isStreaming = lines.some((l) => l.streaming);
+  const isAiActive = hasPendingLines || isStreaming;
 
   const handleVoiceTranscript = useCallback(async (transcript: string): Promise<string> => {
     const res = await fetch("/api/chat", {
@@ -219,6 +223,24 @@ export default function CommandConsole() {
         <TerminalSquare className="w-4 h-4 text-primary" />
         <span>COMMAND.CONSOLE // AI EVENT ROUTER // DECK OS TERMINAL</span>
       </div>
+
+      {isAiActive && (
+        <div className="flex items-center gap-4 px-4 py-2 border border-primary/20 bg-primary/[0.03]">
+          <AIFace
+            style={faceStyle}
+            speaking={true}
+            size={faceStyle === "iris" ? 48 : 72}
+            color="var(--color-primary)"
+          />
+          <div className="font-mono text-xs flex flex-col gap-0.5">
+            <span className="text-primary uppercase tracking-widest">
+              {isStreaming ? "STREAMING RESPONSE" : "PROCESSING REQUEST"}
+            </span>
+            <span className="text-primary/40">// JARVIS ACTIVE</span>
+          </div>
+          <Loader2 className="w-3 h-3 text-primary/30 animate-spin ml-auto" />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 min-h-0">
         <div className="col-span-3 flex flex-col gap-4 min-h-0">
