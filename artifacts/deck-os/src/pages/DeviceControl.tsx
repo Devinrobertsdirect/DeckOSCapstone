@@ -1,14 +1,17 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Network, Cpu, Thermometer, Wifi, Monitor, Zap, AlertTriangle,
   CheckCircle2, Moon, Send, Sparkles, BookOpen, RefreshCw, History,
-  Activity, Clock,
+  Activity, Clock, Link, Unlink, Terminal,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
 import { useWsEvents } from "@/contexts/WebSocketContext";
 import { useListDevices, useGetDevice, useControlDevice } from "@workspace/api-client-react";
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid,
+} from "recharts";
 
 interface DeviceProfile {
   deviceId: string;
@@ -107,7 +110,203 @@ function useDeviceHistory(deviceId: string | null) {
     fetch_();
   }, [deviceId, fetch_]);
 
-  return { history, loading, refetch: fetch_ };
+  const appendSnapshot = useCallback((snapshot: ReadingSnapshot) => {
+    setHistory((prev) => [...prev, snapshot].slice(-200));
+  }, []);
+
+  return { history, loading, refetch: fetch_, appendSnapshot };
+}
+
+const CHART_COLORS = [
+  "#00d4ff", "#22ff44", "#ffaa00", "#cc44ff", "#ff6600", "#ff3333", "#44ffcc",
+];
+
+type NonNumericEvent = {
+  type: "connect" | "disconnect" | "command" | "reading";
+  label: string;
+  timestamp: string;
+};
+
+function SensorHistoryPanel({
+  history,
+  loading,
+}: {
+  history: DeviceReading[][];
+  loading: boolean;
+}) {
+  const { numericChartData, numericSensors, nonNumericEvents } = useMemo(() => {
+    const sensorMap: Record<string, { unit: string | null }> = {};
+    const chartPoints: Record<string, number | string>[] = [];
+    const events: NonNumericEvent[] = [];
+
+    for (const snapshot of history) {
+      if (!snapshot || snapshot.length === 0) continue;
+
+      const ts = snapshot[0]?.timestamp;
+      if (!ts) continue;
+
+      const label = new Date(ts).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+
+      let hasNumeric = false;
+      const point: Record<string, number | string> = { time: label, _ts: new Date(ts).getTime() };
+
+      for (const r of snapshot) {
+        if (!r.sensor) continue;
+        const v = r.value;
+
+        if (typeof v === "number") {
+          sensorMap[r.sensor] = { unit: r.unit ?? null };
+          point[r.sensor] = v;
+          hasNumeric = true;
+        } else if (typeof v === "boolean") {
+          events.push({
+            type: "reading",
+            label: `${(r.sensor ?? "").replace(/_/g, " ")}: ${v ? "ON" : "OFF"}`,
+            timestamp: ts,
+          });
+        } else if (typeof v === "string") {
+          const lower = v.toLowerCase();
+          if (lower === "connected" || lower === "online") {
+            events.push({ type: "connect", label: `${(r.sensor ?? "device").replace(/_/g, " ")} connected`, timestamp: ts });
+          } else if (lower === "disconnected" || lower === "offline") {
+            events.push({ type: "disconnect", label: `${(r.sensor ?? "device").replace(/_/g, " ")} disconnected`, timestamp: ts });
+          } else if (lower.startsWith("cmd:") || lower.startsWith("command:")) {
+            events.push({ type: "command", label: v, timestamp: ts });
+          } else {
+            events.push({ type: "reading", label: `${(r.sensor ?? "").replace(/_/g, " ")}: ${v}`, timestamp: ts });
+          }
+        }
+      }
+
+      if (hasNumeric) chartPoints.push(point);
+    }
+
+    chartPoints.sort((a, b) => (a["_ts"] as number) - (b["_ts"] as number));
+
+    return {
+      numericChartData: chartPoints,
+      numericSensors: Object.keys(sensorMap).map((k) => ({ key: k, unit: sensorMap[k].unit })),
+      nonNumericEvents: events.slice().reverse().slice(0, 30),
+    };
+  }, [history]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-primary/30 font-mono text-xs">
+        <RefreshCw className="w-3 h-3 animate-spin" /> Loading history...
+      </div>
+    );
+  }
+
+  if (history.length === 0) {
+    return <div className="text-primary/30 font-mono text-xs">// No history entries found for this device.</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {numericSensors.length > 0 && numericChartData.length >= 1 && (
+        <div>
+          <div className="text-primary/40 text-[9px] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <Activity className="w-3 h-3" /> SENSOR TREND
+          </div>
+          <div className="border border-primary/15 bg-background/40 p-2">
+            <ResponsiveContainer width="100%" height={160}>
+              <LineChart data={numericChartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,212,255,0.08)" />
+                <XAxis
+                  dataKey="time"
+                  tick={{ fill: "rgba(0,212,255,0.35)", fontSize: 8, fontFamily: "monospace" }}
+                  tickLine={false}
+                  axisLine={{ stroke: "rgba(0,212,255,0.15)" }}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fill: "rgba(0,212,255,0.35)", fontSize: 8, fontFamily: "monospace" }}
+                  tickLine={false}
+                  axisLine={{ stroke: "rgba(0,212,255,0.15)" }}
+                  width={36}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "rgba(0,10,20,0.92)",
+                    border: "1px solid rgba(0,212,255,0.25)",
+                    borderRadius: 0,
+                    fontSize: 10,
+                    fontFamily: "monospace",
+                    color: "#00d4ff",
+                  }}
+                  labelStyle={{ color: "rgba(0,212,255,0.5)", fontSize: 9, marginBottom: 4 }}
+                  itemStyle={{ color: "#00d4ff" }}
+                />
+                {numericSensors.length > 1 && (
+                  <Legend
+                    wrapperStyle={{ fontSize: 9, fontFamily: "monospace", color: "rgba(0,212,255,0.5)" }}
+                  />
+                )}
+                {numericSensors.map((s, idx) => (
+                  <Line
+                    key={s.key}
+                    type="monotone"
+                    dataKey={s.key}
+                    name={s.key.replace(/_/g, " ").toUpperCase() + (s.unit ? ` (${s.unit})` : "")}
+                    stroke={CHART_COLORS[idx % CHART_COLORS.length]}
+                    strokeWidth={1.5}
+                    dot={numericChartData.length === 1 ? { r: 4, strokeWidth: 0, fill: CHART_COLORS[idx % CHART_COLORS.length] } : false}
+                    activeDot={{ r: 3, strokeWidth: 0 }}
+                    isAnimationActive={true}
+                    animationDuration={600}
+                    connectNulls
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          {numericChartData.length === 1 && (
+            <div className="mt-1 font-mono text-[9px] text-primary/30">
+              // One reading — collect more data to see a trend.
+            </div>
+          )}
+        </div>
+      )}
+
+      {nonNumericEvents.length > 0 && (
+        <div>
+          <div className="text-primary/40 text-[9px] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <History className="w-3 h-3" /> EVENT TIMELINE
+          </div>
+          <div className="space-y-1">
+            {nonNumericEvents.map((ev, i) => {
+              const EventIcon = ev.type === "connect" ? Link
+                : ev.type === "disconnect" ? Unlink
+                : ev.type === "command" ? Terminal
+                : Activity;
+              const color = ev.type === "connect" ? "text-[#22ff44]"
+                : ev.type === "disconnect" ? "text-[#ff3333]"
+                : ev.type === "command" ? "text-[#ffaa00]"
+                : "text-primary/60";
+              return (
+                <div key={i} className="flex items-center gap-2 border-l-2 border-primary/10 pl-2 py-0.5 font-mono text-[10px]">
+                  <EventIcon className={`w-2.5 h-2.5 shrink-0 ${color}`} />
+                  <span className={color}>{ev.label}</span>
+                  <span className="ml-auto text-primary/25 text-[9px] shrink-0">
+                    {new Date(ev.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {numericSensors.length === 0 && nonNumericEvents.length === 0 && (
+        <div className="text-primary/30 font-mono text-xs">// History loaded but no plottable data found.</div>
+      )}
+    </div>
+  );
 }
 
 export default function DeviceControl() {
@@ -189,7 +388,7 @@ export default function DeviceControl() {
   const offlineCount = devices.filter((d) => d.status === "offline").length;
   const errorCount = devices.filter((d) => d.status === "error").length;
 
-  const { history: deviceHistory, loading: historyLoading } = useDeviceHistory(
+  const { history: deviceHistory, loading: historyLoading, appendSnapshot } = useDeviceHistory(
     activeTab === "history" ? selectedDevice : null,
   );
 
@@ -200,6 +399,30 @@ export default function DeviceControl() {
       .slice(-10)
       .reverse();
   }, [readingEvents, selectedDevice]);
+
+  const processedReadingCountRef = useRef(0);
+  useEffect(() => {
+    if (activeTab !== "history" || !selectedDevice) {
+      processedReadingCountRef.current = readingEvents.length;
+      return;
+    }
+    const newEvents = readingEvents.slice(processedReadingCountRef.current);
+    for (const ev of newEvents) {
+      const p = ev.payload as WsDeviceReadingPayload;
+      if (p.deviceId !== selectedDevice) continue;
+      const readings = p.readings;
+      if (!readings || readings.length === 0) continue;
+      const ts = ev.timestamp ?? new Date().toISOString();
+      const snapshot: ReadingSnapshot = readings.map((r) => ({
+        sensor: r.sensor,
+        value: r.value,
+        unit: r.unit,
+        timestamp: ts,
+      }));
+      appendSnapshot(snapshot);
+    }
+    processedReadingCountRef.current = readingEvents.length;
+  }, [readingEvents, activeTab, selectedDevice, appendSnapshot]);
 
   const handleControl = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -529,42 +752,10 @@ export default function DeviceControl() {
             )}
 
             {activeTab === "history" && selected && (
-              <>
-                {historyLoading && (
-                  <div className="flex items-center gap-2 text-primary/30">
-                    <RefreshCw className="w-3 h-3 animate-spin" /> Loading history...
-                  </div>
-                )}
-                {!historyLoading && deviceHistory.length === 0 && (
-                  <div className="text-primary/30">// No history entries found for this device.</div>
-                )}
-                {deviceHistory.slice().reverse().slice(0, 50).map((snapshot, i) => {
-                  const snapshotTime = snapshot[0]?.timestamp;
-                  return (
-                    <div key={i} className="border border-primary/10 bg-background/30 p-2 space-y-1">
-                      <div className="flex justify-between items-center">
-                        <span className="text-primary/40 uppercase text-[9px]">READING SNAPSHOT</span>
-                        {snapshotTime && (
-                          <span className="text-primary/30 text-[9px]">
-                            {new Date(snapshotTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                          </span>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-2 gap-1">
-                        {snapshot.map((r, ri) => (
-                          <div key={ri} className="text-[10px]">
-                            <span className="text-primary/40 uppercase">{(r.sensor ?? "").replace(/_/g, " ")}: </span>
-                            <span className="text-primary/70 font-bold">
-                              {typeof r.value === "boolean" ? (r.value ? "ON" : "OFF") : String(r.value ?? "---")}
-                              {r.unit && <span className="text-primary/40 ml-0.5">{r.unit}</span>}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </>
+              <SensorHistoryPanel
+                history={deviceHistory}
+                loading={historyLoading}
+              />
             )}
           </div>
 
