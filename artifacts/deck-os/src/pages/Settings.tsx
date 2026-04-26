@@ -1154,14 +1154,22 @@ export default function Settings() {
 
               {serverEnvironment === "docker" && (
                 <div className="p-3 border border-[#ffc820]/30 bg-[#ffc820]/5 font-mono text-xs text-[#ffc820] space-y-2">
-                  <div className="flex items-center gap-1.5 font-bold"><AlertTriangle className="w-3.5 h-3.5" />IN-APP UPDATE NOT AVAILABLE IN DOCKER</div>
-                  <div className="text-[#ffc820]/80">The API is running inside a Docker container and cannot access the Docker daemon to rebuild itself. Run the update from the <strong>host machine</strong>:</div>
-                  <div className="bg-black/40 border border-[#ffc820]/20 px-3 py-2 text-[#ffc820]/90 tracking-wider">bash update.sh --docker</div>
-                  <div className="text-[#ffc820]/80">Or for Docker Compose: <code className="bg-black/30 px-1">docker compose pull &amp;&amp; docker compose up -d --build</code></div>
+                  <div className="flex items-center gap-1.5 font-bold"><AlertTriangle className="w-3.5 h-3.5" />DOCKER MODE — REQUIRES SOCKET ACCESS</div>
+                  <div className="text-[#ffc820]/80">
+                    Running inside Docker. The update will execute <code className="bg-black/30 px-1">docker compose pull + up -d --build</code> via the Docker socket.
+                    This requires the socket to be mounted in your compose file:
+                  </div>
+                  <div className="bg-black/40 border border-[#ffc820]/20 px-3 py-2 text-[#ffc820]/90 leading-relaxed">
+                    {"volumes:\n  - /var/run/docker.sock:/var/run/docker.sock"}
+                  </div>
+                  <div className="text-[#ffc820]/80">
+                    If the socket is not mounted, the update will fail with an error in the log below.
+                    Alternatively, run from the host: <code className="bg-black/30 px-1">bash update.sh --docker</code>
+                  </div>
                 </div>
               )}
 
-              {serverEnvironment === "bare-metal" && adminConfigured === false && (
+              {adminConfigured === false && serverEnvironment !== null && (
                 <div className="p-3 border border-[#ffc820]/30 bg-[#ffc820]/5 font-mono text-xs text-[#ffc820] space-y-1.5">
                   <div className="flex items-center gap-1.5 font-bold"><AlertTriangle className="w-3.5 h-3.5" />ADMIN_SECRET NOT CONFIGURED</div>
                   <div className="text-[#ffc820]/80">Add to your <code className="bg-black/30 px-1">.env</code> file and restart the server:</div>
@@ -1172,7 +1180,7 @@ export default function Settings() {
                 </div>
               )}
 
-              {serverEnvironment === "bare-metal" && adminConfigured === true && (
+              {adminConfigured === true && serverEnvironment !== null && (
                 <div className="space-y-2">
                   <label className="font-mono text-xs text-primary/60 uppercase">Admin Secret (from your .env ADMIN_SECRET)</label>
                   <div className="relative">
@@ -1191,7 +1199,7 @@ export default function Settings() {
                 </div>
               )}
 
-              {serverEnvironment === "bare-metal" && adminConfigured === true && (
+              {adminConfigured === true && serverEnvironment !== null && (
                 <button
                   onClick={runUpdate}
                   disabled={updateRunning || !adminSecretInput.trim()}

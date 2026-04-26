@@ -97,20 +97,12 @@ router.get("/admin/version", (_req, res) => {
 });
 
 router.post("/admin/update", requireAdminSecret, (req, res) => {
-  if (RUNTIME_ENV === "docker") {
-    res.status(503).json({
-      error: "In-app update is not available from inside a Docker container. Run from the host machine: bash update.sh --docker",
-      dockerHost: true,
-    });
-    return;
-  }
-
   if (currentJob?.status === "running") {
     res.status(409).json({ error: "An update is already in progress. Connect to /api/admin/update/stream to watch it." });
     return;
   }
 
-  const flags = ["--no-pull"];
+  const flags = RUNTIME_ENV === "docker" ? ["--docker", "--no-pull"] : ["--no-pull"];
 
   const spec = findUpdateScript(flags);
   if (!spec) {
