@@ -1,8 +1,8 @@
-import { useEffect } from "react";
-import { Terminal, Cpu, MemoryStick, Activity, Network, Circle, Radio, Zap } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Terminal, Cpu, MemoryStick, Activity, Network, Circle, Radio, Zap, Send } from "lucide-react";
 import { type LucideIcon } from "lucide-react";
 import { Link } from "wouter";
-import { useWebSocket, useLatestPayload, useWsEvents } from "@/contexts/WebSocketContext";
+import { useWebSocket, useLatestPayload } from "@/contexts/WebSocketContext";
 
 type MetricsPayload = {
   cpu?: { usage?: number };
@@ -23,6 +23,35 @@ type PluginPayload = {
   count?: number;
 };
 
+type ConsoleLine = {
+  id: number;
+  kind: "cmd" | "ok" | "error" | "system";
+  text: string;
+};
+
+const CONSOLE_SESSION_KEY = "deckos.console.history";
+
+const BOOT_LINES: ConsoleLine[] = [
+  { id: 0, kind: "system", text: "> System initialized — SYS.VER.9.4.2" },
+  { id: 1, kind: "system", text: "> EventBus online — type a command below" },
+];
+
+function loadHistory(): ConsoleLine[] {
+  try {
+    const raw = sessionStorage.getItem(CONSOLE_SESSION_KEY);
+    if (raw) return JSON.parse(raw) as ConsoleLine[];
+  } catch {
+  }
+  return BOOT_LINES;
+}
+
+function saveHistory(lines: ConsoleLine[]) {
+  try {
+    sessionStorage.setItem(CONSOLE_SESSION_KEY, JSON.stringify(lines));
+  } catch {
+  }
+}
+
 export default function Dashboard() {
   const { sendEvent } = useWebSocket();
 
@@ -30,16 +59,73 @@ export default function Dashboard() {
   const aiInferred = useLatestPayload<AiPayload>("ai.router.status");
   const pluginList = useLatestPayload<PluginPayload>("plugin.list.response");
 
-  const consoleEvents = useWsEvents();
-  const recentConsole = consoleEvents.slice(-6);
+  const [lines, setLines] = useState<ConsoleLine[]>(loadHistory);
+  const [cmdInput, setCmdInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const consoleEndRef = useRef<HTMLDivElement>(null);
+  const lineIdRef = useRef(0);
+  useEffect(() => {
+    lineIdRef.current = lines.length;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     sendEvent({ type: "system.monitor.request", payload: {} });
     sendEvent({ type: "plugin.list.request", payload: {} });
   }, [sendEvent]);
 
+  useEffect(() => {
+    consoleEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [lines]);
+
   const activePlugins = pluginList?.plugins?.filter((p) => p.status === "active").length ?? 0;
   const totalPlugins = pluginList?.plugins?.length ?? 0;
+
+  const addLine = useCallback((kind: ConsoleLine["kind"], text: string) => {
+    setLines((prev) => {
+      const newLine: ConsoleLine = { id: lineIdRef.current++, kind, text };
+      const next = [...prev, newLine];
+      saveHistory(next);
+      return next;
+    });
+  }, []);
+
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      const cmd = cmdInput.trim();
+      if (!cmd || busy) return;
+
+      setCmdInput("");
+      setBusy(true);
+      addLine("cmd", `> ${cmd}`);
+
+      try {
+        const res = await fetch("/api/commands", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ input: cmd, mode: "auto" }),
+        });
+
+        if (!res.ok) {
+          const errText = await res.text().catch(() => res.statusText);
+          addLine("error", `  ERR [${res.status}] ${errText.substring(0, 120)}`);
+        } else {
+          const data = await res.json();
+          const output: string = data.output ?? "(no output)";
+          output.split("\n").forEach((line) => addLine("ok", `  ${line}`));
+          if (data.executionTimeMs !== undefined) {
+            addLine("system", `  [${data.modeUsed ?? "AUTO"} · ${data.executionTimeMs}ms]`);
+          }
+        }
+      } catch (err) {
+        addLine("error", `  ERR ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [cmdInput, busy, addLine]
+  );
 
   return (
     <div className="flex flex-col h-full gap-4">
@@ -82,30 +168,45 @@ export default function Dashboard() {
             </div>
             <LiveBadge />
           </div>
-          <div className="flex-1 p-4 font-mono text-xs text-primary/70 space-y-1 overflow-y-auto">
-            {recentConsole.length === 0 ? (
-              <>
-                <ConsoleLine type="system">&gt; System initialized — SYS.VER.9.4.2</ConsoleLine>
-                <ConsoleLine type="system">&gt; EventBus online — waiting for events</ConsoleLine>
-              </>
-            ) : (
-              recentConsole.map((e, i) => {
-                const t = e.type.startsWith("system") ? "system"
-                  : e.type.startsWith("ai") ? "ok"
-                  : e.type.includes("error") ? "error"
-                  : e.type.startsWith("device") ? "ok"
-                  : "system";
-                return (
-                  <ConsoleLine key={i} type={t}>
-                    &gt; [{e.source ?? "bus"}] {e.type}
-                  </ConsoleLine>
-                );
-              })
+
+          <div className="flex-1 p-4 font-mono text-xs space-y-0.5 overflow-y-auto">
+            {lines.map((line) => (
+              <ConsoleLine key={line.id} kind={line.kind}>
+                {line.text}
+              </ConsoleLine>
+            ))}
+            {busy && (
+              <ConsoleLine kind="system">
+                {"  "}<span className="animate-pulse">▋ processing…</span>
+              </ConsoleLine>
             )}
+            <div ref={consoleEndRef} />
           </div>
-          <div className="p-3 border-t border-primary/20">
-            <span className="font-mono text-xs text-primary/40">Navigate to CONSOLE for full command interface</span>
-          </div>
+
+          <form
+            onSubmit={handleSubmit}
+            className="p-3 border-t border-primary/20 flex items-center gap-2"
+          >
+            <span className="font-mono text-xs text-primary/40 shrink-0">{">"}</span>
+            <input
+              type="text"
+              value={cmdInput}
+              onChange={(e) => setCmdInput(e.target.value)}
+              placeholder={busy ? "waiting…" : "type a command (help, status, ping…)"}
+              disabled={busy}
+              className="flex-1 bg-transparent font-mono text-xs text-primary placeholder-primary/25 outline-none border-none focus:ring-0"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <button
+              type="submit"
+              disabled={busy || !cmdInput.trim()}
+              className="text-primary/40 hover:text-primary disabled:opacity-20 transition-colors"
+              aria-label="Send command"
+            >
+              <Send className="w-3.5 h-3.5" />
+            </button>
+          </form>
         </div>
 
         <div className="flex flex-col border border-primary/20 bg-card/40 relative overflow-hidden">
@@ -154,9 +255,14 @@ function LiveBadge() {
   );
 }
 
-function ConsoleLine({ children, type }: { children: React.ReactNode; type: "system" | "ok" | "warn" | "error" }) {
-  const color = { system: "text-primary/60", ok: "text-[#00ff88]/70", warn: "text-[#ffaa00]/80", error: "text-[#ff3333]/80" }[type];
-  return <div className={color}>{children}</div>;
+function ConsoleLine({ children, kind }: { children: React.ReactNode; kind: "cmd" | "ok" | "error" | "system" }) {
+  const color = {
+    cmd: "text-primary",
+    ok: "text-[#00ff88]/80",
+    error: "text-[#ff3333]/80",
+    system: "text-primary/40",
+  }[kind];
+  return <div className={`${color} whitespace-pre-wrap break-all leading-5`}>{children}</div>;
 }
 
 function SummaryRow({ label, value, valueClass }: { label: string; value: string; valueClass: string }) {
@@ -241,7 +347,7 @@ function formatUptime(seconds: number): string {
 const AVAIL_COLOR: Record<string, string> = { active: "#00ff88", idle: "#ffcc00", passive: "rgba(var(--primary-rgb),0.33)" };
 
 function PresenceStrip() {
-  const presenceEvent = useLatestPayload<{ presence?: { availability?: string; activeChannel?: string; minutesSinceLastInteraction?: number } }>( "system.heartbeat");
+  const presenceEvent = useLatestPayload<{ presence?: { availability?: string; activeChannel?: string; minutesSinceLastInteraction?: number } }>("system.heartbeat");
 
   const presence = presenceEvent?.presence;
   const avColor = presence ? (AVAIL_COLOR[presence.availability ?? ""] ?? "rgba(var(--primary-rgb),0.33)") : "rgba(var(--primary-rgb),0.2)";
