@@ -9,6 +9,17 @@ const router: IRouter = Router();
 
 const ADMIN_SECRET: string | undefined = process.env.ADMIN_SECRET;
 
+function detectEnvironment(): "docker" | "bare-metal" {
+  try {
+    if (fs.existsSync("/.dockerenv")) return "docker";
+    const cgroup = fs.readFileSync("/proc/self/cgroup", "utf8");
+    if (cgroup.includes("docker") || cgroup.includes("containerd")) return "docker";
+  } catch {}
+  return "bare-metal";
+}
+
+const RUNTIME_ENV = detectEnvironment();
+
 type LogEntry = { line: string; stderr?: boolean };
 type JobResult = { success: boolean; version?: string; error?: string; code?: number | null };
 type Job = { status: "running" | "done"; log: LogEntry[]; result: JobResult | null };
@@ -82,18 +93,24 @@ function findUpdateScript(flags: string[]): ScriptSpec | null {
 }
 
 router.get("/admin/version", (_req, res) => {
-  res.json({ version: getVersion(), adminConfigured: !!ADMIN_SECRET });
+  res.json({ version: getVersion(), adminConfigured: !!ADMIN_SECRET, environment: RUNTIME_ENV });
 });
 
 router.post("/admin/update", requireAdminSecret, (req, res) => {
+  if (RUNTIME_ENV === "docker") {
+    res.status(503).json({
+      error: "In-app update is not available from inside a Docker container. Run from the host machine: bash update.sh --docker",
+      dockerHost: true,
+    });
+    return;
+  }
+
   if (currentJob?.status === "running") {
     res.status(409).json({ error: "An update is already in progress. Connect to /api/admin/update/stream to watch it." });
     return;
   }
 
-  const useDocker = (req.body as { docker?: boolean })?.docker === true;
   const flags = ["--no-pull"];
-  if (useDocker) flags.push("--docker");
 
   const spec = findUpdateScript(flags);
   if (!spec) {

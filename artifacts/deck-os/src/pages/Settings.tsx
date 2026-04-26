@@ -104,12 +104,12 @@ export default function Settings() {
 
   const [version, setVersion]               = useState<string | null>(null);
   const [adminConfigured, setAdminConfigured] = useState<boolean | null>(null);
+  const [serverEnvironment, setServerEnvironment] = useState<"docker" | "bare-metal" | null>(null);
   const [adminSecretInput, setAdminSecretInput] = useState("");
   const [showSecret, setShowSecret]           = useState(false);
   const [updateRunning, setUpdateRunning]   = useState(false);
   const [updateLog, setUpdateLog]           = useState<{ line: string; stderr?: boolean }[]>([]);
   const [updateDone, setUpdateDone]         = useState<{ success: boolean; version?: string; error?: string } | null>(null);
-  const [useDocker, setUseDocker]           = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const fetchHealth = useCallback(async () => {
@@ -212,11 +212,12 @@ export default function Settings() {
     fetch("/api/admin/version")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<{ version: string; adminConfigured: boolean }>;
+        return r.json() as Promise<{ version: string; adminConfigured: boolean; environment: "docker" | "bare-metal" }>;
       })
       .then((d) => {
         setVersion(d.version ?? "unknown");
         setAdminConfigured(!!d.adminConfigured);
+        setServerEnvironment(d.environment ?? "bare-metal");
       })
       .catch(() => {
         setVersion("unknown");
@@ -403,7 +404,7 @@ export default function Settings() {
       const startRes = await fetch("/api/admin/update", {
         method:  "POST",
         headers,
-        body:    JSON.stringify({ docker: useDocker }),
+        body:    JSON.stringify({}),
       });
       if (!startRes.ok) {
         let errMsg = `Server error (${startRes.status})`;
@@ -1144,24 +1145,23 @@ export default function Settings() {
                 Git pull is skipped (update the code manually, then click Run Update).
               </p>
 
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setUseDocker((d) => !d)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 border font-mono text-xs transition-all ${
-                    useDocker
-                      ? "border-primary text-primary bg-primary/10"
-                      : "border-primary/20 text-primary/40 hover:border-primary/50"
-                  }`}
-                >
-                  <HardDrive className="w-3 h-3" />
-                  {useDocker ? "DOCKER MODE" : "BARE-METAL MODE"}
-                </button>
-                <span className="font-mono text-[10px] text-primary/30">
-                  {useDocker ? "Uses docker compose pull + up -d --build" : "Runs pnpm install + db push"}
+              <div className="flex items-center gap-2 font-mono text-[10px]">
+                <span className="text-primary/40">ENVIRONMENT:</span>
+                <span className={`px-2 py-0.5 border font-bold ${serverEnvironment === "docker" ? "border-[#ffc820]/40 text-[#ffc820] bg-[#ffc820]/10" : "border-primary/40 text-primary bg-primary/10"}`}>
+                  {serverEnvironment === null ? "DETECTING..." : serverEnvironment === "docker" ? "DOCKER CONTAINER" : "BARE-METAL"}
                 </span>
               </div>
 
-              {adminConfigured === false && (
+              {serverEnvironment === "docker" && (
+                <div className="p-3 border border-[#ffc820]/30 bg-[#ffc820]/5 font-mono text-xs text-[#ffc820] space-y-2">
+                  <div className="flex items-center gap-1.5 font-bold"><AlertTriangle className="w-3.5 h-3.5" />IN-APP UPDATE NOT AVAILABLE IN DOCKER</div>
+                  <div className="text-[#ffc820]/80">The API is running inside a Docker container and cannot access the Docker daemon to rebuild itself. Run the update from the <strong>host machine</strong>:</div>
+                  <div className="bg-black/40 border border-[#ffc820]/20 px-3 py-2 text-[#ffc820]/90 tracking-wider">bash update.sh --docker</div>
+                  <div className="text-[#ffc820]/80">Or for Docker Compose: <code className="bg-black/30 px-1">docker compose pull &amp;&amp; docker compose up -d --build</code></div>
+                </div>
+              )}
+
+              {serverEnvironment === "bare-metal" && adminConfigured === false && (
                 <div className="p-3 border border-[#ffc820]/30 bg-[#ffc820]/5 font-mono text-xs text-[#ffc820] space-y-1.5">
                   <div className="flex items-center gap-1.5 font-bold"><AlertTriangle className="w-3.5 h-3.5" />ADMIN_SECRET NOT CONFIGURED</div>
                   <div className="text-[#ffc820]/80">Add to your <code className="bg-black/30 px-1">.env</code> file and restart the server:</div>
@@ -1172,7 +1172,7 @@ export default function Settings() {
                 </div>
               )}
 
-              {adminConfigured === true && (
+              {serverEnvironment === "bare-metal" && adminConfigured === true && (
                 <div className="space-y-2">
                   <label className="font-mono text-xs text-primary/60 uppercase">Admin Secret (from your .env ADMIN_SECRET)</label>
                   <div className="relative">
@@ -1191,7 +1191,7 @@ export default function Settings() {
                 </div>
               )}
 
-              {adminConfigured !== false && (
+              {serverEnvironment === "bare-metal" && adminConfigured === true && (
                 <button
                   onClick={runUpdate}
                   disabled={updateRunning || !adminSecretInput.trim()}
