@@ -1,17 +1,13 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { execSync, spawn } from "child_process";
 import { EventEmitter } from "events";
-import crypto from "crypto";
 import path from "path";
 import fs from "fs";
 import os from "os";
 
 const router: IRouter = Router();
 
-const LOOPBACK = new Set(["::1", "127.0.0.1", "::ffff:127.0.0.1"]);
-const LOCAL_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/;
-
-const ADMIN_TOKEN: string = process.env.ADMIN_SECRET ?? crypto.randomBytes(32).toString("hex");
+const ADMIN_SECRET: string | undefined = process.env.ADMIN_SECRET;
 
 type LogEntry = { line: string; stderr?: boolean };
 type JobResult = { success: boolean; version?: string; error?: string; code?: number | null };
@@ -21,11 +17,18 @@ let currentJob: Job | null = null;
 const jobEmitter = new EventEmitter();
 jobEmitter.setMaxListeners(50);
 
-function requireAdminToken(req: Request, res: Response, next: NextFunction): void {
-  const token = (req.headers["x-admin-token"] as string | undefined)
+function requireAdminSecret(req: Request, res: Response, next: NextFunction): void {
+  if (!ADMIN_SECRET) {
+    res.status(503).json({
+      error: "ADMIN_SECRET is not configured. Add it to your .env file (bare-metal) or docker-compose.yml environment section, then restart the server.",
+      notConfigured: true,
+    });
+    return;
+  }
+  const provided = (req.headers["x-admin-token"] as string | undefined)
     ?? req.headers.authorization?.replace(/^Bearer\s+/i, "");
-  if (!token || token !== ADMIN_TOKEN) {
-    res.status(401).json({ error: "Invalid or missing admin token. Fetch it from GET /api/admin/token." });
+  if (!provided || provided !== ADMIN_SECRET) {
+    res.status(401).json({ error: "Invalid admin secret. Set ADMIN_SECRET in your .env / docker-compose.yml and enter the same value here." });
     return;
   }
   next();
@@ -78,25 +81,11 @@ function findUpdateScript(flags: string[]): ScriptSpec | null {
   return null;
 }
 
-router.get("/admin/token", (req: Request, res: Response) => {
-  const socketIp = req.socket?.remoteAddress ?? req.ip ?? "";
-  const origin = req.headers.origin;
-  const isLoopback = LOOPBACK.has(socketIp);
-  const isLocalOrigin = !origin || LOCAL_ORIGIN_RE.test(origin);
-
-  if (!isLoopback && !isLocalOrigin) {
-    res.removeHeader("Access-Control-Allow-Origin");
-    res.status(403).json({ error: "Token exchange only accessible from localhost" });
-    return;
-  }
-  res.json({ token: ADMIN_TOKEN });
-});
-
 router.get("/admin/version", (_req, res) => {
-  res.json({ version: getVersion() });
+  res.json({ version: getVersion(), adminConfigured: !!ADMIN_SECRET });
 });
 
-router.post("/admin/update", requireAdminToken, (req, res) => {
+router.post("/admin/update", requireAdminSecret, (req, res) => {
   if (currentJob?.status === "running") {
     res.status(409).json({ error: "An update is already in progress. Connect to /api/admin/update/stream to watch it." });
     return;
@@ -156,7 +145,7 @@ router.post("/admin/update", requireAdminToken, (req, res) => {
   res.status(202).json({ status: "started", streamUrl: "/api/admin/update/stream" });
 });
 
-router.get("/admin/update/stream", requireAdminToken, (req, res) => {
+router.get("/admin/update/stream", requireAdminSecret, (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");

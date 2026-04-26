@@ -102,13 +102,14 @@ export default function Settings() {
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [healthChecking, setHealthChecking] = useState(false);
 
-  const [version, setVersion]             = useState<string | null>(null);
-  const [adminToken, setAdminToken]       = useState<string | null>(null);
-  const [tokenError, setTokenError]       = useState(false);
-  const [updateRunning, setUpdateRunning] = useState(false);
-  const [updateLog, setUpdateLog]         = useState<{ line: string; stderr?: boolean }[]>([]);
-  const [updateDone, setUpdateDone]       = useState<{ success: boolean; version?: string; error?: string } | null>(null);
-  const [useDocker, setUseDocker]         = useState(false);
+  const [version, setVersion]               = useState<string | null>(null);
+  const [adminConfigured, setAdminConfigured] = useState<boolean | null>(null);
+  const [adminSecretInput, setAdminSecretInput] = useState("");
+  const [showSecret, setShowSecret]           = useState(false);
+  const [updateRunning, setUpdateRunning]   = useState(false);
+  const [updateLog, setUpdateLog]           = useState<{ line: string; stderr?: boolean }[]>([]);
+  const [updateDone, setUpdateDone]         = useState<{ success: boolean; version?: string; error?: string } | null>(null);
+  const [useDocker, setUseDocker]           = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const fetchHealth = useCallback(async () => {
@@ -207,28 +208,21 @@ export default function Settings() {
   }, [tab, health, healthChecking, fetchHealth]);
 
   useEffect(() => {
-    if (tab !== "about") return;
-
-    if (version === null) {
-      fetch("/api/admin/version")
-        .then((r) => {
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          return r.json() as Promise<{ version: string }>;
-        })
-        .then((d) => setVersion(d.version ?? "unknown"))
-        .catch(() => setVersion("unknown"));
-    }
-
-    if (adminToken === null && !tokenError) {
-      fetch("/api/admin/token")
-        .then((r) => {
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          return r.json() as Promise<{ token: string }>;
-        })
-        .then((d) => setAdminToken(d.token))
-        .catch(() => setTokenError(true));
-    }
-  }, [tab, version, adminToken, tokenError]);
+    if (tab !== "about" || version !== null) return;
+    fetch("/api/admin/version")
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json() as Promise<{ version: string; adminConfigured: boolean }>;
+      })
+      .then((d) => {
+        setVersion(d.version ?? "unknown");
+        setAdminConfigured(!!d.adminConfigured);
+      })
+      .catch(() => {
+        setVersion("unknown");
+        setAdminConfigured(false);
+      });
+  }, [tab, version]);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -395,14 +389,14 @@ export default function Settings() {
   }
 
   async function runUpdate() {
-    if (!adminToken) return;
+    if (!adminSecretInput.trim()) return;
     setUpdateRunning(true);
     setUpdateLog([]);
     setUpdateDone(null);
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "X-Admin-Token": adminToken,
+      "X-Admin-Token": adminSecretInput.trim(),
     };
 
     try {
@@ -422,7 +416,7 @@ export default function Settings() {
       }
 
       const streamRes = await fetch("/api/admin/update/stream", {
-        headers: { "X-Admin-Token": adminToken },
+        headers: { "X-Admin-Token": adminSecretInput.trim() },
       });
       if (!streamRes.body) throw new Error("No response body from stream");
 
@@ -1167,26 +1161,44 @@ export default function Settings() {
                 </span>
               </div>
 
-              {tokenError && (
-                <div className="p-3 border border-[#ffc820]/30 bg-[#ffc820]/5 font-mono text-xs text-[#ffc820] flex items-start gap-2">
-                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                  <span>
-                    Admin access unavailable from this network location. To run updates in Docker mode,
-                    use the CLI: <code className="bg-black/30 px-1">bash update.sh --docker</code>
-                  </span>
+              {adminConfigured === false && (
+                <div className="p-3 border border-[#ffc820]/30 bg-[#ffc820]/5 font-mono text-xs text-[#ffc820] space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold"><AlertTriangle className="w-3.5 h-3.5" />ADMIN_SECRET NOT CONFIGURED</div>
+                  <div className="text-[#ffc820]/80">Add to your <code className="bg-black/30 px-1">.env</code> file and restart the server:</div>
+                  <div className="bg-black/40 border border-[#ffc820]/20 px-3 py-2 text-[#ffc820]/90 tracking-wider">
+                    ADMIN_SECRET=your-strong-secret-here
+                  </div>
+                  <div className="text-[#ffc820]/80">Or use the CLI directly: <code className="bg-black/30 px-1">bash update.sh --no-pull</code></div>
                 </div>
               )}
 
-              {!tokenError && (
+              {adminConfigured === true && (
+                <div className="space-y-2">
+                  <label className="font-mono text-xs text-primary/60 uppercase">Admin Secret (from your .env ADMIN_SECRET)</label>
+                  <div className="relative">
+                    <input
+                      type={showSecret ? "text" : "password"}
+                      value={adminSecretInput}
+                      onChange={(e) => { setAdminSecretInput(e.target.value); setUpdateDone(null); }}
+                      placeholder="Enter ADMIN_SECRET value..."
+                      className="w-full bg-background border border-primary/30 px-3 py-2 pr-10 font-mono text-xs text-primary focus:border-primary focus:outline-none"
+                    />
+                    <button type="button" onClick={() => setShowSecret((s) => !s)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-primary/40 hover:text-primary/70">
+                      {showSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {adminConfigured !== false && (
                 <button
                   onClick={runUpdate}
-                  disabled={updateRunning || !adminToken}
+                  disabled={updateRunning || !adminSecretInput.trim()}
                   className="flex items-center gap-2 px-5 py-2.5 border border-primary/50 font-mono text-xs text-primary hover:bg-primary/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {updateRunning
                     ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />UPDATING...</>
-                    : !adminToken
-                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />INITIALIZING...</>
                     : <><RefreshCw className="w-3.5 h-3.5" />RUN UPDATE</>
                   }
                 </button>
