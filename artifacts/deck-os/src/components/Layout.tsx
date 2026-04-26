@@ -608,12 +608,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
                     {(mode === "cinematic" || particlePrefs.particlesEnabled) && (
                       <>
-                        {mode !== "cinematic" && (
-                          <div className="text-[9px] text-primary/25 mb-2 uppercase tracking-wider">
-                            Subtle overlay — 35% density
-                          </div>
-                        )}
-
                         <div className="mb-2">
                           <div className="flex justify-between text-[10px] mb-1">
                             <span className="text-primary/40 uppercase tracking-wider">Density</span>
