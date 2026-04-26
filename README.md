@@ -46,13 +46,18 @@ docker compose down -v          # Stop + erase database volume
 
 ```bash
 # Linux / macOS
-bash setup.sh           # Setup only
-bash setup.sh --start   # Setup + start dev servers
+bash setup.sh           # Check prerequisites, install deps, run migrations
+bash setup.sh --start   # Same as above, then start API + frontend together
 
 # Windows PowerShell
-.\setup.ps1             # Setup only
-.\setup.ps1 -Start      # Setup + start dev servers
+.\setup.ps1             # Check prerequisites, install deps, run migrations
+.\setup.ps1 -Start      # Same as above, then start API + frontend together
 ```
+
+> **Note:** Setup does not auto-start the servers. Pass `--start` / `-Start` when
+> you want a one-shot "set up and run" experience. For day-to-day development,
+> starting API and frontend in separate terminals (so you can see each log stream
+> independently) is usually more convenient.
 
 The script automatically:
 - Checks Node.js 20+ and pnpm (installs pnpm via corepack if missing)

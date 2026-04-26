@@ -244,13 +244,13 @@ if ($Start) {
 
   try {
     while ($true) {
-      Receive-Job -Job $apiJob -Keep | Write-Host
-      Receive-Job -Job $webJob -Keep | Write-Host
+      Receive-Job -Job $apiJob | Write-Host
+      Receive-Job -Job $webJob | Write-Host
       Start-Sleep -Milliseconds 500
     }
   } finally {
-    Stop-Job -Job $apiJob, $webJob
-    Remove-Job -Job $apiJob, $webJob
+    Stop-Job  -Job $apiJob, $webJob -ErrorAction SilentlyContinue
+    Remove-Job -Job $apiJob, $webJob -ErrorAction SilentlyContinue
   }
 } else {
   Write-Host "  To start Deck OS manually:"
