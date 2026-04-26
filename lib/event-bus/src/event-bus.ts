@@ -120,12 +120,12 @@ export class EventBus {
     );
 
     for (const sub of matching) {
-      this.traceLog("handler-start", { eventId: event.id, type: event.type, subscriptionId: sub.id });
+      this.traceLog("handler-start", { eventId: event.id, type: event.type, source: event.source, subscriptionId: sub.id });
       try {
         await sub.handler(event);
-        this.traceLog("handler-end", { eventId: event.id, subscriptionId: sub.id, result: "ok" });
+        this.traceLog("handler-end", { eventId: event.id, type: event.type, source: event.source, subscriptionId: sub.id, result: "ok" });
       } catch (err) {
-        this.traceLog("handler-end", { eventId: event.id, subscriptionId: sub.id, result: "error", err: String(err) });
+        this.traceLog("handler-end", { eventId: event.id, type: event.type, source: event.source, subscriptionId: sub.id, result: "error", err: String(err) });
         this.logError(`EventBus: handler error for type=${event.type}`, err);
       }
     }

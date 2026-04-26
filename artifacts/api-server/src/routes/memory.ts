@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, memoryEntriesTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { eq, ilike, or, and, desc } from "drizzle-orm";
 import {
   GetShortTermMemoryResponse,
   StoreShortTermMemoryBody,
@@ -80,11 +80,29 @@ router.get("/memory/long-term", async (req, res) => {
     return;
   }
 
-  const { limit = 20 } = params.data;
-  const entries = await db.select().from(memoryEntriesTable)
-    .where(eq(memoryEntriesTable.type, "long_term"))
-    .orderBy(desc(memoryEntriesTable.createdAt))
-    .limit(limit ?? 20);
+  const { query, limit = 20 } = params.data;
+  let entries;
+
+  if (query) {
+    const allLong = await db.select().from(memoryEntriesTable)
+      .where(
+        and(
+          eq(memoryEntriesTable.type, "long_term"),
+          or(
+            ilike(memoryEntriesTable.content, `%${query}%`),
+            ilike(memoryEntriesTable.source, `%${query}%`),
+          ),
+        ),
+      )
+      .orderBy(desc(memoryEntriesTable.createdAt))
+      .limit(limit ?? 20);
+    entries = allLong;
+  } else {
+    entries = await db.select().from(memoryEntriesTable)
+      .where(eq(memoryEntriesTable.type, "long_term"))
+      .orderBy(desc(memoryEntriesTable.createdAt))
+      .limit(limit ?? 20);
+  }
 
   const body = GetLongTermMemoryResponse.parse({
     entries: entries.map(mapEntry),
