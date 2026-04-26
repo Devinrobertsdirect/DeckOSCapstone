@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, systemEventsTable } from "@workspace/db";
 import { desc, eq, and, type SQL } from "drizzle-orm";
 import { z } from "zod";
+import { bus } from "../lib/bus.js";
 
 const router = Router();
 
@@ -59,6 +60,49 @@ router.get("/events/history", async (req, res) => {
     }));
     res.json({ events, limit, offset });
   }
+});
+
+const IngestBodySchema = z.object({
+  source: z.string().min(1).max(128).default("webhook"),
+  label:  z.string().max(128).optional(),
+  payload: z.unknown().optional(),
+  apiKey:  z.string().optional(),
+});
+
+router.post("/events/ingest", async (req, res) => {
+  const webhookKey = process.env["WEBHOOK_API_KEY"];
+  if (webhookKey) {
+    const provided =
+      (req.headers["x-api-key"] as string | undefined) ??
+      (req.body as Record<string, unknown>)?.apiKey;
+    if (provided !== webhookKey) {
+      res.status(401).json({ error: "Unauthorized: invalid API key" });
+      return;
+    }
+  }
+
+  const parsed = IngestBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { source, label, payload } = parsed.data;
+
+  bus.emit({
+    source,
+    target: null,
+    type: "device.reading",
+    payload: {
+      deviceId: source,
+      deviceType: "external_webhook",
+      sensorType: label ?? "external",
+      values: payload ?? {},
+      timestamp: new Date().toISOString(),
+    },
+  });
+
+  res.json({ ok: true, received: new Date().toISOString() });
 });
 
 export default router;

@@ -6,6 +6,84 @@ const WS_URL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${wind
 type Role = "user" | "assistant" | "system";
 type Channel = "web" | "mobile" | "whatsapp" | "voice";
 
+type SensorSnapshot = {
+  gps?: { lat: number; lon: number; accuracy: number; altitude?: number; speed?: number };
+  battery?: { level: number; charging: boolean };
+  network?: { type: string; downlink?: number; effectiveType?: string };
+  orientation?: { alpha: number; beta: number; gamma: number };
+};
+
+function useSensorBridge(sendMessage: (d: unknown) => void, wsState: string) {
+  const snap = useRef<SensorSnapshot>({});
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    const id = navigator.geolocation.watchPosition(
+      (p) => {
+        snap.current.gps = {
+          lat: p.coords.latitude,
+          lon: p.coords.longitude,
+          accuracy: Math.round(p.coords.accuracy),
+          altitude: p.coords.altitude ?? undefined,
+          speed: p.coords.speed ?? undefined,
+        };
+      },
+      () => {},
+      { enableHighAccuracy: false, maximumAge: 30_000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, []);
+
+  useEffect(() => {
+    type BatteryMgr = EventTarget & { level: number; charging: boolean };
+    const nav = navigator as Navigator & { getBattery?: () => Promise<BatteryMgr> };
+    if (!nav.getBattery) return;
+    nav.getBattery().then((b) => {
+      const upd = () => { snap.current.battery = { level: b.level, charging: b.charging }; };
+      upd();
+      b.addEventListener("levelchange", upd);
+      b.addEventListener("chargingchange", upd);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    type Conn = EventTarget & { type?: string; downlink?: number; effectiveType?: string };
+    const conn = (navigator as Navigator & { connection?: Conn }).connection;
+    if (!conn) return;
+    const upd = () => {
+      snap.current.network = { type: conn.type ?? "unknown", downlink: conn.downlink, effectiveType: conn.effectiveType };
+    };
+    upd();
+    conn.addEventListener("change", upd);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: DeviceOrientationEvent) => {
+      snap.current.orientation = { alpha: e.alpha ?? 0, beta: e.beta ?? 0, gamma: e.gamma ?? 0 };
+    };
+    window.addEventListener("deviceorientation", handler, true);
+    return () => window.removeEventListener("deviceorientation", handler, true);
+  }, []);
+
+  useEffect(() => {
+    if (wsState !== "open") return;
+    const emit = () =>
+      sendMessage({
+        type: "device.reading",
+        payload: {
+          deviceId: `mobile-${SESSION_ID}`,
+          deviceType: "mobile_browser",
+          sensorType: "multi",
+          values: { ...snap.current },
+          timestamp: new Date().toISOString(),
+        },
+      });
+    emit();
+    const iv = setInterval(emit, 10_000);
+    return () => clearInterval(iv);
+  }, [wsState, sendMessage]);
+}
+
 interface ChatMsg {
   id: string;
   role: Role;
@@ -60,7 +138,13 @@ function useWebSocket(onMessage: (data: unknown) => void) {
     };
   }, [connect]);
 
-  return wsState;
+  const sendMessage = useCallback((data: unknown) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(data));
+    }
+  }, []);
+
+  return { wsState, sendMessage };
 }
 
 export default function App() {
@@ -80,7 +164,8 @@ export default function App() {
     }
   }, []);
 
-  const wsState = useWebSocket(handleWsMessage);
+  const { wsState, sendMessage } = useWebSocket(handleWsMessage);
+  useSensorBridge(sendMessage, wsState);
 
   useEffect(() => {
     document.documentElement.classList.add("dark");

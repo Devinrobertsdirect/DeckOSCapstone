@@ -5,6 +5,7 @@ import {
   speechToText,
   ensureCompatibleFormat,
 } from "@workspace/integrations-openai-ai-server/audio";
+import { bus } from "../lib/bus.js";
 
 const router = Router();
 
@@ -49,6 +50,56 @@ router.post("/analyze", async (req, res) => {
   const response =
     completion.choices[0]?.message?.content ?? "I see you. Welcome, Commander.";
   res.json({ response });
+});
+
+router.post("/ambient", async (req, res) => {
+  const { image, mimeType } = req.body as { image?: string; mimeType?: string };
+  if (!image || typeof image !== "string") {
+    res.status(400).json({ error: "image (base64) required" });
+    return;
+  }
+
+  const imageUrl = `data:${mimeType ?? "image/jpeg"};base64,${image}`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      max_completion_tokens: 120,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are JARVIS's environmental perception module. In 1–2 short sentences describe what you see: the physical space, lighting conditions, and any notable objects. Be factual and concise. No pleasantries. Start directly with the observation.",
+        },
+        {
+          role: "user",
+          content: [
+            { type: "image_url", image_url: { url: imageUrl } },
+            { type: "text", text: "What environment am I in right now?" },
+          ],
+        },
+      ],
+    });
+
+    const description = completion.choices[0]?.message?.content ?? "Environment nominal.";
+
+    bus.emit({
+      source: "camera.vision",
+      target: null,
+      type: "device.reading",
+      payload: {
+        deviceId: "camera.desktop",
+        deviceType: "camera.vision",
+        sensorType: "vision",
+        values: { description },
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    res.json({ description });
+  } catch (err) {
+    res.status(500).json({ error: "Vision analysis failed", detail: String(err) });
+  }
 });
 
 router.post("/tts", async (req, res) => {

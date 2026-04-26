@@ -5,7 +5,9 @@ import {
   Activity, HardDrive, Cpu as Microchip, Network, Settings,
   TerminalSquare, AlertTriangle, CheckCircle2,
   ChevronRight, Layers, Eye, Minimize2, Film, List,
+  Camera, CameraOff,
 } from "lucide-react";
+import { useCamera } from "@/hooks/useCamera";
 import { useHealthCheck, getHealthCheckQueryKey } from "@workspace/api-client-react";
 import { useVisualMode, type VisualMode } from "@/contexts/VisualMode";
 import { useWebSocket } from "@/contexts/WebSocketContext";
@@ -22,6 +24,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [activeColor, setActiveColor] = useState<ColorScheme>(getStoredColor());
   const [now, setNow] = useState(() => new Date());
   const { status: wsStatus, events } = useWebSocket();
+  const camera = useCamera();
 
   useEffect(() => {
     document.documentElement.classList.add("dark");
@@ -138,6 +141,27 @@ export function Layout({ children }: { children: React.ReactNode }) {
               );
             })}
           </div>
+          {/* Camera status */}
+          {camera.supported && (
+            <button
+              onClick={camera.toggle}
+              title={camera.enabled ? "Camera active — click to disable" : "Enable environmental camera"}
+              className={`flex items-center gap-1.5 px-2 py-1 border transition-all font-mono text-xs ${
+                camera.status === "active"
+                  ? "border-primary/50 bg-primary/10 text-primary"
+                  : "border-primary/20 text-primary/30 hover:text-primary/60"
+              }`}
+            >
+              {camera.status === "active" ? (
+                <Camera className="w-3 h-3" />
+              ) : (
+                <CameraOff className="w-3 h-3" />
+              )}
+              {camera.isCapturing && (
+                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse inline-block" />
+              )}
+            </button>
+          )}
           {/* Event log toggle */}
           <button
             onClick={() => setEventLogOpen((o) => !o)}
@@ -247,6 +271,43 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <span className="text-primary">SECURE</span>
               </div>
             </div>
+
+            {camera.supported && (
+              <div className="mt-2 border border-primary/20 p-2.5 bg-background/50 font-mono text-xs">
+                <div className="text-primary/40 mb-1.5 uppercase text-xs tracking-wider">Environment</div>
+                <button
+                  onClick={camera.toggle}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 border text-xs font-mono transition-all ${
+                    camera.status === "active"
+                      ? "border-primary/50 bg-primary/10 text-primary"
+                      : camera.status === "denied"
+                      ? "border-red-500/30 text-red-400/60 cursor-not-allowed"
+                      : "border-primary/20 text-primary/40 hover:border-primary/40 hover:text-primary/70"
+                  }`}
+                  disabled={camera.status === "denied"}
+                >
+                  {camera.status === "active" ? (
+                    <Camera className="w-3 h-3 shrink-0" />
+                  ) : (
+                    <CameraOff className="w-3 h-3 shrink-0" />
+                  )}
+                  <span className="tracking-wider">
+                    {camera.status === "active"    ? "VISION ACTIVE"    :
+                     camera.status === "requesting" ? "REQUESTING..."    :
+                     camera.status === "denied"     ? "ACCESS DENIED"   :
+                     camera.status === "unsupported"? "NOT SUPPORTED"   : "VISION OFF"}
+                  </span>
+                  {camera.status === "active" && (
+                    <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                  )}
+                </button>
+                {camera.lastDescription && (
+                  <div className="mt-1.5 text-primary/35 text-[10px] leading-relaxed line-clamp-2">
+                    {camera.lastDescription}
+                  </div>
+                )}
+              </div>
+            )}
 
             <button
               onClick={() => {

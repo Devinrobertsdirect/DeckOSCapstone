@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import { Terminal, Cpu, MemoryStick, Activity, Network, Circle, Radio, Zap, Send } from "lucide-react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { Terminal, Cpu, MemoryStick, Activity, Network, Circle, Radio, Zap, Send, MapPin, Battery, Wifi, Eye } from "lucide-react";
 import { type LucideIcon } from "lucide-react";
 import { Link } from "wouter";
-import { useWebSocket, useLatestPayload } from "@/contexts/WebSocketContext";
+import { useWebSocket, useLatestPayload, useWsEvents } from "@/contexts/WebSocketContext";
 
 type MetricsPayload = {
   cpu?: { usage?: number };
@@ -23,11 +23,47 @@ type PluginPayload = {
   count?: number;
 };
 
+type DeviceReadingPayload = {
+  deviceId?:   string;
+  deviceType?: string;
+  sensorType?: string;
+  values?:     Record<string, unknown>;
+  timestamp?:  string;
+};
+
+type MobileSensors = {
+  gps?:         { lat: number; lon: number; accuracy: number; speed?: number };
+  battery?:     { level: number; charging: boolean };
+  network?:     { type: string; downlink?: number; effectiveType?: string };
+  orientation?: { alpha: number; beta: number; gamma: number };
+};
+
 type ConsoleLine = {
   id: number;
   kind: "cmd" | "ok" | "error" | "system";
   text: string;
 };
+
+function useFieldSensors() {
+  const deviceEvents = useWsEvents((e) => e.type === "device.reading");
+  return useMemo(() => {
+    let mobile: (DeviceReadingPayload & { values?: MobileSensors }) | null = null;
+    let vision: { description?: string; timestamp?: string } | null = null;
+    for (let i = deviceEvents.length - 1; i >= 0; i--) {
+      const p = deviceEvents[i]!.payload as DeviceReadingPayload | null;
+      if (!p) continue;
+      if (!mobile && p.deviceType === "mobile_browser") {
+        mobile = p as DeviceReadingPayload & { values?: MobileSensors };
+      }
+      if (!vision && p.deviceType === "camera.vision") {
+        const v = p.values as { description?: string } | undefined;
+        vision = { description: v?.description, timestamp: p.timestamp };
+      }
+      if (mobile && vision) break;
+    }
+    return { mobile, vision };
+  }, [deviceEvents]);
+}
 
 const CONSOLE_SESSION_KEY = "deckos.console.history";
 
@@ -58,6 +94,7 @@ export default function Dashboard() {
   const metrics = useLatestPayload<MetricsPayload>("system.monitor.metrics");
   const aiInferred = useLatestPayload<AiPayload>("ai.router.status");
   const pluginList = useLatestPayload<PluginPayload>("plugin.list.response");
+  const { mobile: mobileSnap, vision: cameraSnap } = useFieldSensors();
 
   const [lines, setLines] = useState<ConsoleLine[]>(loadHistory);
   const [cmdInput, setCmdInput] = useState("");
@@ -223,12 +260,90 @@ export default function Dashboard() {
             <SummaryRow label="AI CACHE" value={aiInferred ? `${((aiInferred.cacheHitRate ?? 0) * 100).toFixed(0)}% HIT` : "---"} valueClass="text-primary/70" />
             <SummaryRow label="REQUESTS" value={String(aiInferred?.totalRequests ?? 0)} valueClass="text-primary/70" />
           </div>
-          <div className="mt-auto p-4 border-t border-primary/10 space-y-1.5">
+          <div className="p-4 border-t border-primary/10 space-y-1.5">
             <div className="font-mono text-xs text-primary/30 uppercase mb-2">INFERENCE</div>
-            <StatusDot label="Ollama" active={aiInferred?.ollamaAvailable ?? false} />
-            <StatusDot label="Cloud API" active={aiInferred?.cloudAvailable ?? false} />
+            <StatusDot label="Ollama"      active={aiInferred?.ollamaAvailable ?? false} />
+            <StatusDot label="Cloud API"   active={aiInferred?.cloudAvailable  ?? false} />
             <StatusDot label="Rule Engine" active />
           </div>
+
+          {(mobileSnap || cameraSnap) && (
+            <div className="border-t border-primary/10 p-4 space-y-3 font-mono text-xs">
+              <div className="text-primary/30 uppercase tracking-wider mb-2">FIELD.SENSORS</div>
+
+              {mobileSnap?.values?.gps && (
+                <div className="flex items-start gap-2">
+                  <MapPin className="w-3 h-3 text-primary/50 mt-0.5 shrink-0" />
+                  <div className="space-y-0.5">
+                    <div className="text-primary/50 uppercase text-[10px] tracking-wider">GPS</div>
+                    <div className="text-primary/70">
+                      {mobileSnap.values.gps.lat.toFixed(4)}, {mobileSnap.values.gps.lon.toFixed(4)}
+                    </div>
+                    <div className="text-primary/30 text-[10px]">±{mobileSnap.values.gps.accuracy}m</div>
+                  </div>
+                </div>
+              )}
+
+              {mobileSnap?.values?.battery && (
+                <div className="flex items-center gap-2">
+                  <Battery className="w-3 h-3 text-primary/50 shrink-0" />
+                  <div>
+                    <span className="text-primary/50 uppercase text-[10px] tracking-wider mr-2">BATTERY</span>
+                    <span className={
+                      mobileSnap.values.battery.level > 0.5 ? "text-[#00ff88]/80" :
+                      mobileSnap.values.battery.level > 0.2 ? "text-yellow-400/80" : "text-red-400/80"
+                    }>
+                      {(mobileSnap.values.battery.level * 100).toFixed(0)}%
+                    </span>
+                    {mobileSnap.values.battery.charging && (
+                      <span className="text-primary/30 ml-2">⚡ charging</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {mobileSnap?.values?.network && (
+                <div className="flex items-center gap-2">
+                  <Wifi className="w-3 h-3 text-primary/50 shrink-0" />
+                  <div>
+                    <span className="text-primary/50 uppercase text-[10px] tracking-wider mr-2">NET</span>
+                    <span className="text-primary/70">
+                      {mobileSnap.values.network.effectiveType?.toUpperCase() ?? mobileSnap.values.network.type.toUpperCase()}
+                    </span>
+                    {mobileSnap.values.network.downlink != null && (
+                      <span className="text-primary/30 ml-2">{mobileSnap.values.network.downlink} Mb/s</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {cameraSnap?.description && (
+                <div className="flex items-start gap-2">
+                  <Eye className="w-3 h-3 text-primary/50 mt-0.5 shrink-0" />
+                  <div className="space-y-0.5">
+                    <div className="text-primary/50 uppercase text-[10px] tracking-wider">VISION</div>
+                    <div className="text-primary/60 leading-relaxed">{cameraSnap.description}</div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-1.5 pt-1">
+                <Circle className="w-1.5 h-1.5 fill-[#00ff88] text-[#00ff88] animate-pulse" />
+                <span className="text-primary/25 text-[10px] uppercase tracking-wider">
+                  {mobileSnap ? "MOBILE ONLINE" : "VISION ONLY"}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {!mobileSnap && !cameraSnap && (
+            <div className="p-4 border-t border-primary/10 font-mono">
+              <div className="text-primary/20 text-xs uppercase tracking-wider mb-1">FIELD.SENSORS</div>
+              <div className="text-primary/15 text-[10px] leading-relaxed">
+                No live sensor feeds. Open DeckOS on your phone to stream location, battery, and network data.
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
