@@ -525,6 +525,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
                         <span>fast</span>
                       </div>
                     </div>
+
+                    {(particlePrefs.density !== 100 || particlePrefs.speed !== 100) && (
+                      <div className="flex justify-end mt-2">
+                        <button
+                          onClick={() => setParticlePrefs({ density: 100, speed: 100 })}
+                          className="text-[10px] uppercase tracking-wider text-primary/40 hover:text-primary/80 transition-colors"
+                        >
+                          ↺ Reset to defaults
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
