@@ -207,8 +207,11 @@ export default function Settings() {
   useEffect(() => {
     if (tab === "about" && version === null) {
       fetch("/api/admin/version")
-        .then((r) => r.json())
-        .then((d: { version: string }) => setVersion(d.version))
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json() as Promise<{ version: string }>;
+        })
+        .then((d) => setVersion(d.version ?? "unknown"))
         .catch(() => setVersion("unknown"));
     }
   }, [tab, version]);

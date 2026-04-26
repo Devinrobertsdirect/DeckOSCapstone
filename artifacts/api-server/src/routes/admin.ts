@@ -5,11 +5,13 @@ import fs from "fs";
 
 const router: IRouter = Router();
 
-const LOOPBACK = new Set(["::1", "127.0.0.1", "::ffff:127.0.0.1"]);
+const LOCAL_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/;
 
-function requireLoopback(req: Request, res: Response, next: NextFunction) {
-  const ip = req.ip ?? req.socket?.remoteAddress ?? "";
-  if (!LOOPBACK.has(ip)) {
+function requireLocalOrigin(req: Request, res: Response, next: NextFunction): void {
+  const origin = req.headers.origin;
+  if (origin && !LOCAL_ORIGIN_RE.test(origin)) {
+    res.removeHeader("Access-Control-Allow-Origin");
+    res.removeHeader("Access-Control-Allow-Credentials");
     res.status(403).json({ error: "Admin endpoints are only accessible from localhost" });
     return;
   }
@@ -53,12 +55,12 @@ function findUpdateScript(): string | null {
   return null;
 }
 
-router.get("/admin/version", requireLoopback, (_req, res) => {
+router.get("/admin/version", requireLocalOrigin, (_req, res) => {
   const version = getVersion();
   res.json({ version });
 });
 
-router.post("/admin/update", requireLoopback, (req, res) => {
+router.post("/admin/update", requireLocalOrigin, (req, res) => {
   if (updateInProgress) {
     res.status(409).json({ error: "An update is already in progress — wait for it to finish before starting another." });
     return;
