@@ -5,12 +5,24 @@ import { eq, desc } from "drizzle-orm";
 
 const router = Router();
 
-// GET /api/notifications — list recent notifications (unread first, then read, up to 50)
+// GET /api/notifications — returns all unread + recent read notifications
+// unreadCount is computed from the full table (not just the slice returned)
 router.get("/notifications", async (_req, res) => {
   try {
-    const rows = await notificationService.list(50);
-    const unreadCount = rows.filter(r => !r.read).length;
-    res.json({ notifications: rows, unreadCount, total: rows.length });
+    // All unread notifications, newest first
+    const unread = await db.select().from(notificationsTable)
+      .where(eq(notificationsTable.read, false))
+      .orderBy(desc(notificationsTable.createdAt));
+
+    // Last 30 read notifications for history
+    const recent = await db.select().from(notificationsTable)
+      .where(eq(notificationsTable.read, true))
+      .orderBy(desc(notificationsTable.createdAt))
+      .limit(30);
+
+    const unreadCount = unread.length;
+    const notifications = [...unread, ...recent];
+    res.json({ notifications, unread, recent, unreadCount, total: notifications.length });
   } catch (err) {
     res.status(500).json({ error: "Failed to list notifications" });
   }

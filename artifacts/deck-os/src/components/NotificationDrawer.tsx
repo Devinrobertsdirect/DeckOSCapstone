@@ -3,7 +3,7 @@ import {
   Bell, X, CheckCheck, Trash2, AlertTriangle, Info, Zap,
 } from "lucide-react";
 
-interface AppNotification {
+export interface AppNotification {
   id: number;
   type: string;
   severity: "info" | "warning" | "critical";
@@ -46,44 +46,56 @@ function fmtTime(iso: string): string {
   return d.toLocaleDateString();
 }
 
+interface NotificationApiResponse {
+  notifications: AppNotification[];
+  unreadCount: number;
+}
+
+// Shared fetch — returns notifications + unreadCount from the server
+export async function fetchNotifications(): Promise<NotificationApiResponse> {
+  const r = await fetch(`${BASE}api/notifications`);
+  if (!r.ok) throw new Error("Failed to fetch notifications");
+  return r.json() as Promise<NotificationApiResponse>;
+}
+
 interface NotificationDrawerProps {
   open: boolean;
   onClose: () => void;
   wsEvents: unknown[];
+  onUnreadChange: (count: number) => void;
 }
 
-export function NotificationDrawer({ open, onClose, wsEvents }: NotificationDrawerProps) {
+export function NotificationDrawer({
+  open, onClose, wsEvents, onUnreadChange,
+}: NotificationDrawerProps) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(false);
   const prevWsLen = useRef(0);
 
-  const fetchNotifications = useCallback(async () => {
+  const load = useCallback(async () => {
     try {
       setLoading(true);
-      const r = await fetch(`${BASE}api/notifications`);
-      if (!r.ok) return;
-      const d = await r.json() as { notifications: AppNotification[] };
-      setNotifications(d.notifications ?? []);
+      const data = await fetchNotifications();
+      setNotifications(data.notifications ?? []);
+      onUnreadChange(data.unreadCount ?? 0);
     } catch {
       // silent
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onUnreadChange]);
 
   // Initial load
-  useEffect(() => {
-    void fetchNotifications();
-  }, [fetchNotifications]);
+  useEffect(() => { void load(); }, [load]);
 
-  // Poll when drawer is open
+  // Poll when open
   useEffect(() => {
     if (!open) return;
-    const iv = setInterval(() => void fetchNotifications(), 10_000);
+    const iv = setInterval(() => void load(), 10_000);
     return () => clearInterval(iv);
-  }, [open, fetchNotifications]);
+  }, [open, load]);
 
-  // Listen for notification.created WS events
+  // React to notification.created WS events
   useEffect(() => {
     if (wsEvents.length === prevWsLen.current) return;
     const newEvs = wsEvents.slice(prevWsLen.current);
@@ -91,30 +103,38 @@ export function NotificationDrawer({ open, onClose, wsEvents }: NotificationDraw
     const hasNew = newEvs.some(
       (e) => (e as { type?: string }).type === "notification.created",
     );
-    if (hasNew) void fetchNotifications();
-  }, [wsEvents, fetchNotifications]);
+    if (hasNew) void load();
+  }, [wsEvents, load]);
 
-  async function markRead(id: number) {
+  // Dismiss: mark read on server and immediately REMOVE from list
+  async function dismiss(n: AppNotification) {
     try {
-      await fetch(`${BASE}api/notifications/${id}/read`, { method: "PATCH" });
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
-      );
+      await fetch(`${BASE}api/notifications/${n.id}/read`, { method: "PATCH" });
     } catch {}
+    setNotifications((prev) => prev.filter((x) => x.id !== n.id));
+    // If the dismissed item was unread, update bell immediately
+    if (!n.read) {
+      onUnreadChange(
+        Math.max(0, notifications.filter((x) => !x.read && x.id !== n.id).length),
+      );
+    }
   }
 
   async function markAllRead() {
     try {
       await fetch(`${BASE}api/notifications/read-all`, { method: "POST" });
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     } catch {}
+    // Remove all unread from list — they're dismissed
+    setNotifications((prev) => prev.filter((x) => x.read));
+    onUnreadChange(0);
   }
 
   async function clearAll() {
     try {
       await fetch(`${BASE}api/notifications`, { method: "DELETE" });
-      setNotifications([]);
     } catch {}
+    setNotifications([]);
+    onUnreadChange(0);
   }
 
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -162,7 +182,7 @@ export function NotificationDrawer({ open, onClose, wsEvents }: NotificationDraw
             className="flex items-center gap-1.5 px-2 py-1 font-mono text-[10px] text-primary/50 hover:text-primary border border-primary/10 hover:border-primary/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <CheckCheck className="w-3 h-3" />
-            Mark all read
+            Dismiss all
           </button>
           <button
             onClick={clearAll}
@@ -192,25 +212,22 @@ export function NotificationDrawer({ open, onClose, wsEvents }: NotificationDraw
             return (
               <div
                 key={n.id}
-                className={`mx-2 my-1.5 p-2.5 border font-mono text-xs transition-all
-                  ${n.read ? "opacity-50 border-primary/10 bg-background/30" : `${bg}`}`}
+                className={`mx-2 my-1.5 p-2.5 border font-mono text-xs ${bg}`}
               >
                 <div className="flex items-start gap-2">
                   <span className={`${color} mt-0.5`}>{icon}</span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-1">
-                      <span className={`font-bold text-[11px] ${n.read ? "text-primary/50" : color}`}>
+                      <span className={`font-bold text-[11px] ${color}`}>
                         {n.title}
                       </span>
-                      {!n.read && (
-                        <button
-                          onClick={() => void markRead(n.id)}
-                          className="text-primary/30 hover:text-primary transition-colors shrink-0"
-                          title="Dismiss"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      )}
+                      <button
+                        onClick={() => void dismiss(n)}
+                        className="text-primary/30 hover:text-primary transition-colors shrink-0"
+                        title="Dismiss"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
                     </div>
                     <p className="text-primary/50 text-[10px] mt-0.5 leading-relaxed">{n.message}</p>
                     <span className="text-primary/25 text-[10px] mt-1 block">
@@ -227,38 +244,13 @@ export function NotificationDrawer({ open, onClose, wsEvents }: NotificationDraw
   );
 }
 
-export function NotificationBell({ onClick, wsEvents }: { onClick: () => void; wsEvents: unknown[] }) {
-  const [unreadCount, setUnreadCount] = useState(0);
-  const prevWsLen = useRef(0);
+// Bell button — accepts count as prop (state managed by parent Layout)
+interface NotificationBellProps {
+  onClick: () => void;
+  unreadCount: number;
+}
 
-  const fetchCount = useCallback(async () => {
-    try {
-      const r = await fetch(`${import.meta.env.BASE_URL}api/notifications`);
-      if (!r.ok) return;
-      const d = await r.json() as { unreadCount: number };
-      setUnreadCount(d.unreadCount ?? 0);
-    } catch {}
-  }, []);
-
-  useEffect(() => { void fetchCount(); }, [fetchCount]);
-
-  // Poll every 30s
-  useEffect(() => {
-    const iv = setInterval(() => void fetchCount(), 30_000);
-    return () => clearInterval(iv);
-  }, [fetchCount]);
-
-  // React to WS notification.created events
-  useEffect(() => {
-    if (wsEvents.length === prevWsLen.current) return;
-    const newEvs = wsEvents.slice(prevWsLen.current);
-    prevWsLen.current = wsEvents.length;
-    const hasNew = newEvs.some(
-      (e) => (e as { type?: string }).type === "notification.created",
-    );
-    if (hasNew) void fetchCount();
-  }, [wsEvents, fetchCount]);
-
+export function NotificationBell({ onClick, unreadCount }: NotificationBellProps) {
   return (
     <button
       onClick={onClick}

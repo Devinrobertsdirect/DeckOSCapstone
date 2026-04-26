@@ -15,7 +15,7 @@ import { EventLogPanel } from "@/components/EventLogPanel";
 import { ParticleOverlay } from "@/components/ParticleOverlay";
 import { useQuery } from "@tanstack/react-query";
 import { DeviceDiscovery } from "@/components/DeviceDiscovery";
-import { NotificationBell, NotificationDrawer } from "@/components/NotificationDrawer";
+import { NotificationBell, NotificationDrawer, fetchNotifications } from "@/components/NotificationDrawer";
 
 interface AutonomyConfig {
   enabled: boolean;
@@ -60,6 +60,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [autonomyOpen, setAutonomyOpen] = useState(false);
   const [eventLogOpen, setEventLogOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const { mode, setMode } = useVisualMode();
   const cfg = useMemo(() => getStoredConfig(), []);
   const aiName   = cfg?.aiName ?? cfg?.systemName ?? "JARVIS";
@@ -79,6 +80,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
     fetch("/api/autonomy/config")
       .then((r) => r.json())
       .then((d) => setAutonomyConfig(d as AutonomyConfig))
+      .catch(() => {});
+
+    // Initial notification count fetch
+    fetchNotifications()
+      .then((d) => setUnreadCount(d.unreadCount ?? 0))
       .catch(() => {});
   }, []);
 
@@ -287,7 +293,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           {/* Notification bell */}
           <NotificationBell
             onClick={() => setNotifOpen((o) => !o)}
-            wsEvents={events}
+            unreadCount={unreadCount}
           />
           {/* Event log toggle */}
           <button
@@ -544,6 +550,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         open={notifOpen}
         onClose={() => setNotifOpen(false)}
         wsEvents={events}
+        onUnreadChange={setUnreadCount}
       />
     </div>
   );
