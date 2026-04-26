@@ -408,6 +408,12 @@ export default function DeviceControl() {
   const offlineCount = filteredDevices.filter((d) => d.status === "offline").length;
   const errorCount   = filteredDevices.filter((d) => d.status === "error").length;
 
+  useEffect(() => {
+    if (selectedDevice && !filteredDevices.some((d) => d.id === selectedDevice)) {
+      setSelectedDevice(null);
+    }
+  }, [filteredDevices, selectedDevice]);
+
   const { history: deviceHistory, loading: historyLoading, appendSnapshot } = useDeviceHistory(
     activeTab === "history" ? selectedDevice : null,
   );
