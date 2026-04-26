@@ -13,14 +13,13 @@ import {
   refreshOllamaDetection,
   getInferenceState,
 } from "../lib/inference.js";
+import { bus } from "../lib/bus.js";
 
 const router = Router();
 
 type IntelligenceMode = "DIRECT_EXECUTION" | "LIGHT_REASONING" | "DEEP_REASONING" | "HYBRID_MODE";
 
-const routerState: {
-  mode: IntelligenceMode;
-} = {
+const routerState: { mode: IntelligenceMode } = {
   mode: "DIRECT_EXECUTION",
 };
 
@@ -120,6 +119,21 @@ router.post("/ai-router/infer", async (req, res) => {
   }
 
   const { prompt, mode, context = [], useCache = true } = parsed.data;
+  const state = getInferenceState();
+  const modelSelected = state.ollamaAvailable ? "mistral:instruct" : "rule-engine-v1";
+
+  bus.emit({
+    source: "ai-router",
+    target: null,
+    type: "ai.inference_started",
+    payload: {
+      prompt: prompt.substring(0, 200),
+      mode,
+      modelSelected,
+    },
+  });
+
+  const startMs = Date.now();
 
   try {
     const result = await runInference({
@@ -127,6 +141,17 @@ router.post("/ai-router/infer", async (req, res) => {
       mode,
       context: context as Array<{ role: string; content: string }>,
       useCache,
+    });
+
+    bus.emit({
+      source: "ai-router",
+      target: null,
+      type: "ai.inference_completed",
+      payload: {
+        modelUsed: result.modelUsed,
+        latencyMs: result.latencyMs,
+        fromCache: result.fromCache,
+      },
     });
 
     const body = RouteInferenceResponse.parse({
@@ -139,6 +164,13 @@ router.post("/ai-router/infer", async (req, res) => {
     });
     res.json(body);
   } catch (err) {
+    const latencyMs = Date.now() - startMs;
+    bus.emit({
+      source: "ai-router",
+      target: null,
+      type: "ai.error",
+      payload: { error: String(err), latencyMs },
+    });
     req.log.error({ err }, "Inference failed");
     res.status(500).json({ error: "Inference failed" });
   }
@@ -159,7 +191,17 @@ router.put("/ai-router/mode", (req, res) => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+
+  const oldMode = routerState.mode;
   routerState.mode = parsed.data.mode as IntelligenceMode;
+
+  bus.emit({
+    source: "ai-router",
+    target: null,
+    type: "ai.model_changed",
+    payload: { oldMode, newMode: routerState.mode },
+  });
+
   req.log.info({ mode: routerState.mode }, "Intelligence mode changed");
 
   const body = SetIntelligenceModeResponse.parse({

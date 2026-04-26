@@ -12,6 +12,7 @@ import goalsRouter from "./goals";
 import feedbackRouter from "./feedback";
 import predictionsRouter from "./predictions";
 import autonomyRouter from "./autonomy";
+import traceRouter from "./trace";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(goalsRouter);
 router.use(feedbackRouter);
 router.use(predictionsRouter);
 router.use(autonomyRouter);
+router.use(traceRouter);
 
 export default router;

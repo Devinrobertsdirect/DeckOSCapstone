@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, memoryEntriesTable } from "@workspace/db";
-import { eq, ilike, or, desc } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import {
   GetShortTermMemoryResponse,
   StoreShortTermMemoryBody,
@@ -16,6 +16,7 @@ import {
   DeleteMemoryByIdParams,
 } from "@workspace/api-zod";
 import { memoryService } from "../lib/memory-service.js";
+import { bus } from "../lib/bus.js";
 
 const router = Router();
 
@@ -62,6 +63,13 @@ router.post("/memory/short-term", async (req, res) => {
     expiresAt,
   }).returning();
 
+  bus.emit({
+    source: "memory-api",
+    target: null,
+    type: "memory.stored",
+    payload: { entryId: entry.id, type: "short_term", source, keywords: keywords ?? [] },
+  });
+
   res.status(201).json(mapEntry(entry));
 });
 
@@ -72,28 +80,11 @@ router.get("/memory/long-term", async (req, res) => {
     return;
   }
 
-  const { query, limit = 20 } = params.data;
-  let entries;
-
-  if (query) {
-    entries = await db.select().from(memoryEntriesTable)
-      .where(
-        or(
-          eq(memoryEntriesTable.type, "long_term"),
-          ilike(memoryEntriesTable.content, `%${query}%`),
-          ilike(memoryEntriesTable.source, `%${query}%`),
-        )
-      )
-      .orderBy(desc(memoryEntriesTable.createdAt))
-      .limit(limit ?? 20);
-
-    entries = entries.filter((e) => e.type === "long_term");
-  } else {
-    entries = await db.select().from(memoryEntriesTable)
-      .where(eq(memoryEntriesTable.type, "long_term"))
-      .orderBy(desc(memoryEntriesTable.createdAt))
-      .limit(limit ?? 20);
-  }
+  const { limit = 20 } = params.data;
+  const entries = await db.select().from(memoryEntriesTable)
+    .where(eq(memoryEntriesTable.type, "long_term"))
+    .orderBy(desc(memoryEntriesTable.createdAt))
+    .limit(limit ?? 20);
 
   const body = GetLongTermMemoryResponse.parse({
     entries: entries.map(mapEntry),
@@ -118,6 +109,13 @@ router.post("/memory/long-term", async (req, res) => {
     expiresAt: null,
   }).returning();
 
+  bus.emit({
+    source: "memory-api",
+    target: null,
+    type: "memory.stored",
+    payload: { entryId: entry.id, type: "long_term", source, keywords: keywords ?? [] },
+  });
+
   res.status(201).json(mapEntry(entry));
 });
 
@@ -128,7 +126,16 @@ router.delete("/memory/long-term/:id", async (req, res) => {
     return;
   }
 
-  await db.delete(memoryEntriesTable).where(eq(memoryEntriesTable.id, parseInt(params.data.id)));
+  const numericId = parseInt(params.data.id);
+  await db.delete(memoryEntriesTable).where(eq(memoryEntriesTable.id, numericId));
+
+  bus.emit({
+    source: "memory-api",
+    target: null,
+    type: "memory.deleted",
+    payload: { entryId: numericId },
+  });
+
   res.status(204).send();
 });
 
@@ -163,7 +170,6 @@ router.get("/memory/recent", async (req, res) => {
   }
 
   const { limit = 20 } = parsed.data;
-
   const entries = await memoryService.getRecent(limit);
 
   const body = GetRecentMemoryResponse.parse({
@@ -182,6 +188,14 @@ router.post("/memory", async (req, res) => {
 
   const { content, keywords, source, type, ttlSeconds } = parsed.data;
   const entry = await memoryService.store({ content, keywords, source, type, ttlSeconds: ttlSeconds ?? undefined });
+
+  bus.emit({
+    source: "memory-api",
+    target: null,
+    type: "memory.stored",
+    payload: { entryId: entry.id, type, source, keywords: keywords ?? [] },
+  });
+
   res.status(201).json(entry);
 });
 
@@ -192,12 +206,21 @@ router.delete("/memory/:id", async (req, res) => {
     return;
   }
 
-  if (isNaN(parseInt(parsed.data.id))) {
+  const numericId = parseInt(parsed.data.id);
+  if (isNaN(numericId)) {
     res.status(400).json({ error: "Invalid id" });
     return;
   }
 
   await memoryService.deleteById(parsed.data.id);
+
+  bus.emit({
+    source: "memory-api",
+    target: null,
+    type: "memory.deleted",
+    payload: { entryId: numericId },
+  });
+
   res.status(204).send();
 });
 

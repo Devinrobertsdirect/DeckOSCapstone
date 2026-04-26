@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { BusEventSchema } from "./types.js";
 import type { BusEvent, EventFilter, EventHandler, EventType } from "./types.js";
 
 type Subscription = {
@@ -10,6 +11,11 @@ type Subscription = {
 type PersistFn = (event: BusEvent) => void;
 type LogFn = (msg: string, data?: unknown) => void;
 
+type TraceHooks = {
+  isEnabled: () => boolean;
+  log: (msg: string, data?: unknown) => void;
+};
+
 export class EventBus {
   private subscriptions: Subscription[] = [];
   private queue: BusEvent[] = [];
@@ -18,21 +24,34 @@ export class EventBus {
   private readonly maxMemoryHistory = 500;
   private persistFn?: PersistFn;
   private logError: LogFn = console.error;
+  private trace?: TraceHooks;
 
-  constructor(opts?: { persist?: PersistFn; logError?: LogFn }) {
+  constructor(opts?: { persist?: PersistFn; logError?: LogFn; trace?: TraceHooks }) {
     this.persistFn = opts?.persist;
-    if (opts?.logError) {
-      this.logError = opts.logError;
-    }
+    if (opts?.logError) this.logError = opts.logError;
+    if (opts?.trace) this.trace = opts.trace;
   }
 
-  emit(event: Omit<BusEvent, "id" | "timestamp">): void {
-    const full: BusEvent = {
+  emit(event: Omit<BusEvent, "id" | "timestamp" | "version">): void {
+    const full = {
       ...event,
+      version: "v1" as const,
       id: randomUUID(),
       timestamp: new Date().toISOString(),
     };
-    this.queue.push(full);
+
+    const parsed = BusEventSchema.safeParse(full);
+    if (!parsed.success) {
+      this.logError("EventBus: rejected invalid event", {
+        type: (event as { type?: unknown }).type,
+        issues: parsed.error.issues,
+      });
+      return;
+    }
+
+    const validated = parsed.data;
+    this.traceLog("queued", { eventId: validated.id, type: validated.type, source: validated.source });
+    this.queue.push(validated);
     this.drain();
   }
 
@@ -43,26 +62,25 @@ export class EventBus {
   }
 
   unsubscribe(subscriptionId: string): void {
-    this.subscriptions = this.subscriptions.filter(
-      (s) => s.id !== subscriptionId,
-    );
+    this.subscriptions = this.subscriptions.filter((s) => s.id !== subscriptionId);
   }
 
   history(filter?: EventFilter): BusEvent[] {
     let results = [...this.memoryHistory];
 
-    if (filter?.type) {
-      results = results.filter((e) => e.type === filter.type);
-    }
-    if (filter?.source) {
-      results = results.filter((e) => e.source === filter.source);
-    }
+    if (filter?.type) results = results.filter((e) => e.type === filter.type);
+    if (filter?.source) results = results.filter((e) => e.source === filter.source);
 
     results = results.reverse();
-
     const offset = filter?.offset ?? 0;
     const limit = filter?.limit ?? 100;
     return results.slice(offset, offset + limit);
+  }
+
+  private traceLog(stage: string, data: unknown): void {
+    if (this.trace?.isEnabled()) {
+      this.trace.log(`EventBus[${stage}]`, data);
+    }
   }
 
   private drain(): void {
@@ -81,9 +99,7 @@ export class EventBus {
 
   private async dispatch(event: BusEvent): Promise<void> {
     this.memoryHistory.push(event);
-    if (this.memoryHistory.length > this.maxMemoryHistory) {
-      this.memoryHistory.shift();
-    }
+    if (this.memoryHistory.length > this.maxMemoryHistory) this.memoryHistory.shift();
 
     if (this.persistFn) {
       try {
@@ -93,18 +109,23 @@ export class EventBus {
       }
     }
 
+    this.traceLog("dispatched", { eventId: event.id, type: event.type, source: event.source });
+
     const matching = this.subscriptions.filter(
       (s) =>
         s.type === "*" ||
         s.type === event.type ||
-        (event.type.startsWith(s.type + ".") ) ||
-        (event.target === null || s.type === event.target),
+        event.type.startsWith(s.type + ".") ||
+        event.target === s.type,
     );
 
     for (const sub of matching) {
+      this.traceLog("handler-start", { eventId: event.id, type: event.type, subscriptionId: sub.id });
       try {
         await sub.handler(event);
+        this.traceLog("handler-end", { eventId: event.id, subscriptionId: sub.id, result: "ok" });
       } catch (err) {
+        this.traceLog("handler-end", { eventId: event.id, subscriptionId: sub.id, result: "error", err: String(err) });
         this.logError(`EventBus: handler error for type=${event.type}`, err);
       }
     }

@@ -104,11 +104,7 @@ export class PluginRegistry {
     }
 
     const plugin = instance;
-    const entry: PluginEntry = {
-      plugin,
-      enabled: true,
-      status: "loading",
-    };
+    const entry: PluginEntry = { plugin, enabled: true, status: "loading" };
     this.plugins.set(plugin.id, entry);
 
     const context = this.buildContext(plugin);
@@ -165,17 +161,6 @@ export class PluginRegistry {
       memory: this.memory,
       infer: this.inferFn,
     };
-  }
-
-  routeEvent(event: BusEvent): void {
-    for (const [, entry] of this.plugins) {
-      if (!entry.enabled || entry.status !== "active") continue;
-      void entry.plugin.on_event(event).catch((err: unknown) => {
-        entry.status = "error";
-        entry.errorMessage = String(err);
-        logger.error({ err, pluginId: entry.plugin.id, eventType: event.type }, "Plugin on_event error");
-      });
-    }
   }
 
   async shutdownAll(): Promise<void> {

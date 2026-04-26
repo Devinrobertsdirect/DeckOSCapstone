@@ -16,6 +16,8 @@ export const SystemEventTypeSchema = z.enum([
   "system.error",
   "system.heartbeat",
   "system.config_changed",
+  "system.monitor.metrics",
+  "system.monitor.request",
 ]);
 
 export const PluginEventTypeSchema = z.enum([
@@ -39,6 +41,8 @@ export const AiEventTypeSchema = z.enum([
   "ai.inference_completed",
   "ai.model_changed",
   "ai.error",
+  "ai.chat.request",
+  "ai.chat.response",
 ]);
 
 export const MemoryEventTypeSchema = z.enum([
@@ -54,13 +58,13 @@ export const EventTypeSchema = z.union([
   DeviceEventTypeSchema,
   AiEventTypeSchema,
   MemoryEventTypeSchema,
-  z.string(),
 ]);
 
 export type EventType = z.infer<typeof EventTypeSchema>;
 
 export const BusEventSchema = z.object({
   id: z.string(),
+  version: z.literal("v1"),
   source: z.string(),
   target: z.string().nullable(),
   type: EventTypeSchema,

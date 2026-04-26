@@ -47,7 +47,7 @@ export type InferResult = {
 };
 
 export type PluginContext = {
-  emit: (event: Omit<BusEvent, "id" | "timestamp">) => void;
+  emit: (event: Omit<BusEvent, "id" | "timestamp" | "version">) => void;
   subscribe: (type: EventType | string, handler: EventHandler) => string;
   logger: PluginLogger;
   memory?: PluginMemory;

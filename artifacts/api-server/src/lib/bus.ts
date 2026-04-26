@@ -2,6 +2,7 @@ import { EventBus } from "@workspace/event-bus";
 import { db, systemEventsTable } from "@workspace/db";
 import type { BusEvent } from "@workspace/event-bus";
 import { logger } from "./logger.js";
+import { traceState } from "./trace.js";
 
 function persistEvent(event: BusEvent): void {
   db.insert(systemEventsTable)
@@ -11,13 +12,13 @@ function persistEvent(event: BusEvent): void {
       source: event.source,
       data: {
         eventId: event.id,
+        version: event.version,
         target: event.target,
         payload: event.payload,
         timestamp: event.timestamp,
       } as Record<string, unknown>,
     })
-    .then(() => {
-    })
+    .then(() => {})
     .catch((err: unknown) => {
       logger.error({ err, eventId: event.id }, "EventBus: failed to persist event");
     });
@@ -26,4 +27,8 @@ function persistEvent(event: BusEvent): void {
 export const bus = new EventBus({
   persist: persistEvent,
   logError: (msg, data) => logger.error({ data }, msg),
+  trace: {
+    isEnabled: () => traceState.isEnabled(),
+    log: (msg, data) => traceState.log(msg, data),
+  },
 });
