@@ -10,6 +10,7 @@ import { HudCorners } from "@/components/HudCorners";
 type MetricsPayload = {
   cpu?: { usage?: number };
   memory?: { percentage?: number };
+  disk?: { percentage?: number; total?: number; used?: number; free?: number; path?: string };
   uptime?: number;
 };
 
