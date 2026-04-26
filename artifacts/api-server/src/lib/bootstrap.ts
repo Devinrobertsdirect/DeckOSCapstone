@@ -301,6 +301,11 @@ export async function bootstrap(): Promise<void> {
 
   await registry.loadPluginsDir();
 
+  const { loadEnabledCommunityPlugins } = await import("../routes/store.js");
+  await loadEnabledCommunityPlugins().catch((err) =>
+    logger.warn({ err }, "Bootstrap: community plugin restore failed"),
+  );
+
   const deviceManager = createDeviceManager(bus);
 
   registerQueryHandlers(deviceManager);

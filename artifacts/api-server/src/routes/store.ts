@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { readFileSync, mkdirSync, writeFileSync } from "fs";
+import { readFileSync, mkdirSync, writeFileSync, unlinkSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import path from "path";
 import { z } from "zod";
@@ -11,6 +11,8 @@ import { logger } from "../lib/logger.js";
 const router = Router();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const SAFE_PLUGIN_ID_RE = /^[a-z][a-z0-9_-]{0,63}$/;
 
 interface RegistryPlugin {
   id: string;
@@ -61,46 +63,91 @@ async function fetchRegistry(): Promise<Registry> {
   return data;
 }
 
-const COMMUNITY_PLUGINS_DIR = path.resolve(process.cwd(), "community-plugins");
+export const COMMUNITY_PLUGINS_DIR = path.resolve(process.cwd(), "community-plugins");
 
-async function downloadAndLoadPlugin(entry: RegistryPlugin): Promise<void> {
-  if (!entry.entrypointUrl) {
-    logger.info({ pluginId: entry.id }, "Store: no entrypointUrl — skipping runtime load");
-    return;
-  }
+function communityPluginLocalPath(pluginId: string): string {
+  return path.join(COMMUNITY_PLUGINS_DIR, `${pluginId}.mjs`);
+}
 
-  let pluginFile: string;
+async function downloadPluginFile(entry: RegistryPlugin): Promise<string | null> {
+  if (!entry.entrypointUrl) return null;
+
+  const res = await fetch(entry.entrypointUrl, { signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${entry.entrypointUrl}`);
+  const text = await res.text();
+
+  mkdirSync(COMMUNITY_PLUGINS_DIR, { recursive: true });
+  const localPath = communityPluginLocalPath(entry.id);
+  writeFileSync(localPath, text, "utf-8");
+  return localPath;
+}
+
+async function loadCommunityPlugin(entry: RegistryPlugin): Promise<{ loaded: boolean; warning?: string }> {
+  let localPath: string | null;
   try {
-    const res = await fetch(entry.entrypointUrl, { signal: AbortSignal.timeout(15_000) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    pluginFile = await res.text();
+    localPath = await downloadPluginFile(entry);
   } catch (err) {
-    logger.warn({ err, pluginId: entry.id, url: entry.entrypointUrl }, "Store: failed to download plugin entrypoint — installed in DB only");
-    return;
+    const msg = `Download failed: ${err instanceof Error ? err.message : String(err)}`;
+    logger.warn({ pluginId: entry.id, url: entry.entrypointUrl }, `Store: ${msg}`);
+    return { loaded: false, warning: msg };
+  }
+
+  if (!localPath) {
+    return { loaded: false, warning: "No entrypointUrl — runtime activation skipped" };
   }
 
   try {
-    mkdirSync(COMMUNITY_PLUGINS_DIR, { recursive: true });
-    const localPath = path.join(COMMUNITY_PLUGINS_DIR, `${entry.id}.mjs`);
-    writeFileSync(localPath, pluginFile, "utf-8");
-
     const { registry } = await import("../lib/bootstrap.js");
     if (registry) {
       await registry.loadPlugin(localPath);
       logger.info({ pluginId: entry.id, localPath }, "Store: community plugin loaded into runtime");
+      return { loaded: true };
     }
+    return { loaded: false, warning: "Runtime registry not yet initialised" };
   } catch (err) {
-    logger.warn({ err, pluginId: entry.id }, "Store: runtime load failed — installed in DB only");
+    const msg = `Runtime load failed: ${err instanceof Error ? err.message : String(err)}`;
+    logger.warn({ err, pluginId: entry.id }, `Store: ${msg}`);
+    return { loaded: false, warning: msg };
+  }
+}
+
+export async function loadEnabledCommunityPlugins(): Promise<void> {
+  let installed: (typeof communityPluginsTable.$inferSelect)[];
+  try {
+    installed = await db
+      .select()
+      .from(communityPluginsTable)
+      .where(eq(communityPluginsTable.enabled, true));
+  } catch (err) {
+    logger.warn({ err }, "Store: failed to query community plugins at startup");
+    return;
+  }
+
+  for (const row of installed) {
+    const localPath = communityPluginLocalPath(row.pluginId);
+    if (existsSync(localPath)) {
+      try {
+        const { registry } = await import("../lib/bootstrap.js");
+        if (registry) {
+          await registry.loadPlugin(localPath);
+          logger.info({ pluginId: row.pluginId }, "Store: restored community plugin into runtime");
+        }
+      } catch (err) {
+        logger.warn({ err, pluginId: row.pluginId }, "Store: failed to restore community plugin at startup");
+      }
+    } else {
+      logger.info({ pluginId: row.pluginId }, "Store: community plugin file missing on disk — skipping runtime restore");
+    }
   }
 }
 
 router.get("/plugins/store/registry", async (_req, res) => {
   try {
-    const registry = await fetchRegistry();
+    const storeRegistry = await fetchRegistry();
     const installed = await db.select().from(communityPluginsTable);
     const installedIds = new Set(installed.map((p) => p.pluginId));
 
-    const plugins = registry.plugins.map((p) => {
+    const plugins = storeRegistry.plugins.map((p) => {
       const row = installed.find((i) => i.pluginId === p.id);
       return {
         ...p,
@@ -110,7 +157,7 @@ router.get("/plugins/store/registry", async (_req, res) => {
       };
     });
 
-    res.json({ version: registry.version, updatedAt: registry.updatedAt, plugins });
+    res.json({ version: storeRegistry.version, updatedAt: storeRegistry.updatedAt, plugins });
   } catch (err) {
     logger.error({ err }, "Failed to fetch plugin registry");
     res.status(500).json({ error: "Failed to load plugin registry" });
@@ -121,6 +168,11 @@ const InstallBody = z.object({ force: z.boolean().optional().default(false) });
 
 router.post("/plugins/store/install/:pluginId", async (req, res) => {
   const { pluginId } = req.params;
+
+  if (!SAFE_PLUGIN_ID_RE.test(pluginId)) {
+    res.status(400).json({ error: "Invalid plugin ID format" });
+    return;
+  }
 
   const parsed = InstallBody.safeParse(req.body ?? {});
   if (!parsed.success) {
@@ -196,12 +248,9 @@ router.post("/plugins/store/install/:pluginId", async (req, res) => {
       payload: { pluginId, name: entry.name, version: entry.version },
     });
 
-    downloadAndLoadPlugin(entry).catch((err) =>
-      logger.warn({ err, pluginId }, "Store: background runtime load failed"),
-    );
-
-    logger.info({ pluginId, version: entry.version }, "Community plugin installed");
-    res.json({ pluginId, installed: true, version: entry.version });
+    const { loaded, warning } = await loadCommunityPlugin(entry);
+    logger.info({ pluginId, version: entry.version, runtimeLoaded: loaded }, "Community plugin installed");
+    res.json({ pluginId, installed: true, version: entry.version, runtimeLoaded: loaded, ...(warning ? { warning } : {}) });
   } catch (err) {
     logger.error({ err, pluginId }, "Failed to install community plugin");
     res.status(500).json({ error: "Install failed" });
@@ -210,6 +259,11 @@ router.post("/plugins/store/install/:pluginId", async (req, res) => {
 
 router.delete("/plugins/store/uninstall/:pluginId", async (req, res) => {
   const { pluginId } = req.params;
+
+  if (!SAFE_PLUGIN_ID_RE.test(pluginId)) {
+    res.status(400).json({ error: "Invalid plugin ID format" });
+    return;
+  }
 
   const existing = await db
     .select()
@@ -231,6 +285,16 @@ router.delete("/plugins/store/uninstall/:pluginId", async (req, res) => {
     );
   }
 
+  const localPath = communityPluginLocalPath(pluginId);
+  if (existsSync(localPath)) {
+    try {
+      unlinkSync(localPath);
+      logger.info({ pluginId, localPath }, "Store: community plugin file removed");
+    } catch (err) {
+      logger.warn({ err, pluginId }, "Store: failed to delete plugin file — continuing");
+    }
+  }
+
   bus.emit({
     source: "store",
     target: null,
@@ -244,6 +308,11 @@ router.delete("/plugins/store/uninstall/:pluginId", async (req, res) => {
 
 router.patch("/plugins/store/:pluginId/toggle", async (req, res) => {
   const { pluginId } = req.params;
+
+  if (!SAFE_PLUGIN_ID_RE.test(pluginId)) {
+    res.status(400).json({ error: "Invalid plugin ID format" });
+    return;
+  }
 
   const bodyParsed = z.object({ enabled: z.boolean() }).safeParse(req.body);
   if (!bodyParsed.success) {
