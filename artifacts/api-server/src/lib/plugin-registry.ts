@@ -202,4 +202,23 @@ export class PluginRegistry {
     });
     return true;
   }
+
+  async unloadPlugin(id: string): Promise<boolean> {
+    const entry = this.plugins.get(id);
+    if (!entry) return false;
+    try {
+      await entry.plugin.shutdown();
+    } catch (err) {
+      logger.error({ err, pluginId: id }, "PluginRegistry: shutdown error during unload");
+    }
+    this.plugins.delete(id);
+    this.bus.emit({
+      source: "plugin-registry",
+      target: null,
+      type: "plugin.unloaded",
+      payload: { pluginId: id },
+    });
+    logger.info({ pluginId: id }, "PluginRegistry: plugin unloaded");
+    return true;
+  }
 }

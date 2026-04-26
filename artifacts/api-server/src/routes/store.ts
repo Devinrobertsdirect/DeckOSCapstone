@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { readFileSync } from "fs";
+import { readFileSync, mkdirSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
 import path from "path";
 import { z } from "zod";
@@ -61,6 +61,39 @@ async function fetchRegistry(): Promise<Registry> {
   return data;
 }
 
+const COMMUNITY_PLUGINS_DIR = path.resolve(process.cwd(), "community-plugins");
+
+async function downloadAndLoadPlugin(entry: RegistryPlugin): Promise<void> {
+  if (!entry.entrypointUrl) {
+    logger.info({ pluginId: entry.id }, "Store: no entrypointUrl — skipping runtime load");
+    return;
+  }
+
+  let pluginFile: string;
+  try {
+    const res = await fetch(entry.entrypointUrl, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    pluginFile = await res.text();
+  } catch (err) {
+    logger.warn({ err, pluginId: entry.id, url: entry.entrypointUrl }, "Store: failed to download plugin entrypoint — installed in DB only");
+    return;
+  }
+
+  try {
+    mkdirSync(COMMUNITY_PLUGINS_DIR, { recursive: true });
+    const localPath = path.join(COMMUNITY_PLUGINS_DIR, `${entry.id}.mjs`);
+    writeFileSync(localPath, pluginFile, "utf-8");
+
+    const { registry } = await import("../lib/bootstrap.js");
+    if (registry) {
+      await registry.loadPlugin(localPath);
+      logger.info({ pluginId: entry.id, localPath }, "Store: community plugin loaded into runtime");
+    }
+  } catch (err) {
+    logger.warn({ err, pluginId: entry.id }, "Store: runtime load failed — installed in DB only");
+  }
+}
+
 router.get("/plugins/store/registry", async (_req, res) => {
   try {
     const registry = await fetchRegistry();
@@ -95,16 +128,16 @@ router.post("/plugins/store/install/:pluginId", async (req, res) => {
     return;
   }
 
-  let registry: Registry;
+  let storeRegistry: Registry;
   try {
-    registry = await fetchRegistry();
+    storeRegistry = await fetchRegistry();
   } catch (err) {
     logger.error({ err }, "Registry unavailable during install");
     res.status(503).json({ error: "Registry unavailable" });
     return;
   }
 
-  const entry = registry.plugins.find((p) => p.id === pluginId);
+  const entry = storeRegistry.plugins.find((p) => p.id === pluginId);
   if (!entry) {
     res.status(404).json({ error: `Plugin '${pluginId}' not found in registry` });
     return;
@@ -163,6 +196,10 @@ router.post("/plugins/store/install/:pluginId", async (req, res) => {
       payload: { pluginId, name: entry.name, version: entry.version },
     });
 
+    downloadAndLoadPlugin(entry).catch((err) =>
+      logger.warn({ err, pluginId }, "Store: background runtime load failed"),
+    );
+
     logger.info({ pluginId, version: entry.version }, "Community plugin installed");
     res.json({ pluginId, installed: true, version: entry.version });
   } catch (err) {
@@ -187,6 +224,13 @@ router.delete("/plugins/store/uninstall/:pluginId", async (req, res) => {
 
   await db.delete(communityPluginsTable).where(eq(communityPluginsTable.pluginId, pluginId));
 
+  const { registry } = await import("../lib/bootstrap.js");
+  if (registry) {
+    await registry.unloadPlugin(pluginId).catch((err) =>
+      logger.warn({ err, pluginId }, "Store: runtime unload failed — removed from DB"),
+    );
+  }
+
   bus.emit({
     source: "store",
     target: null,
@@ -200,7 +244,14 @@ router.delete("/plugins/store/uninstall/:pluginId", async (req, res) => {
 
 router.patch("/plugins/store/:pluginId/toggle", async (req, res) => {
   const { pluginId } = req.params;
-  const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+
+  const bodyParsed = z.object({ enabled: z.boolean() }).safeParse(req.body);
+  if (!bodyParsed.success) {
+    res.status(400).json({ error: "Body must include { enabled: boolean }" });
+    return;
+  }
+
+  const { enabled } = bodyParsed.data;
 
   const existing = await db
     .select()
@@ -217,6 +268,11 @@ router.patch("/plugins/store/:pluginId/toggle", async (req, res) => {
     .update(communityPluginsTable)
     .set({ enabled })
     .where(eq(communityPluginsTable.pluginId, pluginId));
+
+  const { registry } = await import("../lib/bootstrap.js");
+  if (registry) {
+    registry.setEnabled(pluginId, enabled);
+  }
 
   bus.emit({
     source: "store",
