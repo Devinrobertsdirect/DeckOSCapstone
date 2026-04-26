@@ -163,14 +163,28 @@ if [[ "$START_SERVERS" == true ]]; then
   log "Starting dev servers..."
   echo "  API server → http://localhost:8080"
   echo "  Deck OS    → http://localhost:5173"
+  echo "  Press Ctrl+C to stop both servers"
   echo ""
-  pnpm --parallel --filter @workspace/api-server --filter @workspace/deck-os run dev
+  # Each service needs its own PORT.
+  # The API reads PORT from the loaded .env (default 8080).
+  # The Vite frontend requires PORT and BASE_PATH; we inject dedicated values
+  # so there is no port conflict regardless of what .env sets.
+  (PORT="${PORT:-8080}" pnpm --filter @workspace/api-server run dev) &
+  API_PID=$!
+  (PORT=5173 BASE_PATH="${BASE_PATH:-/}" pnpm --filter @workspace/deck-os run dev) &
+  WEB_PID=$!
+  trap 'kill $API_PID $WEB_PID 2>/dev/null; exit' INT TERM
+  wait $API_PID $WEB_PID
 else
-  echo "  To start Deck OS:"
+  echo "  To start Deck OS manually:"
   echo ""
-  echo "    pnpm --parallel --filter @workspace/api-server --filter @workspace/deck-os run dev"
+  echo "    # API server (uses PORT from .env):"
+  echo "    pnpm --filter @workspace/api-server run dev"
   echo ""
-  echo "  Or run everything at once:"
+  echo "    # Frontend (requires PORT and BASE_PATH):"
+  echo "    PORT=5173 BASE_PATH=/ pnpm --filter @workspace/deck-os run dev"
+  echo ""
+  echo "  Or run both at once:"
   echo ""
   echo "    bash setup.sh --start"
   echo ""
