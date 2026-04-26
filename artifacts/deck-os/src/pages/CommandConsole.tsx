@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { TerminalSquare, CheckCircle2, XCircle, Brain, Zap, Loader2, ChevronRight, Circle } from "lucide-react";
+import { VoiceMicButton } from "@/components/VoiceMicButton";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWebSocket, useWsEvents } from "@/contexts/WebSocketContext";
@@ -124,6 +125,31 @@ export default function CommandConsole() {
 
   const hasPending = lines.some((l) => l.pending);
 
+  const handleVoiceTranscript = useCallback(async (transcript: string): Promise<string> => {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: transcript, channel: "voice", mode: aiMode }),
+    });
+    if (!res.ok) return "";
+    const data = await res.json() as { response: string };
+
+    const requestId = `voice-${Date.now()}`;
+    setLines((prev) => [
+      ...prev,
+      {
+        id: requestId,
+        input: `[VOICE] ${transcript}`,
+        output: data.response,
+        aiAssisted: true,
+        pending: false,
+        timestamp: new Date().toISOString(),
+      },
+    ].slice(-100));
+
+    return data.response ?? "";
+  }, [aiMode]);
+
   const recentChatRequests = chatRequests.slice(-20).reverse();
 
   return (
@@ -211,6 +237,10 @@ export default function CommandConsole() {
                 className="font-mono border-none bg-transparent focus-visible:ring-0 text-primary px-0 flex-1"
                 placeholder="Enter command — sent as ai.chat.request event..."
                 autoFocus
+              />
+              <VoiceMicButton
+                onTranscript={handleVoiceTranscript}
+                disabled={hasPending}
               />
               <button
                 type="submit"

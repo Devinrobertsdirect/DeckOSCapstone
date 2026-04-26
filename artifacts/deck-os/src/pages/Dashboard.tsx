@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Terminal, Cpu, MemoryStick, Activity, Network, Circle, Radio, Zap, Send, MapPin, Battery, Wifi, Eye, CheckCircle2, AlertTriangle, Power, ChevronRight, X } from "lucide-react";
+import { VoiceMicButton } from "@/components/VoiceMicButton";
 import { type LucideIcon } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useWebSocket, useLatestPayload, useWsEvents } from "@/contexts/WebSocketContext";
@@ -137,41 +138,59 @@ export default function Dashboard() {
     });
   }, []);
 
+  const runCommand = useCallback(async (cmd: string): Promise<string> => {
+    setBusy(true);
+    addLine("cmd", `> ${cmd}`);
+    let responseText = "";
+    try {
+      const res = await fetch("/api/commands", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: cmd, mode: "auto" }),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => res.statusText);
+        addLine("error", `  ERR [${res.status}] ${errText.substring(0, 120)}`);
+      } else {
+        const data = await res.json();
+        const output: string = data.output ?? "(no output)";
+        output.split("\n").forEach((line) => addLine("ok", `  ${line}`));
+        if (data.executionTimeMs !== undefined) {
+          addLine("system", `  [${data.modeUsed ?? "AUTO"} · ${data.executionTimeMs}ms]`);
+        }
+        responseText = data.output ?? "";
+      }
+    } catch (err) {
+      addLine("error", `  ERR ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+    return responseText;
+  }, [addLine]);
+
+  const handleVoiceTranscript = useCallback(async (transcript: string): Promise<string> => {
+    addLine("system", `  [VOICE] "${transcript}"`);
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: transcript, channel: "voice" }),
+    });
+    if (!res.ok) return "";
+    const data = await res.json() as { response: string };
+    addLine("ok", `  ${data.response}`);
+    addLine("system", `  [VOICE.REPLY]`);
+    return data.response ?? "";
+  }, [addLine]);
+
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
       const cmd = cmdInput.trim();
       if (!cmd || busy) return;
-
       setCmdInput("");
-      setBusy(true);
-      addLine("cmd", `> ${cmd}`);
-
-      try {
-        const res = await fetch("/api/commands", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ input: cmd, mode: "auto" }),
-        });
-
-        if (!res.ok) {
-          const errText = await res.text().catch(() => res.statusText);
-          addLine("error", `  ERR [${res.status}] ${errText.substring(0, 120)}`);
-        } else {
-          const data = await res.json();
-          const output: string = data.output ?? "(no output)";
-          output.split("\n").forEach((line) => addLine("ok", `  ${line}`));
-          if (data.executionTimeMs !== undefined) {
-            addLine("system", `  [${data.modeUsed ?? "AUTO"} · ${data.executionTimeMs}ms]`);
-          }
-        }
-      } catch (err) {
-        addLine("error", `  ERR ${err instanceof Error ? err.message : String(err)}`);
-      } finally {
-        setBusy(false);
-      }
+      await runCommand(cmd);
     },
-    [cmdInput, busy, addLine]
+    [cmdInput, busy, runCommand]
   );
 
   return (
@@ -244,6 +263,11 @@ export default function Dashboard() {
               className="flex-1 bg-transparent font-mono text-xs text-primary placeholder-primary/25 outline-none border-none focus:ring-0"
               autoComplete="off"
               spellCheck={false}
+            />
+            <VoiceMicButton
+              onTranscript={handleVoiceTranscript}
+              disabled={busy}
+              compact
             />
             <button
               type="submit"

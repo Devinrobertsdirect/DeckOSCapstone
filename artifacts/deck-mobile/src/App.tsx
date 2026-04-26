@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useVoiceRecorder } from "./hooks/useVoiceRecorder";
+import { useAudioPlayback } from "./hooks/useAudioPlayback";
 
 const API_BASE = `${window.location.origin}/api`;
 const WS_URL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/api/ws`;
@@ -148,6 +150,8 @@ function useWebSocket(onMessage: (data: unknown) => void) {
   return { wsState, sendMessage };
 }
 
+type VoicePipelineState = "idle" | "listening" | "transcribing" | "chatting" | "speaking" | "error";
+
 export default function App() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
@@ -156,8 +160,13 @@ export default function App() {
   const [showIdentity, setShowIdentity] = useState(false);
   const [aiName, setAiName] = useState("JARVIS");
   const [userName, setUserName] = useState<string | null>(null);
+  const [voiceState, setVoiceState] = useState<VoicePipelineState>("idle");
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const voicePressedRef = useRef(false);
+
+  const { recorderState, micDenied, supported: micSupported, startRecording, stopRecording, cancelRecording } = useVoiceRecorder();
+  const { speak } = useAudioPlayback();
 
   const handleWsMessage = useCallback((data: unknown) => {
     const msg = data as { type: string; content?: string; modelUsed?: string; latencyMs?: number; timestamp?: string };
@@ -281,6 +290,106 @@ export default function App() {
     }
   };
 
+  const onVoicePressStart = useCallback(async () => {
+    if (loading || voiceState !== "idle" || !micSupported || micDenied) return;
+    voicePressedRef.current = true;
+    try {
+      await startRecording();
+      setVoiceState("listening");
+    } catch {
+      setVoiceState("error");
+      setTimeout(() => setVoiceState("idle"), 2000);
+    }
+  }, [loading, voiceState, micSupported, micDenied, startRecording]);
+
+  const onVoicePressEnd = useCallback(async () => {
+    if (!voicePressedRef.current) return;
+    voicePressedRef.current = false;
+    if (recorderState !== "listening" && voiceState !== "listening") return;
+
+    let base64Audio: string;
+    try {
+      base64Audio = await stopRecording();
+    } catch {
+      setVoiceState("error");
+      setTimeout(() => setVoiceState("idle"), 2000);
+      return;
+    }
+
+    if (!base64Audio || base64Audio.length < 100) { setVoiceState("idle"); return; }
+
+    try {
+      setVoiceState("transcribing");
+      const sttRes = await fetch(`${API_BASE}/vision/stt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audio: base64Audio }),
+      });
+      if (!sttRes.ok) { setVoiceState("error"); setTimeout(() => setVoiceState("idle"), 2000); return; }
+      const { transcript } = await sttRes.json() as { transcript: string };
+      if (!transcript?.trim()) { setVoiceState("idle"); return; }
+
+      const userMsg: ChatMsg = {
+        id: `u_voice_${Date.now()}`,
+        role: "user",
+        content: transcript.trim(),
+        channel: "voice",
+        timestamp: new Date().toISOString(),
+      };
+      const pendingMsg: ChatMsg = {
+        id: `p_voice_${Date.now()}`,
+        role: "assistant",
+        content: "",
+        timestamp: new Date().toISOString(),
+        pending: true,
+      };
+      setMessages((prev) => [...prev, userMsg, pendingMsg]);
+
+      setVoiceState("chatting");
+      const chatRes = await fetch(`${API_BASE}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: transcript.trim(), channel: "voice", sessionId: SESSION_ID }),
+      });
+      const chatData = await chatRes.json() as { response: string; modelUsed?: string; latencyMs?: number };
+      const aiMsg: ChatMsg = {
+        id: `a_voice_${Date.now()}`,
+        role: "assistant",
+        content: chatData.response,
+        channel: "voice",
+        modelUsed: chatData.modelUsed,
+        latencyMs: chatData.latencyMs,
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev.filter((m) => !m.pending), aiMsg]);
+
+      setVoiceState("speaking");
+      const ttsRes = await fetch(`${API_BASE}/vision/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: chatData.response }),
+      });
+      if (ttsRes.ok) {
+        const { audio } = await ttsRes.json() as { audio: string };
+        await speak(audio);
+      }
+    } catch {
+      setMessages((prev) => prev.filter((m) => !m.pending));
+      setVoiceState("error");
+      setTimeout(() => setVoiceState("idle"), 2000);
+      return;
+    }
+
+    setVoiceState("idle");
+  }, [voiceState, recorderState, stopRecording, speak]);
+
+  const onVoiceCancel = useCallback(() => {
+    if (!voicePressedRef.current) return;
+    voicePressedRef.current = false;
+    cancelRecording();
+    setVoiceState("idle");
+  }, [cancelRecording]);
+
   return (
     <div className="h-full flex flex-col bg-background text-foreground overflow-hidden select-none">
       <div className="scanline" />
@@ -339,6 +448,24 @@ export default function App() {
         <span className="font-mono text-xs text-primary/20 ml-auto">SESSION.{SESSION_ID.slice(-6).toUpperCase()}</span>
       </div>
 
+      {/* VOICE STATE INDICATOR */}
+      {voiceState !== "idle" && (
+        <div className={`shrink-0 px-4 py-2 border-t flex items-center gap-2 font-mono text-xs ${
+          voiceState === "listening"   ? "border-[#f03248]/30 bg-[#f03248]/5 text-[#f03248]" :
+          voiceState === "speaking"    ? "border-[#11d97a]/30 bg-[#11d97a]/5 text-[#11d97a]" :
+          voiceState === "error"       ? "border-[#f03248]/30 bg-[#f03248]/5 text-[#f03248]" :
+          "border-[#ffc820]/30 bg-[#ffc820]/5 text-[#ffc820]"
+        }`}>
+          <span className="animate-pulse">●</span>
+          <span className="uppercase tracking-wider">
+            {voiceState === "listening" ? "LISTENING — release to send" :
+             voiceState === "transcribing" ? "TRANSCRIBING…" :
+             voiceState === "chatting" ? "THINKING…" :
+             voiceState === "speaking" ? "SPEAKING…" : "ERROR"}
+          </span>
+        </div>
+      )}
+
       {/* INPUT */}
       <div className="shrink-0 border-t border-primary/30 bg-card/80 p-3">
         <div className={`flex gap-2 items-end border px-3 py-2 transition-colors ${loading ? "border-primary/20 opacity-60" : "pulse-border"}`}>
@@ -354,6 +481,40 @@ export default function App() {
             className="flex-1 bg-transparent font-mono text-sm text-primary placeholder-primary/25 resize-none outline-none leading-5 max-h-28 disabled:cursor-not-allowed"
             style={{ minHeight: "1.25rem" }}
           />
+          {micSupported && !micDenied && (
+            <button
+              type="button"
+              disabled={loading || (voiceState !== "idle" && voiceState !== "listening")}
+              className={`shrink-0 w-9 h-9 flex items-center justify-center border transition-all select-none touch-none ${
+                voiceState === "listening" ? "border-[#f03248]/60 text-[#f03248]" :
+                voiceState === "speaking"  ? "border-[#11d97a]/60 text-[#11d97a]" :
+                voiceState !== "idle"      ? "border-[#ffc820]/40 text-[#ffc820]" :
+                "border-primary/30 text-primary/50 hover:border-primary/60 hover:text-primary"
+              }`}
+              aria-label="Voice input"
+              onMouseDown={(e) => { e.preventDefault(); void onVoicePressStart(); }}
+              onMouseUp={() => void onVoicePressEnd()}
+              onMouseLeave={() => { if (voicePressedRef.current) onVoiceCancel(); }}
+              onTouchStart={(e) => { e.preventDefault(); void onVoicePressStart(); }}
+              onTouchEnd={(e) => { e.preventDefault(); void onVoicePressEnd(); }}
+              onTouchCancel={onVoiceCancel}
+            >
+              {voiceState === "listening" ? (
+                <span className="text-[10px] font-mono animate-pulse">●</span>
+              ) : voiceState === "speaking" ? (
+                <span className="text-[10px] font-mono animate-pulse">♪</span>
+              ) : voiceState !== "idle" ? (
+                <span className="text-[10px] font-mono animate-spin inline-block">◌</span>
+              ) : (
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                  <line x1="12" y1="19" x2="12" y2="23"/>
+                  <line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
+              )}
+            </button>
+          )}
           <button
             onClick={() => void send()}
             disabled={loading || !input.trim()}
@@ -362,7 +523,7 @@ export default function App() {
             SEND
           </button>
         </div>
-        <div className="font-mono text-xs text-primary/20 mt-1.5 text-right">↵ Enter to send · Shift+↵ newline</div>
+        <div className="font-mono text-xs text-primary/20 mt-1.5 text-right">↵ Enter to send · Shift+↵ newline · hold 🎤 to speak</div>
       </div>
     </div>
   );
