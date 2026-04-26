@@ -34,7 +34,12 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - Full Iron Man JARVIS-style cyberdeck dashboard
 - React + Vite + TailwindCSS, dark-only, JetBrains Mono font
 - Pages: Dashboard HUD, AI Router, Plugins, Memory Bank, Cognitive Model, Goal Manager, Feedback Loop, Autonomous Layer, Devices, Command Console
-- Nav sections: SYSTEM (6 pages) | COGNITION (4 pages)
+- Nav sections: SYSTEM (6 pages) | COGNITION (4 pages) | Visual Mode selector (sidebar footer)
+- Visual Mode system: minimal / standard / cinematic — persisted to localStorage, applied via `data-visual-mode` HTML attribute
+- Dashboard: fixed AI.MODE tile overflow, added LIVE badges + timestamps per tile, live console lines, richer SYS.SUMMARY panel
+- HUD corners (hud-corner-tl/tr/bl/br): visible only in cinematic mode via CSS
+- Cinematic mode: breathing card glow (card-breathe), value flicker, enhanced scanline, nav active glow
+- Minimal mode: no scanline, no grid, no glow animations, desaturated palette
 
 ### API Server (`artifacts/api-server`)
 - **Port**: 8080
