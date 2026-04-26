@@ -205,6 +205,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen flex flex-col overflow-hidden relative">
       <div className="scanline z-50" />
 
+      {/* ── Cinematic overlay layers (CSS hides unless cinematic mode) ── */}
+      <div className="cinematic-vignette"      aria-hidden="true" />
+      <div className="cinematic-blob cinematic-blob-1" aria-hidden="true" />
+      <div className="cinematic-blob cinematic-blob-2" aria-hidden="true" />
+      <div className="cinematic-noise"         aria-hidden="true" />
+      <div className="cinematic-scanline-2"    aria-hidden="true" />
+
       {/* Device Discovery — fixed overlay, mounts above content */}
       <DeviceDiscovery />
 

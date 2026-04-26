@@ -191,23 +191,19 @@
 }
 
 /* ───────────────────────────────────────────
-   CINEMATIC EXTRAS
+   CINEMATIC EXTRAS — keyframes
 ─────────────────────────────────────────── */
 @keyframes card-breathe {
-  0%, 100% { box-shadow: 0 0 6px rgba(var(--primary-rgb),0.08), inset 0 0 12px rgba(var(--primary-rgb),0.03); }
-  50%       { box-shadow: 0 0 18px rgba(var(--primary-rgb),0.22), inset 0 0 24px rgba(var(--primary-rgb),0.07); }
-}
-
-@keyframes border-crawl {
-  0%   { background-position: 0% 0%, 100% 0%, 100% 100%, 0% 100%; }
-  100% { background-position: 100% 0%, 100% 100%, 0% 100%, 0% 0%; }
+  0%, 100% { box-shadow: 0 0 8px rgba(var(--primary-rgb),0.10), inset 0 0 14px rgba(var(--primary-rgb),0.04); }
+  50%       { box-shadow: 0 0 28px rgba(var(--primary-rgb),0.35), inset 0 0 30px rgba(var(--primary-rgb),0.10); }
 }
 
 @keyframes value-flicker {
-  0%, 96%, 100% { opacity: 1; }
-  97%           { opacity: 0.7; }
+  0%, 92%, 100% { opacity: 1; }
+  93%           { opacity: 0.6; }
+  95%           { opacity: 1; }
+  97%           { opacity: 0.75; }
   98%           { opacity: 1; }
-  99%           { opacity: 0.85; }
 }
 
 @keyframes ambient-float {
@@ -215,8 +211,99 @@
   50%       { transform: translateY(-6px); opacity: 0.7; }
 }
 
+@keyframes blob-drift-1 {
+  0%, 100% { transform: translate(0px,   0px)  scale(1);    opacity: 0.14; }
+  25%       { transform: translate(40px, -30px) scale(1.07); opacity: 0.20; }
+  50%       { transform: translate(20px,  50px) scale(0.95); opacity: 0.10; }
+  75%       { transform: translate(-30px,-20px) scale(1.04); opacity: 0.18; }
+}
+
+@keyframes blob-drift-2 {
+  0%, 100% { transform: translate(0px,  0px)  scale(1);    opacity: 0.10; }
+  33%       { transform: translate(-40px,30px) scale(1.08); opacity: 0.16; }
+  66%       { transform: translate(25px,-40px) scale(0.93); opacity: 0.08; }
+}
+
+@keyframes hud-corner-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 0.85; }
+}
+
+@keyframes scanline-2 {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
 /* ───────────────────────────────────────────
-   MODE: MINIMAL
+   CINEMATIC OVERLAY LAYERS
+   (rendered in Layout as fixed divs, shown only in cinematic mode)
+─────────────────────────────────────────── */
+
+/* Vignette — darkens edges for that cinema aspect feel */
+.cinematic-vignette {
+  display: none;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  background:
+    radial-gradient(ellipse 110% 90% at 50% 50%, transparent 28%, rgba(0,0,6,0.72) 100%);
+}
+
+/* Ambient glow blobs */
+.cinematic-blob {
+  display: none;
+  position: fixed;
+  pointer-events: none;
+  border-radius: 50%;
+  z-index: 1;
+}
+.cinematic-blob-1 {
+  width: 800px; height: 600px;
+  top: -200px; right: -180px;
+  background: radial-gradient(circle, rgba(var(--primary-rgb), 0.28) 0%, transparent 65%);
+  filter: blur(90px);
+  animation: blob-drift-1 22s ease-in-out infinite;
+}
+.cinematic-blob-2 {
+  width: 700px; height: 700px;
+  bottom: -250px; left: -150px;
+  background: radial-gradient(circle, rgba(var(--primary-rgb), 0.18) 0%, transparent 65%);
+  filter: blur(110px);
+  animation: blob-drift-2 30s ease-in-out infinite;
+}
+
+/* Film grain / noise texture */
+.cinematic-noise {
+  display: none;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 61;
+  opacity: 0.055;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+}
+
+/* Secondary scanline (offset phase) */
+.cinematic-scanline-2 {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, rgba(var(--primary-rgb),0.5) 50%, transparent 100%);
+  box-shadow: 0 0 10px rgba(var(--primary-rgb), 0.5);
+  animation: scanline-2 9s linear infinite;
+  animation-delay: -4.5s;
+  pointer-events: none;
+  z-index: 55;
+  opacity: 0.4;
+}
+
+/* ───────────────────────────────────────────
+   MODE: MINIMAL — clean, no-animation interface
 ─────────────────────────────────────────── */
 html[data-visual-mode="minimal"] {
   --grid-opacity: 0;
@@ -224,57 +311,106 @@ html[data-visual-mode="minimal"] {
   --glow-intensity: 0;
 }
 
-html[data-visual-mode="minimal"] .scanline        { display: none; }
-html[data-visual-mode="minimal"] .pulse-glow       { animation: none !important; box-shadow: none !important; }
-html[data-visual-mode="minimal"] .metric-card-glow { box-shadow: none !important; animation: none !important; }
-html[data-visual-mode="minimal"] .hud-corner        { display: none; }
-html[data-visual-mode="minimal"] body              { background-image: none; }
+html[data-visual-mode="minimal"] .scanline { display: none; }
 
-/* minimal mode keeps the chosen color theme — no hue override */
+/* Kill all decorative animations — keep usability transitions */
+html[data-visual-mode="minimal"] .pulse-glow,
+html[data-visual-mode="minimal"] .metric-card-glow,
+html[data-visual-mode="minimal"] .metric-value,
+html[data-visual-mode="minimal"] .cinematic-ambient {
+  animation: none !important;
+  box-shadow: none !important;
+}
+
+html[data-visual-mode="minimal"] .hud-corner { display: none; }
+html[data-visual-mode="minimal"] body { background-image: none; }
+
+/* Clean flat chrome — header / sidebar */
+html[data-visual-mode="minimal"] header {
+  box-shadow: none;
+  border-bottom-color: rgba(var(--primary-rgb), 0.12);
+  backdrop-filter: none;
+  background-color: hsl(var(--card));
+}
+html[data-visual-mode="minimal"] aside {
+  box-shadow: none;
+  border-right-color: rgba(var(--primary-rgb), 0.10);
+}
+html[data-visual-mode="minimal"] .nav-active {
+  box-shadow: none;
+  background: rgba(var(--primary-rgb), 0.07);
+}
+/* Minimal cards: just a quiet border, no glow */
+html[data-visual-mode="minimal"] [class*="border-primary"] {
+  border-color: rgba(var(--primary-rgb), 0.14) !important;
+}
 
 /* ───────────────────────────────────────────
-   MODE: CINEMATIC
+   MODE: CINEMATIC — full immersion
 ─────────────────────────────────────────── */
 html[data-visual-mode="cinematic"] {
-  --grid-opacity: 0.055;
-  --scanline-opacity: 0.6;
-  --glow-intensity: 2;
-  /* primary color comes from theme choice — no hue override here */
+  --grid-opacity: 0.065;
+  --scanline-opacity: 0.7;
+  --glow-intensity: 2.5;
 }
 
-html[data-visual-mode="cinematic"] .scanline {
-  height: 3px;
-  background: linear-gradient(90deg, transparent, rgba(var(--primary-rgb),0.9), transparent);
-  box-shadow: 0 0 18px rgba(var(--primary-rgb),0.9), 0 0 40px rgba(var(--primary-rgb),0.4);
-  animation-duration: 3.5s;
-}
-
-html[data-visual-mode="cinematic"] .metric-card-glow {
-  animation: card-breathe 3.2s ease-in-out infinite;
-}
-
-html[data-visual-mode="cinematic"] .metric-value {
-  animation: value-flicker 8s ease-in-out infinite;
-}
-
-html[data-visual-mode="cinematic"] .pulse-glow {
-  animation: pulse-glow 1.8s ease-in-out infinite;
-}
-
-html[data-visual-mode="cinematic"] .hud-corner {
+/* Show all cinematic overlay layers */
+html[data-visual-mode="cinematic"] .cinematic-vignette,
+html[data-visual-mode="cinematic"] .cinematic-blob,
+html[data-visual-mode="cinematic"] .cinematic-noise,
+html[data-visual-mode="cinematic"] .cinematic-scanline-2 {
   display: block;
 }
 
+/* Primary scanline — thicker, brighter, slower */
+html[data-visual-mode="cinematic"] .scanline {
+  height: 3px;
+  background: linear-gradient(90deg, transparent 5%, rgba(var(--primary-rgb),1) 50%, transparent 95%);
+  box-shadow: 0 0 22px rgba(var(--primary-rgb),1), 0 0 60px rgba(var(--primary-rgb),0.5), 0 0 4px white;
+  animation-duration: 4s;
+  opacity: 0.75;
+}
+
+/* Cards breathe in cinematic */
+html[data-visual-mode="cinematic"] .metric-card-glow {
+  animation: card-breathe 2.8s ease-in-out infinite;
+}
+
+/* Metric numbers occasionally flicker like real screens */
+html[data-visual-mode="cinematic"] .metric-value {
+  animation: value-flicker 9s ease-in-out infinite;
+}
+
+/* Orb pulse faster */
+html[data-visual-mode="cinematic"] .pulse-glow {
+  animation: pulse-glow 1.6s ease-in-out infinite;
+  box-shadow: 0 0 20px rgba(var(--primary-rgb),0.6), 0 0 40px rgba(var(--primary-rgb),0.2);
+}
+
+/* HUD corners — visible + slow pulse */
+html[data-visual-mode="cinematic"] .hud-corner {
+  display: block;
+  animation: hud-corner-pulse 3.5s ease-in-out infinite;
+}
+
+/* Header: dramatic underside glow */
 html[data-visual-mode="cinematic"] header {
-  box-shadow: 0 1px 20px rgba(var(--primary-rgb),0.12), 0 0 40px rgba(var(--primary-rgb),0.05);
+  border-bottom-color: rgba(var(--primary-rgb), 0.45);
+  box-shadow:
+    0 1px 0 rgba(var(--primary-rgb), 0.3),
+    0 2px 30px rgba(var(--primary-rgb), 0.18),
+    0 0 80px rgba(var(--primary-rgb), 0.08);
 }
 
+/* Sidebar: subtle side glow */
 html[data-visual-mode="cinematic"] aside {
-  box-shadow: 2px 0 20px rgba(var(--primary-rgb),0.06);
+  border-right-color: rgba(var(--primary-rgb), 0.25);
+  box-shadow: 2px 0 40px rgba(var(--primary-rgb),0.12), inset -1px 0 0 rgba(var(--primary-rgb),0.15);
 }
 
+/* Active nav items: inset glow + outer halo */
 html[data-visual-mode="cinematic"] .nav-active {
-  box-shadow: inset 0 0 16px rgba(var(--primary-rgb),0.12), 0 0 8px rgba(var(--primary-rgb),0.1);
+  box-shadow: inset 0 0 20px rgba(var(--primary-rgb),0.15), 0 0 12px rgba(var(--primary-rgb),0.15);
 }
 
 html[data-visual-mode="cinematic"] .cinematic-ambient {
