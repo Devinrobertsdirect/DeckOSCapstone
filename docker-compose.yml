@@ -119,6 +119,10 @@ services:
     build:
       context: .
       dockerfile: artifacts/deck-os/Dockerfile
+      args:
+        # Vite config requires PORT and BASE_PATH at build time.
+        PORT: "80"
+        BASE_PATH: "${BASE_PATH:-/}"
     restart: unless-stopped
     depends_on:
       api:
