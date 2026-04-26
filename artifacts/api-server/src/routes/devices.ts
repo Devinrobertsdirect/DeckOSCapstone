@@ -9,8 +9,18 @@ import {
   GetDeviceStatsResponse,
 } from "@workspace/api-zod";
 import { getDeviceManager } from "../lib/device-manager.js";
+import { db, deviceReadingsTable } from "@workspace/db";
+import { eq, desc } from "drizzle-orm";
 
 const router = Router();
+
+function parseStoredValue(raw: string): number | boolean | string {
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  const n = Number(raw);
+  if (!Number.isNaN(n)) return n;
+  return raw;
+}
 
 type ApiDevice = {
   id: string;
@@ -84,7 +94,7 @@ router.get("/devices/:deviceId", (req, res) => {
   res.json(body);
 });
 
-router.get("/devices/:deviceId/history", (req, res) => {
+router.get("/devices/:deviceId/history", async (req, res) => {
   const deviceId = req.params["deviceId"];
   if (!deviceId) {
     res.status(400).json({ error: "deviceId required" });
@@ -98,8 +108,34 @@ router.get("/devices/:deviceId/history", (req, res) => {
     return;
   }
 
-  const history = dm.getHistory(deviceId);
-  res.json({ deviceId, history, total: history.length });
+  const memoryHistory = dm.getHistory(deviceId);
+
+  if (memoryHistory.length > 0) {
+    res.json({ deviceId, history: memoryHistory, total: memoryHistory.length, source: "memory" });
+    return;
+  }
+
+  try {
+    const rows = await db
+      .select()
+      .from(deviceReadingsTable)
+      .where(eq(deviceReadingsTable.deviceId, deviceId))
+      .orderBy(desc(deviceReadingsTable.recordedAt))
+      .limit(50);
+
+    const history = rows
+      .reverse()
+      .map((row) => ([{
+        sensor:    row.sensor,
+        value:     parseStoredValue(row.value),
+        unit:      row.unit ?? null,
+        timestamp: row.recordedAt.toISOString(),
+      }]));
+
+    res.json({ deviceId, history, total: history.length, source: "db" });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to retrieve device history" });
+  }
 });
 
 router.post("/devices/:deviceId/control", (req, res) => {

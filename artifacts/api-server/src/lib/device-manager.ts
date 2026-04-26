@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { EventBus } from "@workspace/event-bus";
 import { logger } from "./logger.js";
+import { db, deviceReadingsTable } from "@workspace/db";
 
 export type DeviceCategory = "sensor" | "actuator" | "hybrid";
 export type DeviceProtocol = "mqtt" | "websocket" | "simulated";
@@ -106,6 +107,19 @@ export class DeviceManager {
     this.commandHandlers.set(deviceId, handler);
   }
 
+  private recordTelemetry(deviceId: string, readings: DeviceReading[]): void {
+    if (readings.length === 0) return;
+    const rows = readings.map((r) => ({
+      deviceId,
+      sensor: r.sensor,
+      value:  String(r.value),
+      unit:   r.unit ?? null,
+    }));
+    db.insert(deviceReadingsTable).values(rows).catch((err) => {
+      logger.warn({ err, deviceId }, "DeviceManager: failed to persist readings to DB");
+    });
+  }
+
   updateState(deviceId: string, partialState: Partial<DeviceState>): void {
     const device = this.registry.get(deviceId);
     if (!device) {
@@ -121,6 +135,7 @@ export class DeviceManager {
       if (device.history.length > this.maxHistoryPerDevice) {
         device.history.shift();
       }
+      this.recordTelemetry(deviceId, partialState.readings);
     }
 
     this.bus.emit({

@@ -1,4 +1,16 @@
-import { pgTable, text, boolean, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, jsonb, timestamp, serial } from "drizzle-orm/pg-core";
+
+export const deviceReadingsTable = pgTable("device_readings", {
+  id:        serial("id").primaryKey(),
+  deviceId:  text("device_id").notNull(),
+  sensor:    text("sensor").notNull(),
+  value:     text("value").notNull(),
+  unit:      text("unit"),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type DeviceReadingRow = typeof deviceReadingsTable.$inferSelect;
+export type NewDeviceReadingRow = typeof deviceReadingsTable.$inferInsert;
 
 export const deviceProfilesTable = pgTable("device_profiles", {
   deviceId:     text("device_id").primaryKey(),
