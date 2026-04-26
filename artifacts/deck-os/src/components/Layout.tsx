@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { getStoredConfig } from "@/components/Onboarding";
 import { Link, useLocation } from "wouter";
 import {
   Activity, HardDrive, Cpu as Microchip, Network, Settings,
@@ -13,6 +14,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { mode, setMode } = useVisualMode();
+  const cfg = useMemo(() => getStoredConfig(), []);
+  const systemName = cfg?.systemName ?? "JARVIS";
+  const userName   = cfg?.userName   ?? null;
 
   useEffect(() => {
     document.documentElement.classList.add("dark");
@@ -63,7 +67,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
           <div>
             <h1 className="text-xl font-bold text-primary tracking-widest uppercase m-0 leading-none">Deck OS</h1>
-            <p className="text-xs text-primary/50 font-mono">SYS.VER.9.4.2 // JARVIS</p>
+            <p className="text-xs text-primary/50 font-mono">SYS.VER.9.4.2 // {systemName}</p>
           </div>
         </div>
 
@@ -148,6 +152,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
             <div className="mt-2 border border-primary/20 p-2.5 bg-background/50 font-mono text-xs">
               <div className="text-primary/40 mb-1 uppercase text-xs tracking-wider">Override</div>
+              {userName && (
+                <div className="flex justify-between mb-0.5">
+                  <span className="text-primary/40">CMDR:</span>
+                  <span className="text-[#00c8ff] uppercase tracking-wider truncate max-w-[80px]">{userName}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-primary/40">Level:</span>
                 <span className="text-[#ffcc00]">ALPHA</span>
@@ -157,6 +167,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <span className="text-primary">SECURE</span>
               </div>
             </div>
+
+            <button
+              onClick={() => {
+                if (confirm(`Re-run the ${systemName} setup wizard?`)) {
+                  localStorage.removeItem("jarvis.initialized");
+                  window.location.reload();
+                }
+              }}
+              className="mt-1 w-full text-left px-2 py-1.5 font-mono text-xs text-primary/20 hover:text-primary/50 transition-colors"
+            >
+              ↺ Reset setup
+            </button>
           </div>
         </aside>
 

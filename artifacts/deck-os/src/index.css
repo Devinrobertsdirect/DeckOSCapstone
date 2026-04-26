@@ -259,6 +259,30 @@ html[data-visual-mode="cinematic"] .cinematic-ambient {
 .hud-corner-br { bottom: 0; right: 0; border-width: 0 1px 1px 0; }
 
 /* ───────────────────────────────────────────
+   ONBOARDING ANIMATIONS
+─────────────────────────────────────────── */
+@keyframes ob-glow-in {
+  0%   { opacity: 0; text-shadow: none; transform: translateY(4px); }
+  40%  { opacity: 0.6; text-shadow: 0 0 20px rgba(0,200,255,0.6); }
+  100% { opacity: 1; text-shadow: 0 0 40px rgba(0,200,255,0.4), 0 0 80px rgba(0,200,255,0.2); transform: translateY(0); }
+}
+
+@keyframes ob-slide-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes ob-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes ob-btn-pulse {
+  0%, 100% { box-shadow: 0 0 16px rgba(0,200,255,0.2); }
+  50%       { box-shadow: 0 0 40px rgba(0,200,255,0.5); }
+}
+
+/* ───────────────────────────────────────────
    GLITCH (kept as utility)
 ─────────────────────────────────────────── */
 .glitch { animation: glitch 1s linear infinite; }

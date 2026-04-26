@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Layout } from "@/components/Layout";
 import { VisualModeProvider } from "@/contexts/VisualMode";
+import { Onboarding, isInitialized, type UserConfig } from "@/components/Onboarding";
 import NotFound from "@/pages/not-found";
 
 import Dashboard from "@/pages/Dashboard";
@@ -49,13 +51,23 @@ function Router() {
 }
 
 function App() {
+  const [initialized, setInitialized] = useState(() => isInitialized());
+
+  const handleOnboardingComplete = (_cfg: UserConfig) => {
+    setInitialized(true);
+  };
+
   return (
     <VisualModeProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Router />
-          </WouterRouter>
+          {!initialized ? (
+            <Onboarding onComplete={handleOnboardingComplete} />
+          ) : (
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <Router />
+            </WouterRouter>
+          )}
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>
