@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod";
 import {
   ListDevicesResponse,
   GetDeviceParams,
@@ -10,7 +11,12 @@ import {
 } from "@workspace/api-zod";
 import { getDeviceManager } from "../lib/device-manager.js";
 import { db, deviceReadingsTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, count } from "drizzle-orm";
+
+const DeviceHistoryQuerySchema = z.object({
+  limit:  z.coerce.number().int().min(1).max(500).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
 
 const router = Router();
 
@@ -101,6 +107,13 @@ router.get("/devices/:deviceId/history", async (req, res) => {
     return;
   }
 
+  const query = DeviceHistoryQuerySchema.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: query.error.message });
+    return;
+  }
+  const { limit, offset } = query.data;
+
   const dm = getDeviceManager();
   const device = dm.getDevice(deviceId);
   if (!device) {
@@ -111,17 +124,27 @@ router.get("/devices/:deviceId/history", async (req, res) => {
   const memoryHistory = dm.getHistory(deviceId);
 
   if (memoryHistory.length > 0) {
-    res.json({ deviceId, history: memoryHistory, total: memoryHistory.length, source: "memory" });
+    const total = memoryHistory.length;
+    const page  = memoryHistory.slice(offset, offset + limit);
+    res.json({ deviceId, history: page, total, limit, offset, source: "memory" });
     return;
   }
 
   try {
+    const [countRow] = await db
+      .select({ total: count() })
+      .from(deviceReadingsTable)
+      .where(eq(deviceReadingsTable.deviceId, deviceId));
+
+    const total = countRow?.total ?? 0;
+
     const rows = await db
       .select()
       .from(deviceReadingsTable)
       .where(eq(deviceReadingsTable.deviceId, deviceId))
       .orderBy(desc(deviceReadingsTable.recordedAt))
-      .limit(50);
+      .limit(limit)
+      .offset(offset);
 
     const history = rows
       .reverse()
@@ -132,7 +155,7 @@ router.get("/devices/:deviceId/history", async (req, res) => {
         timestamp: row.recordedAt.toISOString(),
       }]));
 
-    res.json({ deviceId, history, total: history.length, source: "db" });
+    res.json({ deviceId, history, total, limit, offset, source: "db" });
   } catch (err) {
     res.status(500).json({ error: "Failed to retrieve device history" });
   }
