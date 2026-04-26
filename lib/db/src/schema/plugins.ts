@@ -1,5 +1,15 @@
 import { pgTable, serial, text, integer, boolean, timestamp } from "drizzle-orm/pg-core";
 
+export const pluginStateTable = pgTable("plugin_state", {
+  pluginId: text("plugin_id").primaryKey(),
+  enabled: boolean("enabled").notNull().default(true),
+  lastActivity: timestamp("last_activity", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+export type PluginState = typeof pluginStateTable.$inferSelect;
+export type InsertPluginState = typeof pluginStateTable.$inferInsert;
+
 export const communityPluginsTable = pgTable("community_plugins", {
   id: serial("id").primaryKey(),
   pluginId: text("plugin_id").notNull().unique(),

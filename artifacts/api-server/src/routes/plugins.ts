@@ -10,6 +10,8 @@ import {
   ExecutePluginCommandBody,
   ExecutePluginCommandResponse,
 } from "@workspace/api-zod";
+import { db, pluginStateTable } from "@workspace/db";
+import { logger } from "../lib/logger.js";
 
 const router = Router();
 
@@ -128,6 +130,49 @@ const HEALTH_CHECK_COMMANDS: Record<string, string> = {
   automation_scheduler: "list",
 };
 
+async function persistPluginState(plugin: Plugin): Promise<void> {
+  try {
+    await db
+      .insert(pluginStateTable)
+      .values({
+        pluginId: plugin.id,
+        enabled: plugin.enabled,
+        lastActivity: plugin.lastActivity ? new Date(plugin.lastActivity) : null,
+      })
+      .onConflictDoUpdate({
+        target: pluginStateTable.pluginId,
+        set: {
+          enabled: plugin.enabled,
+          lastActivity: plugin.lastActivity ? new Date(plugin.lastActivity) : null,
+          updatedAt: new Date(),
+        },
+      });
+  } catch (err) {
+    logger.warn({ err, pluginId: plugin.id }, "plugins: failed to persist plugin state to DB");
+  }
+}
+
+async function loadPluginState(): Promise<void> {
+  try {
+    const rows = await db.select().from(pluginStateTable);
+    const stateMap = new Map(rows.map((r) => [r.pluginId, r]));
+
+    for (const plugin of plugins) {
+      const saved = stateMap.get(plugin.id);
+      if (saved) {
+        plugin.enabled = saved.enabled;
+        plugin.status = saved.enabled ? "active" : "inactive";
+        plugin.lastActivity = saved.lastActivity ? saved.lastActivity.toISOString() : null;
+      } else {
+        // First run — seed the DB with the default state
+        await persistPluginState(plugin);
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, "plugins: failed to load plugin state from DB — using in-memory defaults");
+  }
+}
+
 async function pingPlugin(plugin: Plugin): Promise<void> {
   const command = HEALTH_CHECK_COMMANDS[plugin.id];
   const handlers = pluginHandlers[plugin.id] ?? {};
@@ -138,6 +183,7 @@ async function pingPlugin(plugin: Plugin): Promise<void> {
     plugin.lastActivity = new Date().toISOString();
     plugin.status = "active";
     plugin.errorMessage = null;
+    await persistPluginState(plugin);
   } catch {
     plugin.status = "error";
     plugin.errorMessage = "Health check failed";
@@ -152,7 +198,8 @@ async function runHealthChecks(): Promise<void> {
   }
 }
 
-runHealthChecks();
+loadPluginState().then(() => runHealthChecks()).catch(() => runHealthChecks());
+
 const HEALTH_INTERVAL_MS = 60_000;
 setInterval(runHealthChecks, HEALTH_INTERVAL_MS);
 
@@ -176,7 +223,7 @@ router.get("/plugins/:pluginId", (req, res) => {
   res.json(body);
 });
 
-router.post("/plugins/:pluginId/toggle", (req, res) => {
+router.post("/plugins/:pluginId/toggle", async (req, res) => {
   const params = TogglePluginParams.safeParse(req.params);
   const body = TogglePluginBody.safeParse(req.body);
   if (!params.success || !body.success) {
@@ -195,6 +242,8 @@ router.post("/plugins/:pluginId/toggle", (req, res) => {
   if (body.data.enabled) {
     pingPlugin(plugin).catch(() => {});
   }
+
+  await persistPluginState(plugin);
 
   const response = TogglePluginResponse.parse(plugin);
   res.json(response);
@@ -251,6 +300,7 @@ router.post("/plugins/:pluginId/execute", async (req, res) => {
 
   if (success) {
     plugin.lastActivity = new Date().toISOString();
+    await persistPluginState(plugin);
   }
 
   const response = ExecutePluginCommandResponse.parse({
