@@ -309,12 +309,18 @@ function SensorHistoryPanel({
   );
 }
 
+type TypeFilter   = "all" | "sensor" | "actuator" | "display" | "network" | "simulated";
+type StatusFilter = "all" | "online" | "offline" | "error" | "standby";
+
 export default function DeviceControl() {
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   const [action, setAction] = useState("");
   const [controlLog, setControlLog] = useState<Array<{ deviceId: string; action: string; status: string; timestamp: string }>>([]);
   const [activeTab, setActiveTab] = useState<"control" | "history">("control");
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [searchQuery, setSearchQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   const { data: profilesData } = useQuery<{ profiles: DeviceProfile[] }>({
     queryKey: ["device-profiles"],
@@ -384,9 +390,23 @@ export default function DeviceControl() {
 
   const selectedDetail = selectedRestDevice ?? selected;
 
-  const onlineCount = devices.filter((d) => d.status === "online").length;
-  const offlineCount = devices.filter((d) => d.status === "offline").length;
-  const errorCount = devices.filter((d) => d.status === "error").length;
+  const filteredDevices = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return devices.filter((d) => {
+      if (q) {
+        const nameMatch = d.name.toLowerCase().includes(q);
+        const idMatch   = d.id.toLowerCase().includes(q);
+        if (!nameMatch && !idMatch) return false;
+      }
+      if (typeFilter !== "all" && (d.type ?? "simulated") !== typeFilter) return false;
+      if (statusFilter !== "all" && (d.status ?? "offline") !== statusFilter) return false;
+      return true;
+    });
+  }, [devices, searchQuery, typeFilter, statusFilter]);
+
+  const onlineCount  = filteredDevices.filter((d) => d.status === "online").length;
+  const offlineCount = filteredDevices.filter((d) => d.status === "offline").length;
+  const errorCount   = filteredDevices.filter((d) => d.status === "error").length;
 
   const { history: deviceHistory, loading: historyLoading, appendSnapshot } = useDeviceHistory(
     activeTab === "history" ? selectedDevice : null,
@@ -482,8 +502,10 @@ export default function DeviceControl() {
 
       <div className="grid grid-cols-4 gap-4">
         <div className="border border-primary/20 bg-card/40 p-3 font-mono text-center">
-          <div className="text-2xl text-primary font-bold">{devices.length}</div>
-          <div className="text-xs text-muted-foreground">TOTAL</div>
+          <div className="text-2xl text-primary font-bold">{filteredDevices.length}</div>
+          <div className="text-xs text-muted-foreground">
+            {filteredDevices.length < devices.length ? `FILTERED / ${devices.length}` : "TOTAL"}
+          </div>
         </div>
         <div className={`border bg-card/40 p-3 font-mono text-center ${onlineCount > 0 ? "border-[#22ff44]/30" : "border-primary/10"}`}>
           <div className="text-2xl text-[#22ff44] font-bold">{onlineCount}</div>
@@ -499,6 +521,60 @@ export default function DeviceControl() {
         </div>
       </div>
 
+      {/* ── Search + Filter bar ── */}
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by name or ID…"
+            className="font-mono text-xs pl-8 bg-card/40 border-primary/20 focus:border-primary/60 h-8"
+          />
+          <Network className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-primary/30 pointer-events-none" />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-primary/40 hover:text-primary text-xs font-mono leading-none"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        <div className="flex gap-1 flex-wrap">
+          {(["all", "sensor", "actuator", "online", "offline"] as const).map((f) => {
+            const isType = ["sensor", "actuator"].includes(f);
+            const isStatus = ["online", "offline"].includes(f);
+            const active = isType
+              ? typeFilter === f
+              : isStatus
+              ? statusFilter === f
+              : (typeFilter === "all" && statusFilter === "all");
+            const colorMap: Record<string, string> = {
+              all: "border-primary/40 text-primary bg-primary/10",
+              sensor: "border-[#00d4ff]/50 text-[#00d4ff] bg-[#00d4ff]/10",
+              actuator: "border-[#ffaa00]/50 text-[#ffaa00] bg-[#ffaa00]/10",
+              online: "border-[#22ff44]/50 text-[#22ff44] bg-[#22ff44]/10",
+              offline: "border-[#ff3333]/50 text-[#ff3333] bg-[#ff3333]/10",
+            };
+            return (
+              <button
+                key={f}
+                onClick={() => {
+                  if (f === "all") { setTypeFilter("all"); setStatusFilter("all"); }
+                  else if (isType)   setTypeFilter(typeFilter === f ? "all" : (f as TypeFilter));
+                  else if (isStatus) setStatusFilter(statusFilter === f ? "all" : (f as StatusFilter));
+                }}
+                className={`h-8 px-3 border font-mono text-xs tracking-wider uppercase transition-all ${
+                  active ? colorMap[f] : "border-primary/10 text-primary/40 hover:border-primary/30 hover:text-primary/70"
+                }`}
+              >
+                {f}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
         <div className="col-span-2 overflow-y-auto space-y-3">
           {isLoading && devices.length === 0 && (
@@ -507,12 +583,14 @@ export default function DeviceControl() {
               // Polling /api/devices...
             </div>
           )}
-          {!isLoading && devices.length === 0 && (
+          {!isLoading && filteredDevices.length === 0 && (
             <div className="font-mono text-xs text-primary/30 p-4 border border-primary/10 text-center">
-              // No devices registered. Connect a device or check MQTT config.
+              {devices.length === 0
+                ? "// No devices registered. Connect a device or check MQTT config."
+                : "// No devices match the current search or filter."}
             </div>
           )}
-          {devices.map((device) => {
+          {filteredDevices.map((device) => {
             const StatusIcon = STATUS_ICONS[device.status ?? "offline"] ?? AlertTriangle;
             const TypeIcon = TYPE_ICONS[device.type ?? "simulated"] ?? Cpu;
             const isSelected = selectedDevice === device.id;
