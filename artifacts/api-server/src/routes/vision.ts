@@ -7,6 +7,7 @@ import {
 } from "@workspace/integrations-openai-ai-server/audio";
 import { bus } from "../lib/bus.js";
 import { db, aiPersonaTable } from "@workspace/db";
+import { getConfig } from "../lib/app-config.js";
 
 const router = Router();
 
@@ -103,6 +104,30 @@ router.post("/ambient", async (req, res) => {
   }
 });
 
+// ── ElevenLabs TTS helper ─────────────────────────────────────────────────
+async function elevenLabsTts(text: string, voiceId: string, apiKey: string): Promise<Buffer> {
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "xi-api-key": apiKey,
+      "Content-Type": "application/json",
+      "Accept": "audio/mpeg",
+    },
+    body: JSON.stringify({
+      text: text.slice(0, 5000),
+      model_id: "eleven_turbo_v2",
+      voice_settings: { stability: 0.45, similarity_boost: 0.80 },
+    }),
+  });
+  if (!resp.ok) {
+    const msg = await resp.text().catch(() => "");
+    throw new Error(`ElevenLabs ${resp.status}: ${msg}`);
+  }
+  const buf = await resp.arrayBuffer();
+  return Buffer.from(buf);
+}
+
 router.post("/tts", async (req, res) => {
   const { text, voice } = req.body as { text?: string; voice?: string };
 
@@ -111,7 +136,22 @@ router.post("/tts", async (req, res) => {
     return;
   }
 
-  // If caller didn't supply a voice, use the persona's configured voice
+  // Check for ElevenLabs config first
+  const elKey    = await getConfig("ELEVENLABS_API_KEY").catch(() => null);
+  const provider = await getConfig("TTS_PROVIDER").catch(() => "auto");
+
+  if (elKey && provider !== "openai") {
+    const voiceId = voice ?? (await getConfig("ELEVENLABS_VOICE_ID").catch(() => "pNInz6obpgDQGcFmaJgB"));
+    try {
+      const audio = await elevenLabsTts(text, voiceId, elKey);
+      res.json({ audio: audio.toString("base64"), format: "mp3", provider: "elevenlabs" });
+      return;
+    } catch (err) {
+      console.warn("[TTS] ElevenLabs failed, falling back to OpenAI:", err);
+    }
+  }
+
+  // Fall back to OpenAI TTS
   let resolvedVoice = voice;
   if (!resolvedVoice) {
     try {
@@ -123,7 +163,21 @@ router.post("/tts", async (req, res) => {
   }
 
   const audio = await textToSpeech(text.slice(0, 4096), (resolvedVoice as "onyx"), "mp3");
-  res.json({ audio: audio.toString("base64"), format: "mp3" });
+  res.json({ audio: audio.toString("base64"), format: "mp3", provider: "openai" });
+});
+
+// ── ElevenLabs voices list (for settings UI) ─────────────────────────────
+router.get("/elevenlabs/voices", async (_req, res) => {
+  const apiKey = await getConfig("ELEVENLABS_API_KEY").catch(() => null);
+  if (!apiKey) { res.status(400).json({ error: "ELEVENLABS_API_KEY not configured" }); return; }
+
+  const resp = await fetch("https://api.elevenlabs.io/v1/voices", {
+    headers: { "xi-api-key": apiKey },
+  });
+  if (!resp.ok) { res.status(resp.status).json({ error: "ElevenLabs API error" }); return; }
+  const data = await resp.json() as { voices: { voice_id: string; name: string; category: string }[] };
+  const voices = (data.voices ?? []).map((v) => ({ id: v.voice_id, name: v.name, category: v.category }));
+  res.json({ voices });
 });
 
 router.post("/stt", async (req, res) => {

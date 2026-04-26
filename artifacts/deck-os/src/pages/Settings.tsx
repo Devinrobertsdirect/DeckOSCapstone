@@ -1,28 +1,44 @@
 import { useState, useEffect } from "react";
 import {
-  Settings as SettingsIcon, Wifi, WifiOff, Key, Cpu, CheckCircle2,
+  Settings as SettingsIcon, Wifi, Key, Cpu, CheckCircle2,
   XCircle, Loader2, Eye, EyeOff, Save, RotateCcw, AlertTriangle, Zap,
+  Volume2, Mic,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type Tab = "connection" | "apikeys" | "models";
 
 type ConfigState = {
-  OLLAMA_HOST:       string;
-  REASONING_MODEL:   string;
-  FAST_MODEL:        string;
-  OPENAI_API_KEY:    string;
-  ANTHROPIC_API_KEY: string;
+  OLLAMA_HOST:          string;
+  REASONING_MODEL:      string;
+  FAST_MODEL:           string;
+  OPENAI_API_KEY:       string;
+  ANTHROPIC_API_KEY:    string;
+  ELEVENLABS_API_KEY:   string;
+  ELEVENLABS_VOICE_ID:  string;
+  TTS_PROVIDER:         string;
 };
 
 type TestResult = { ok: boolean; models?: string[]; error?: string } | null;
 
+const EL_PRESET_VOICES = [
+  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam",   desc: "Deep, authoritative" },
+  { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", desc: "Calm, professional" },
+  { id: "TxGEqnHWrfWFTfGW9XjX", name: "Josh",   desc: "Confident, warm" },
+  { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella",  desc: "Friendly, clear" },
+  { id: "VR6AewLTigWG4xSOukaG", name: "Arnold", desc: "Strong, steady" },
+  { id: "MF3mGyEYCl7XYWbV9V6O", name: "Elli",   desc: "Expressive, natural" },
+];
+
 const DEFAULTS: ConfigState = {
-  OLLAMA_HOST:       "http://localhost:11434",
-  REASONING_MODEL:   "gemma3:9b",
-  FAST_MODEL:        "phi3",
-  OPENAI_API_KEY:    "",
-  ANTHROPIC_API_KEY: "",
+  OLLAMA_HOST:         "http://localhost:11434",
+  REASONING_MODEL:     "gemma3:9b",
+  FAST_MODEL:          "phi3",
+  OPENAI_API_KEY:      "",
+  ANTHROPIC_API_KEY:   "",
+  ELEVENLABS_API_KEY:  "",
+  ELEVENLABS_VOICE_ID: EL_PRESET_VOICES[0].id,
+  TTS_PROVIDER:        "auto",
 };
 
 function Badge({ ok }: { ok: boolean }) {
@@ -39,11 +55,14 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [saveOk, setSaveOk] = useState(false);
 
-  const [testing, setTesting]   = useState(false);
+  const [testing, setTesting]       = useState(false);
   const [testResult, setTestResult] = useState<TestResult>(null);
 
-  const [showOai, setShowOai]   = useState(false);
-  const [showAnt, setShowAnt]   = useState(false);
+  const [showOai, setShowOai]     = useState(false);
+  const [showAnt, setShowAnt]     = useState(false);
+  const [showEl, setShowEl]       = useState(false);
+  const [elTesting, setElTesting] = useState(false);
+  const [elTestOk, setElTestOk]   = useState<boolean | null>(null);
 
   useEffect(() => {
     fetch("/api/config")
@@ -51,11 +70,14 @@ export default function Settings() {
       .then((data: { config: Record<string, string> }) => {
         const c = data.config ?? {};
         setCfg({
-          OLLAMA_HOST:       c["OLLAMA_HOST"]       ?? DEFAULTS.OLLAMA_HOST,
-          REASONING_MODEL:   c["REASONING_MODEL"]   ?? DEFAULTS.REASONING_MODEL,
-          FAST_MODEL:        c["FAST_MODEL"]         ?? DEFAULTS.FAST_MODEL,
-          OPENAI_API_KEY:    c["OPENAI_API_KEY"]    ?? "",
-          ANTHROPIC_API_KEY: c["ANTHROPIC_API_KEY"] ?? "",
+          OLLAMA_HOST:         c["OLLAMA_HOST"]         ?? DEFAULTS.OLLAMA_HOST,
+          REASONING_MODEL:     c["REASONING_MODEL"]     ?? DEFAULTS.REASONING_MODEL,
+          FAST_MODEL:          c["FAST_MODEL"]           ?? DEFAULTS.FAST_MODEL,
+          OPENAI_API_KEY:      c["OPENAI_API_KEY"]      ?? "",
+          ANTHROPIC_API_KEY:   c["ANTHROPIC_API_KEY"]   ?? "",
+          ELEVENLABS_API_KEY:  c["ELEVENLABS_API_KEY"]  ?? "",
+          ELEVENLABS_VOICE_ID: c["ELEVENLABS_VOICE_ID"] ?? DEFAULTS.ELEVENLABS_VOICE_ID,
+          TTS_PROVIDER:        c["TTS_PROVIDER"]         ?? "auto",
         });
         setSaved(c as Partial<ConfigState>);
       })
@@ -87,6 +109,40 @@ export default function Settings() {
       setTimeout(() => setSaveOk(false), 3000);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function testElevenLabs() {
+    if (!cfg.ELEVENLABS_API_KEY.trim()) return;
+    setElTesting(true);
+    setElTestOk(null);
+    try {
+      // Save first so backend picks it up
+      await fetch("/api/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ELEVENLABS_API_KEY:  cfg.ELEVENLABS_API_KEY,
+          ELEVENLABS_VOICE_ID: cfg.ELEVENLABS_VOICE_ID,
+          TTS_PROVIDER:        "elevenlabs",
+        }),
+      });
+      const r = await fetch("/api/vision/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "ElevenLabs voice connection confirmed." }),
+      });
+      if (!r.ok) throw new Error("TTS failed");
+      const { audio, format } = await r.json() as { audio: string; format: string };
+      const el = new Audio(`data:audio/${format};base64,${audio}`);
+      el.play().catch(() => {});
+      setElTestOk(true);
+      setCfg((prev) => ({ ...prev, TTS_PROVIDER: "elevenlabs" }));
+      setDirty(false);
+    } catch {
+      setElTestOk(false);
+    } finally {
+      setElTesting(false);
     }
   }
 
@@ -234,73 +290,162 @@ export default function Settings() {
             <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
             <span>
               API keys are stored in your local database. Only use cloud keys on machines you control.
-              Leave blank to use local Ollama only — no cloud key is required for JARVIS to work.
+              Deck OS works fully offline without them — Ollama handles the AI.
             </span>
           </div>
 
+          {/* ElevenLabs Voice */}
+          <Card className="bg-card/40 border-primary/20 rounded-none">
+            <CardHeader className="border-b border-primary/20 p-4">
+              <CardTitle className="font-mono text-xs text-primary flex items-center gap-2">
+                <Volume2 className="w-3.5 h-3.5" />
+                ELEVENLABS — AI VOICE
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-5">
+              <p className="font-mono text-xs text-primary/50 leading-relaxed">
+                ElevenLabs powers JARVIS's spoken voice — the most realistic AI voices available.
+                Get a free key at{" "}
+                <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener noreferrer"
+                   className="text-primary underline underline-offset-2">elevenlabs.io</a>.
+              </p>
+
+              {/* API Key */}
+              <div className="space-y-2">
+                <label className="font-mono text-xs text-primary/60 uppercase">ElevenLabs API Key</label>
+                <div className="relative">
+                  <input
+                    type={showEl ? "text" : "password"}
+                    value={cfg.ELEVENLABS_API_KEY}
+                    onChange={(e) => { change("ELEVENLABS_API_KEY", e.target.value); setElTestOk(null); }}
+                    placeholder="sk_••••••••••••••••"
+                    className="w-full bg-background border border-primary/30 px-3 py-2 pr-10 font-mono text-xs text-primary focus:border-primary focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEl((s) => !s)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-primary/40 hover:text-primary/70"
+                  >
+                    {showEl ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Voice Picker */}
+              <div className="space-y-2">
+                <label className="font-mono text-xs text-primary/60 uppercase">Voice</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {EL_PRESET_VOICES.map((v) => (
+                    <button
+                      key={v.id}
+                      onClick={() => { change("ELEVENLABS_VOICE_ID", v.id); setElTestOk(null); }}
+                      className={`border px-3 py-2 text-left transition-all duration-200
+                        ${cfg.ELEVENLABS_VOICE_ID === v.id
+                          ? "border-primary bg-primary/10"
+                          : "border-primary/20 hover:border-primary/50"
+                        }`}
+                    >
+                      <div className={`font-mono text-xs font-bold ${cfg.ELEVENLABS_VOICE_ID === v.id ? "text-primary" : "text-primary/60"}`}>
+                        {v.name}
+                      </div>
+                      <div className="font-mono text-[10px] text-primary/35 mt-0.5">{v.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* TTS Provider */}
+              <div className="space-y-2">
+                <label className="font-mono text-xs text-primary/60 uppercase">Voice Provider</label>
+                <div className="flex gap-2">
+                  {[
+                    { val: "auto",       label: "AUTO (ElevenLabs → OpenAI)" },
+                    { val: "elevenlabs", label: "ElevenLabs Only" },
+                    { val: "openai",     label: "OpenAI Only" },
+                  ].map(({ val, label }) => (
+                    <button
+                      key={val}
+                      onClick={() => change("TTS_PROVIDER", val)}
+                      className={`font-mono text-xs px-3 py-1.5 border transition-all
+                        ${cfg.TTS_PROVIDER === val
+                          ? "border-primary text-primary bg-primary/10"
+                          : "border-primary/20 text-primary/40 hover:border-primary/50 hover:text-primary/60"
+                        }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Test button */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={testElevenLabs}
+                  disabled={elTesting || !cfg.ELEVENLABS_API_KEY.trim()}
+                  className="flex items-center gap-1.5 px-4 py-2 border border-primary/40 font-mono text-xs text-primary hover:bg-primary/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {elTesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Volume2 className="w-3 h-3" />}
+                  {elTesting ? "TESTING..." : "PLAY TEST"}
+                </button>
+                {elTestOk === true  && <span className="font-mono text-xs text-[#11d97a] flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />VOICE OK</span>}
+                {elTestOk === false && <span className="font-mono text-xs text-[#f03248] flex items-center gap-1"><XCircle className="w-3 h-3" />CHECK KEY</span>}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* OpenAI + Anthropic */}
           <Card className="bg-card/40 border-primary/20 rounded-none">
             <CardHeader className="border-b border-primary/20 p-4">
               <CardTitle className="font-mono text-xs text-primary flex items-center gap-2">
                 <Key className="w-3.5 h-3.5" />
-                CLOUD.API.KEYS — OPTIONAL
+                CLOUD.AI.KEYS — OPTIONAL
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4 space-y-6">
               <p className="font-mono text-xs text-primary/50">
-                Set these only if you want JARVIS to fall back to a cloud AI when Ollama is unavailable.
-                Deck OS works fully offline without them.
+                OpenAI is needed for speech-to-text (hearing your voice). Both keys are optional — JARVIS runs fully offline on Ollama.
               </p>
 
               {/* OpenAI */}
               <div className="space-y-2">
-                <label className="font-mono text-xs text-primary/60 uppercase">OpenAI API Key</label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type={showOai ? "text" : "password"}
-                      value={cfg.OPENAI_API_KEY}
-                      onChange={(e) => change("OPENAI_API_KEY", e.target.value)}
-                      placeholder="sk-••••••••••••••••"
-                      className="w-full bg-background border border-primary/30 px-3 py-2 pr-10 font-mono text-xs text-primary focus:border-primary focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowOai((s) => !s)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-primary/40 hover:text-primary/70"
-                    >
-                      {showOai ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <Mic className="w-3 h-3 text-primary/40" />
+                  <label className="font-mono text-xs text-primary/60 uppercase">OpenAI Key <span className="text-primary/30 normal-case">(speech-to-text + cloud AI)</span></label>
                 </div>
-                <div className="font-mono text-xs text-primary/30">
-                  Get one at platform.openai.com → API Keys
+                <div className="relative">
+                  <input
+                    type={showOai ? "text" : "password"}
+                    value={cfg.OPENAI_API_KEY}
+                    onChange={(e) => change("OPENAI_API_KEY", e.target.value)}
+                    placeholder="sk-••••••••••••••••"
+                    className="w-full bg-background border border-primary/30 px-3 py-2 pr-10 font-mono text-xs text-primary focus:border-primary focus:outline-none"
+                  />
+                  <button type="button" onClick={() => setShowOai((s) => !s)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-primary/40 hover:text-primary/70">
+                    {showOai ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
                 </div>
+                <div className="font-mono text-xs text-primary/30">platform.openai.com → API Keys</div>
               </div>
 
               {/* Anthropic */}
               <div className="space-y-2">
-                <label className="font-mono text-xs text-primary/60 uppercase">Anthropic API Key</label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type={showAnt ? "text" : "password"}
-                      value={cfg.ANTHROPIC_API_KEY}
-                      onChange={(e) => change("ANTHROPIC_API_KEY", e.target.value)}
-                      placeholder="sk-ant-••••••••••••••••"
-                      className="w-full bg-background border border-primary/30 px-3 py-2 pr-10 font-mono text-xs text-primary focus:border-primary focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowAnt((s) => !s)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-primary/40 hover:text-primary/70"
-                    >
-                      {showAnt ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
+                <label className="font-mono text-xs text-primary/60 uppercase">Anthropic Key <span className="text-primary/30 normal-case">(Claude fallback)</span></label>
+                <div className="relative">
+                  <input
+                    type={showAnt ? "text" : "password"}
+                    value={cfg.ANTHROPIC_API_KEY}
+                    onChange={(e) => change("ANTHROPIC_API_KEY", e.target.value)}
+                    placeholder="sk-ant-••••••••••••••••"
+                    className="w-full bg-background border border-primary/30 px-3 py-2 pr-10 font-mono text-xs text-primary focus:border-primary focus:outline-none"
+                  />
+                  <button type="button" onClick={() => setShowAnt((s) => !s)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-primary/40 hover:text-primary/70">
+                    {showAnt ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
                 </div>
-                <div className="font-mono text-xs text-primary/30">
-                  Get one at console.anthropic.com → API Keys
-                </div>
+                <div className="font-mono text-xs text-primary/30">console.anthropic.com → API Keys</div>
               </div>
             </CardContent>
           </Card>

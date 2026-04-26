@@ -19,7 +19,7 @@ export interface UserConfig {
   ollamaUrl:   string;
 }
 
-type Phase = "color" | "boot" | "ai_name" | "voice_mode" | "user_name"
+type Phase = "color" | "boot" | "ai_name" | "api_keys" | "voice_mode" | "user_name"
            | "photo" | "questions" | "visual_mode" | "activation";
 
 // ─────────────────────────────────────────────
@@ -536,78 +536,351 @@ function AiNamePhase({ voiceMode, onNext }: { voiceMode: boolean; onNext: (name:
 }
 
 // ─────────────────────────────────────────────
-// Phase 3: Voice Mode
+// Phase 3: API Keys (ElevenLabs + OpenAI STT)
 // ─────────────────────────────────────────────
-function VoiceModePhase({ aiName, onNext }: { aiName: string; onNext: (voice: boolean) => void }) {
-  const [visible, setVisible] = useState(false);
+const EL_PRESET_VOICES = [
+  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam", desc: "Deep, authoritative" },
+  { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", desc: "Calm, professional" },
+  { id: "TxGEqnHWrfWFTfGW9XjX", name: "Josh", desc: "Confident, warm" },
+  { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella", desc: "Friendly, clear" },
+  { id: "VR6AewLTigWG4xSOukaG", name: "Arnold", desc: "Strong, steady" },
+  { id: "MF3mGyEYCl7XYWbV9V6O", name: "Elli", desc: "Expressive, natural" },
+];
+
+async function saveConfig(key: string, value: string): Promise<void> {
+  await fetch("/api/config", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key, value }),
+  });
+}
+
+function ApiKeysPhase({ aiName, onNext }: { aiName: string; onNext: () => void }) {
+  const [visible, setVisible]     = useState(false);
+  const [elKey, setElKey]         = useState("");
+  const [openaiKey, setOpenaiKey] = useState("");
+  const [voiceId, setVoiceId]     = useState(EL_PRESET_VOICES[0].id);
+  const [testing, setTesting]     = useState(false);
+  const [testOk, setTestOk]       = useState<boolean | null>(null);
+  const [saving, setSaving]       = useState(false);
+
   useEffect(() => { setTimeout(() => setVisible(true), 300); }, []);
 
-  async function choose(voice: boolean) {
-    if (voice) {
-      await apiTts(`Wonderful. I'll speak to you from now on, ${aiName} is ready.`);
+  async function testElevenLabs() {
+    if (!elKey.trim()) return;
+    setTesting(true);
+    setTestOk(null);
+    try {
+      // Save key temporarily so the backend can use it for the test
+      await saveConfig("ELEVENLABS_API_KEY", elKey.trim());
+      await saveConfig("ELEVENLABS_VOICE_ID", voiceId);
+      await saveConfig("TTS_PROVIDER", "elevenlabs");
+      // Fire a real TTS test
+      await apiTts(`Hello. I am ${aiName}. Voice connection confirmed.`);
+      setTestOk(true);
+    } catch {
+      setTestOk(false);
+    } finally {
+      setTesting(false);
     }
-    onNext(voice);
   }
+
+  async function save() {
+    setSaving(true);
+    try {
+      if (elKey.trim()) {
+        await saveConfig("ELEVENLABS_API_KEY", elKey.trim());
+        await saveConfig("ELEVENLABS_VOICE_ID", voiceId);
+        await saveConfig("TTS_PROVIDER", "elevenlabs");
+      }
+      if (openaiKey.trim()) {
+        await saveConfig("OPENAI_API_KEY", openaiKey.trim());
+      }
+    } finally {
+      setSaving(false);
+      onNext();
+    }
+  }
+
+  function skip() { onNext(); }
+
+  const hasEl = elKey.trim().length > 0;
+
+  return (
+    <div className="fixed inset-0 flex flex-col items-center justify-center bg-background z-50 p-6 overflow-y-auto">
+      <HudCorners />
+      <Scanline />
+      <div className={`w-full max-w-xl space-y-6 py-8 transition-all duration-500
+        ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}>
+
+        <div className="text-center space-y-2">
+          <div className="text-primary/40 font-mono text-xs tracking-[0.4em] uppercase">Voice Setup</div>
+          <div className="text-primary font-mono text-xl tracking-widest">
+            Set up {aiName}'s voice
+          </div>
+          <div className="text-primary/40 font-mono text-xs leading-relaxed max-w-sm mx-auto">
+            ElevenLabs makes the most realistic AI voices available. Add your key below to give {aiName} a real voice — or skip and use text mode for now.
+          </div>
+        </div>
+
+        <ObPanel>
+          <div className="space-y-5">
+
+            {/* ElevenLabs key */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="font-mono text-xs text-primary/50 tracking-widest uppercase">ElevenLabs API Key</div>
+                <a
+                  href="https://elevenlabs.io/app/settings/api-keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-[10px] text-primary/40 hover:text-primary/70 underline underline-offset-2 transition-colors"
+                >
+                  Get free key →
+                </a>
+              </div>
+              <input
+                type="password"
+                value={elKey}
+                onChange={(e) => { setElKey(e.target.value); setTestOk(null); }}
+                placeholder="sk_..."
+                className="w-full bg-transparent border-b border-primary/30 focus:border-primary
+                  text-primary font-mono text-sm tracking-wider outline-none py-2
+                  placeholder:text-primary/20 transition-colors duration-200"
+              />
+            </div>
+
+            {/* Voice picker */}
+            {hasEl && (
+              <div className="space-y-2 animate-[ob-fade-in_0.3s_ease_both]">
+                <div className="font-mono text-xs text-primary/50 tracking-widest uppercase">Voice</div>
+                <div className="grid grid-cols-3 gap-2">
+                  {EL_PRESET_VOICES.map((v) => (
+                    <button
+                      key={v.id}
+                      onClick={() => { setVoiceId(v.id); setTestOk(null); }}
+                      className={`border px-3 py-2 text-left transition-all duration-200
+                        ${voiceId === v.id
+                          ? "border-primary bg-primary/10 shadow-[0_0_12px_rgba(var(--primary-rgb),0.2)]"
+                          : "border-primary/20 hover:border-primary/40"
+                        }`}
+                    >
+                      <div className={`font-mono text-xs font-bold tracking-wide ${voiceId === v.id ? "text-primary" : "text-primary/60"}`}>
+                        {v.name}
+                      </div>
+                      <div className="font-mono text-[10px] text-primary/35 mt-0.5">{v.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Test button */}
+            {hasEl && (
+              <div className="flex items-center gap-3 animate-[ob-fade-in_0.3s_ease_both]">
+                <button
+                  onClick={testElevenLabs}
+                  disabled={testing}
+                  className="font-mono text-xs tracking-widest uppercase border border-primary/40 px-4 py-2
+                    text-primary/70 hover:border-primary hover:text-primary transition-all duration-200
+                    disabled:opacity-40 disabled:cursor-wait"
+                >
+                  {testing ? "Testing..." : "▶  Play Test"}
+                </button>
+                {testOk === true && (
+                  <span className="font-mono text-xs text-green-400 tracking-wider">[ VOICE OK ]</span>
+                )}
+                {testOk === false && (
+                  <span className="font-mono text-xs text-red-400 tracking-wider">[ CHECK KEY ]</span>
+                )}
+              </div>
+            )}
+
+            {/* OpenAI STT divider */}
+            <div className="border-t border-primary/10 pt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="font-mono text-xs text-primary/50 tracking-widest uppercase">
+                  OpenAI Key <span className="text-primary/25 normal-case">(for speech-to-text)</span>
+                </div>
+                <a
+                  href="https://platform.openai.com/api-keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-[10px] text-primary/40 hover:text-primary/70 underline underline-offset-2 transition-colors"
+                >
+                  Get key →
+                </a>
+              </div>
+              <input
+                type="password"
+                value={openaiKey}
+                onChange={(e) => setOpenaiKey(e.target.value)}
+                placeholder="sk-..."
+                className="w-full bg-transparent border-b border-primary/30 focus:border-primary
+                  text-primary font-mono text-sm tracking-wider outline-none py-2
+                  placeholder:text-primary/20 transition-colors duration-200"
+              />
+              <div className="font-mono text-[10px] text-primary/25 leading-relaxed">
+                Needed only to understand your voice. ElevenLabs handles {aiName}'s speech.
+              </div>
+            </div>
+          </div>
+        </ObPanel>
+
+        <div className="flex flex-col items-center gap-3">
+          <ObButton onClick={save} disabled={saving}>
+            {saving ? "Saving..." : hasEl ? "Save & Continue →" : "Continue →"}
+          </ObButton>
+          <button
+            onClick={skip}
+            className="font-mono text-xs text-primary/30 hover:text-primary/60 transition-colors underline underline-offset-4"
+          >
+            Skip for now — I'll use text mode
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Phase 4: Voice Mode
+// ─────────────────────────────────────────────
+function VoiceModePhase({ aiName, onNext }: { aiName: string; onNext: (voice: boolean) => void }) {
+  const [visible, setVisible]     = useState(false);
+  const [selected, setSelected]   = useState<boolean | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  useEffect(() => { setTimeout(() => setVisible(true), 300); }, []);
+
+  function pick(voice: boolean) {
+    setSelected(voice);
+  }
+
+  function confirm() {
+    if (selected === null) return;
+    setConfirming(true);
+    // Fire TTS in background — never block the flow waiting for it
+    if (selected) {
+      apiTts(`Voice mode activated. I'll speak to you out loud, ${aiName} is ready.`).catch(() => {});
+    }
+    setTimeout(() => onNext(selected), 300);
+  }
+
+  const options = [
+    {
+      voice: true,
+      icon: (
+        <svg className="w-9 h-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+          <line x1="12" y1="19" x2="12" y2="23" />
+          <line x1="8" y1="23" x2="16" y2="23" />
+        </svg>
+      ),
+      title: "VOICE",
+      tag: "RECOMMENDED",
+      bullets: [
+        `Speak to ${aiName} — it speaks back`,
+        "Microphone button stays visible",
+        "Responses read aloud by default",
+      ],
+    },
+    {
+      voice: false,
+      icon: (
+        <svg className="w-9 h-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <rect x="2" y="4" width="20" height="16" rx="2" />
+          <path d="M8 9h8M8 13h4" />
+        </svg>
+      ),
+      title: "TEXT",
+      tag: null,
+      bullets: [
+        "Type commands and questions",
+        "Everything stays silent",
+        "Voice still available on demand",
+      ],
+    },
+  ];
 
   return (
     <div className="fixed inset-0 flex flex-col items-center justify-center bg-background z-50 p-6">
       <HudCorners />
       <Scanline />
-      <div className={`w-full max-w-xl space-y-8 transition-all duration-500
+      <div className={`w-full max-w-xl space-y-6 transition-all duration-500
         ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}>
+
         <div className="text-center space-y-2">
           <div className="text-primary/40 font-mono text-xs tracking-[0.4em] uppercase">Interaction Protocol</div>
-          <div className="text-primary font-mono text-xl tracking-widest">How shall we communicate?</div>
+          <div className="text-primary font-mono text-xl tracking-widest">
+            What's your primary way to talk to me?
+          </div>
+          <div className="text-primary/35 font-mono text-xs tracking-wider">
+            You can change this any time in Settings
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          {[
-            {
-              voice: true,
-              icon: (
-                <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" y1="19" x2="12" y2="23" />
-                  <line x1="8" y1="23" x2="16" y2="23" />
-                </svg>
-              ),
-              title: "VOICE",
-              desc: `Speak to ${aiName}. ${aiName} will speak back to you.`,
-              tag: "RECOMMENDED",
-            },
-            {
-              voice: false,
-              icon: (
-                <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <rect x="2" y="4" width="20" height="16" rx="2" />
-                  <path d="M8 9h8M8 13h4" />
-                </svg>
-              ),
-              title: "TEXT",
-              desc: "Type your thoughts. Everything stays silent.",
-              tag: null,
-            },
-          ].map(({ voice, icon, title, desc, tag }) => (
-            <button
-              key={title}
-              onClick={() => choose(voice)}
-              className="group relative border border-primary/20 p-6 text-left flex flex-col gap-4
-                hover:border-primary/60 hover:bg-primary/5 hover:shadow-[0_0_24px_rgba(var(--primary-rgb),0.15)]
-                transition-all duration-300 active:scale-[0.98]"
-            >
-              {tag && (
-                <div className="absolute top-2 right-2 font-mono text-[9px] text-primary/50 tracking-widest">
-                  {tag}
+          {options.map(({ voice, icon, title, tag, bullets }) => {
+            const isSelected = selected === voice;
+            return (
+              <button
+                key={title}
+                onClick={() => pick(voice)}
+                className={`group relative border p-6 text-left flex flex-col gap-4
+                  transition-all duration-300 active:scale-[0.98]
+                  ${isSelected
+                    ? "border-primary bg-primary/8 shadow-[0_0_28px_rgba(var(--primary-rgb),0.2)]"
+                    : "border-primary/20 hover:border-primary/50 hover:bg-primary/4"
+                  }`}
+              >
+                {tag && (
+                  <div className={`absolute top-2 right-2 font-mono text-[9px] tracking-widest
+                    ${isSelected ? "text-primary" : "text-primary/40"}`}>
+                    {tag}
+                  </div>
+                )}
+                {isSelected && (
+                  <div className="absolute top-2 left-2 w-2 h-2 rounded-full bg-primary animate-pulse" />
+                )}
+                <div className={`transition-colors duration-200 ${isSelected ? "text-primary" : "text-primary/60 group-hover:text-primary/80"}`}>
+                  {icon}
                 </div>
-              )}
-              <div className="text-primary/70 group-hover:text-primary transition-colors">{icon}</div>
-              <div>
-                <div className="font-mono text-sm font-bold tracking-widest text-primary mb-1">{title}</div>
-                <div className="font-mono text-xs text-primary/50 leading-relaxed">{desc}</div>
-              </div>
-            </button>
-          ))}
+                <div className="space-y-2">
+                  <div className={`font-mono text-sm font-bold tracking-widest transition-colors
+                    ${isSelected ? "text-primary" : "text-primary/70"}`}>
+                    {title}
+                  </div>
+                  <ul className="space-y-1">
+                    {bullets.map((b, i) => (
+                      <li key={i} className={`font-mono text-xs leading-relaxed flex items-start gap-1.5
+                        ${isSelected ? "text-primary/70" : "text-primary/40"}`}>
+                        <span className="mt-px opacity-50">—</span>
+                        {b}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-col items-center gap-2">
+          <ObButton
+            onClick={confirm}
+            disabled={selected === null || confirming}
+          >
+            {confirming
+              ? "Configuring..."
+              : selected === null
+                ? "Select an option above"
+                : `Confirm — ${selected ? "Voice" : "Text"} Mode →`}
+          </ObButton>
+          {selected === null && (
+            <div className="font-mono text-xs text-primary/20">Choose one to continue</div>
+          )}
         </div>
       </div>
     </div>
@@ -1252,7 +1525,10 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
         <BootPhase aiName={cfg.aiName ?? "JARVIS"} onNext={() => advance("ai_name")} />
       )}
       {phase === "ai_name" && (
-        <AiNamePhase voiceMode={cfg.voiceMode ?? false} onNext={(n) => advance("voice_mode", { aiName: n })} />
+        <AiNamePhase voiceMode={cfg.voiceMode ?? false} onNext={(n) => advance("api_keys", { aiName: n })} />
+      )}
+      {phase === "api_keys" && (
+        <ApiKeysPhase aiName={cfg.aiName ?? "JARVIS"} onNext={() => advance("voice_mode")} />
       )}
       {phase === "voice_mode" && (
         <VoiceModePhase aiName={cfg.aiName ?? "JARVIS"} onNext={(v) => advance("user_name", { voiceMode: v })} />
