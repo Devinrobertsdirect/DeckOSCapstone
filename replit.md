@@ -33,7 +33,7 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - **Preview Path**: `/`
 - Full Iron Man JARVIS-style cyberdeck dashboard
 - React + Vite + TailwindCSS, dark-only, JetBrains Mono font
-- Pages: Dashboard HUD, AI Router, Plugins, Memory Bank, Devices, Command Console
+- Pages: Dashboard HUD, AI Router, Plugins, Memory Bank, Cognitive Model, Devices, Command Console
 
 ### API Server (`artifacts/api-server`)
 - **Port**: 8080
@@ -71,6 +71,16 @@ Central nervous system for all inter-component communication. All components com
 - 5 core plugins: system_monitor, file_manager, ai_chat, device_control, automation_scheduler
 - Enable/disable via API, execute plugin commands, status tracking
 
+### User Cognitive Model (`/api/ucm`)
+Structured identity layer — a continuously-updatable model of the user stored separately from event/memory logs.
+
+- **7 layers** (each independently editable/clearable): identity, preferences, context, goals, behaviorPatterns, emotionalModel, domainExpertise
+- **Singleton pattern**: one row per database (id=1), JSONB columns per layer
+- **API**: `GET /api/ucm` (read), `PATCH /api/ucm/:layer` (merge or replace), `DELETE /api/ucm/:layer` (clear), `DELETE /api/ucm` (full reset)
+- **Settings**: `GET /api/ucm/settings`, `PUT /api/ucm/settings` — control knobs: proactiveMode, memoryRetentionLevel (low/medium/high), emotionalModelingEnabled, personalizationLevel (off/minimal/full)
+- **Event bus**: emits `memory.stored` on writes, `memory.deleted` on clears, `system.config_changed` on settings changes
+- **Frontend**: COG.MODEL nav page with inline key-value editor per layer, collapsible sections, toggle switches for settings
+
 ### Memory System
 - Short-term: session memory with 1h TTL by default (PostgreSQL)
 - Long-term: persistent memory with keyword search (PostgreSQL)
@@ -90,6 +100,8 @@ Central nervous system for all inter-component communication. All components com
 - `memory_entries` — short and long-term memory storage
 - `command_history` — full command execution history
 - `system_events` — event bus traffic log (`level`, `message`=event type, `source`, `data`=full event JSON)
+- `user_cognitive_model` — UCM singleton (id=1); JSONB columns for 7 layers
+- `ucm_settings` — UCM control knobs singleton (id=1)
 
 ## Shared Packages
 - `lib/event-bus` — shared event types, EventBus class, Plugin base class

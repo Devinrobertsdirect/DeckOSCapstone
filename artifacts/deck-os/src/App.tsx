@@ -11,6 +11,7 @@ import PluginManager from "@/pages/PluginManager";
 import MemorySystem from "@/pages/MemorySystem";
 import DeviceControl from "@/pages/DeviceControl";
 import CommandConsole from "@/pages/CommandConsole";
+import CognitiveModel from "@/pages/CognitiveModel";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,6 +32,7 @@ function Router() {
         <Route path="/memory" component={MemorySystem} />
         <Route path="/devices" component={DeviceControl} />
         <Route path="/commands" component={CommandConsole} />
+        <Route path="/cognitive" component={CognitiveModel} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

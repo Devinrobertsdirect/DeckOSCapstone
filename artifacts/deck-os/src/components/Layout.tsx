@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Cpu, HardDrive, Cpu as Microchip, Network, Settings, TerminalSquare, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Activity, Cpu, HardDrive, Cpu as Microchip, Network, Settings, TerminalSquare, AlertTriangle, CheckCircle2, Brain } from "lucide-react";
 import { useHealthCheck, getHealthCheckQueryKey } from "@workspace/api-client-react";
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -56,6 +56,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <NavLink href="/ai" icon={Microchip} label="AI.ROUTER" active={location === "/ai"} />
           <NavLink href="/plugins" icon={Settings} label="PLUGINS" active={location === "/plugins"} />
           <NavLink href="/memory" icon={HardDrive} label="MEMORY.BANK" active={location === "/memory"} />
+          <NavLink href="/cognitive" icon={Brain} label="COG.MODEL" active={location === "/cognitive"} />
           <NavLink href="/devices" icon={Network} label="DEVICES" active={location === "/devices"} />
           <NavLink href="/commands" icon={TerminalSquare} label="CONSOLE" active={location === "/commands"} />
           

@@ -7,6 +7,7 @@ import systemRouter from "./system";
 import commandsRouter from "./commands";
 import devicesRouter from "./devices";
 import eventsRouter from "./events";
+import ucmRouter from "./ucm";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(systemRouter);
 router.use(commandsRouter);
 router.use(devicesRouter);
 router.use(eventsRouter);
+router.use(ucmRouter);
 
 export default router;
