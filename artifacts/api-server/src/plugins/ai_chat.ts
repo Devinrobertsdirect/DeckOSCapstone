@@ -2,6 +2,7 @@ import { Plugin } from "@workspace/event-bus";
 import type { PluginContext, BusEvent } from "@workspace/event-bus";
 import {
   runInference,
+  runInferenceStreaming,
   generateRuleBasedResponse,
   refreshOllamaDetection,
   getInferenceState,
@@ -87,6 +88,15 @@ export default class AiChatPlugin extends Plugin {
         });
       };
 
+      const emitToken = (token: string) => {
+        context.emit({
+          source: this.id,
+          target: event.source,
+          type: "ai.chat.token",
+          payload: { requestId, token },
+        });
+      };
+
       let result: { response: string; modelUsed: string; latencyMs: number; fromCache: boolean };
 
       if (context.infer) {
@@ -97,16 +107,19 @@ export default class AiChatPlugin extends Plugin {
           context:  extraContext,
           useCache: false,
         });
-        emitThinking("cortex", "thinking");
+        emitToken(result.response);
       } else {
-        result = await runInference({
-          prompt:          enrichedPrompt,
-          mode,
-          task:            "chat",
-          context:         extraContext,
-          useCache:        false,
-          onTierResolved:  emitThinking,
-        });
+        result = await runInferenceStreaming(
+          {
+            prompt:          enrichedPrompt,
+            mode,
+            task:            "chat",
+            context:         extraContext,
+            useCache:        false,
+            onTierResolved:  emitThinking,
+          },
+          emitToken,
+        );
       }
 
       context.emit({

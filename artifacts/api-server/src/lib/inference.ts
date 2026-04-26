@@ -242,6 +242,131 @@ export async function callOllama(
   return data.message?.content ?? "[No response from model]";
 }
 
+// ── Streaming Ollama caller ─────────────────────────────────────────────────
+export async function callOllamaStreaming(
+  prompt: string,
+  model: string,
+  context: Array<{ role: string; content: string }>,
+  onToken: (token: string) => void,
+): Promise<string> {
+  const hasSystemMsg = context.some((m) => m.role === "system");
+  const messages = [
+    ...(!hasSystemMsg
+      ? [{ role: "system", content: "You are an advanced AI assistant integrated into DeckOS. Be concise and precise." }]
+      : []),
+    ...context,
+    { role: "user", content: prompt },
+  ];
+
+  const res = await fetch("http://localhost:11434/api/chat", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ model, messages, stream: true }),
+    signal:  AbortSignal.timeout(60_000),
+  });
+
+  if (!res.ok) throw new Error(`Ollama error ${res.status} for model ${model}`);
+  if (!res.body) throw new Error("No response body from Ollama");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    const lines = chunk.split("\n").filter((l) => l.trim());
+
+    for (const line of lines) {
+      try {
+        const parsed = JSON.parse(line) as { message?: { content?: string }; done?: boolean };
+        const token = parsed.message?.content ?? "";
+        if (token) {
+          fullText += token;
+          onToken(token);
+        }
+      } catch {
+        // skip malformed lines
+      }
+    }
+  }
+
+  return fullText || "[No response from model]";
+}
+
+// ── Streaming rule-based response ──────────────────────────────────────────
+export async function streamRuleBasedResponse(
+  prompt: string,
+  onToken: (token: string) => void,
+  delayMs = 40,
+): Promise<string> {
+  const full = generateRuleBasedResponse(prompt);
+  const words = full.split(" ");
+  for (let i = 0; i < words.length; i++) {
+    const token = (i === 0 ? "" : " ") + words[i];
+    onToken(token);
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return full;
+}
+
+// ── Streaming inference entry point ─────────────────────────────────────────
+export async function runInferenceStreaming(
+  opts: InferenceOptions,
+  onToken: (token: string) => void,
+): Promise<InferenceResult> {
+  const { prompt, mode, task, context = [], latencyBudgetMs, onTierResolved } = opts;
+  inferenceState.totalRequests++;
+
+  const tier  = resolveGateway(task, mode, latencyBudgetMs);
+  const model = tierToModel(tier);
+  if (onTierResolved) onTierResolved(tier, model);
+
+  const start = Date.now();
+  let response = "";
+  let modelUsed = MODEL_CONFIG.RULE_ENGINE;
+  let usedTier: Tier = "autopilot";
+
+  try {
+    if (tier === "autopilot" || !inferenceState.ollamaAvailable) {
+      response  = await streamRuleBasedResponse(prompt, onToken);
+      modelUsed = MODEL_CONFIG.RULE_ENGINE;
+      usedTier  = "autopilot";
+      inferenceState.autopilotRequests++;
+    } else {
+      response  = await callOllamaStreaming(prompt, model, context, onToken);
+      modelUsed = model;
+      usedTier  = tier;
+      if (tier === "cortex")  inferenceState.cortexRequests++;
+      if (tier === "reflex")  inferenceState.reflexRequests++;
+    }
+  } catch {
+    if (tier === "cortex") {
+      try {
+        response  = await callOllamaStreaming(prompt, MODEL_CONFIG.FAST, context, onToken);
+        modelUsed = MODEL_CONFIG.FAST;
+        usedTier  = "reflex";
+        inferenceState.reflexRequests++;
+      } catch {
+        response  = await streamRuleBasedResponse(prompt, onToken);
+        modelUsed = MODEL_CONFIG.RULE_ENGINE;
+        usedTier  = "autopilot";
+        inferenceState.autopilotRequests++;
+      }
+    } else {
+      response  = await streamRuleBasedResponse(prompt, onToken);
+      modelUsed = MODEL_CONFIG.RULE_ENGINE;
+      usedTier  = "autopilot";
+      inferenceState.autopilotRequests++;
+    }
+  }
+
+  const latencyMs = Date.now() - start;
+  return { response, modelUsed, latencyMs, fromCache: false, tier: usedTier };
+}
+
 // ── Primary inference entry point ───────────────────────────────────────────
 export async function runInference(opts: InferenceOptions): Promise<InferenceResult> {
   const { prompt, mode, task, context = [], useCache = true, latencyBudgetMs, onTierResolved } = opts;

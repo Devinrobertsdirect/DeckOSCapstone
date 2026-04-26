@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Brain, Zap, Database, Globe, CheckCircle2, XCircle, ChevronRight, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,7 +57,9 @@ export default function AiControl() {
   const [currentMode, setCurrentMode] = useState<Mode>("DIRECT_EXECUTION");
   const [sending, setSending] = useState(false);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
+  const [streamingText, setStreamingText] = useState("");
   const [tierStatus, setTierStatus] = useState<TierStatus | null>(null);
+  const processedTokenKeysRef = useRef(new Set<string>());
 
   useEffect(() => {
     const fetchTiers = () => {
@@ -96,11 +98,24 @@ export default function AiControl() {
   );
 
   const chatResponses = useWsEvents((e) => e.type === "ai.chat.response");
+  const chatTokens = useWsEvents((e) => e.type === "ai.chat.token");
 
   useEffect(() => {
     const mode = routerStatus?.mode as Mode | undefined;
     if (mode && MODES.includes(mode)) setCurrentMode(mode);
   }, [routerStatus]);
+
+  useEffect(() => {
+    if (!pendingRequestId) return;
+    chatTokens.forEach((evt) => {
+      const p = evt.payload as { requestId?: string; token?: string };
+      if (p.requestId !== pendingRequestId) return;
+      const evtKey = `token:${evt.timestamp}:${evt.id ?? ""}`;
+      if (processedTokenKeysRef.current.has(evtKey)) return;
+      processedTokenKeysRef.current.add(evtKey);
+      setStreamingText((prev) => prev + (p.token ?? ""));
+    });
+  }, [chatTokens, pendingRequestId]);
 
   useEffect(() => {
     if (!pendingRequestId) return;
@@ -111,6 +126,7 @@ export default function AiControl() {
     if (matched) {
       setSending(false);
       setPendingRequestId(null);
+      setStreamingText("");
     }
   }, [chatResponses, pendingRequestId]);
 
@@ -125,6 +141,8 @@ export default function AiControl() {
     const requestId = `req-${Date.now()}`;
     setSending(true);
     setPendingRequestId(requestId);
+    setStreamingText("");
+    processedTokenKeysRef.current.clear();
     sendEvent({
       type: "ai.chat.request",
       payload: { prompt: prompt.trim(), mode: currentMode, requestId },
@@ -284,7 +302,7 @@ export default function AiControl() {
           <CardTitle className="font-mono text-sm text-primary">AI.CHAT.CONSOLE</CardTitle>
         </CardHeader>
         <div className="flex-1 overflow-y-auto p-4 space-y-3 font-mono text-xs min-h-0">
-          {outputItems.length === 0 && (
+          {outputItems.length === 0 && !sending && (
             <div className="text-primary/40">// Send a prompt to get an AI response via WebSocket event stream</div>
           )}
           {outputItems.map((item, i) => {
@@ -300,9 +318,17 @@ export default function AiControl() {
             );
           })}
           {sending && (
-            <div className="flex items-center gap-2 text-primary/60">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              <span>Processing via EventBus...</span>
+            <div className="border border-primary/20 p-3 bg-background/50 space-y-1">
+              <div className="flex items-center gap-2 text-primary/40 mb-1">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>STREAMING...</span>
+              </div>
+              <div className="text-primary/90 whitespace-pre-wrap">
+                {streamingText || <span className="text-primary/30">Waiting for tokens...</span>}
+                {streamingText && (
+                  <span className="inline-block w-[2px] h-[1em] bg-primary align-middle ml-[1px] animate-[blink_1s_step-end_infinite]" />
+                )}
+              </div>
             </div>
           )}
         </div>

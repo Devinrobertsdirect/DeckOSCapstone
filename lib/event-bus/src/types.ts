@@ -60,6 +60,7 @@ export const AiEventTypeSchema = z.enum([
   "ai.router.status",
   "ai.error",
   "ai.chat.request",
+  "ai.chat.token",
   "ai.chat.response",
 ]);
 

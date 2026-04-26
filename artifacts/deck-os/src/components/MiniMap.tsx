@@ -41,13 +41,13 @@ export function MiniMap() {
   const locationEvents = useWsEvents((e: WsEvent) => e.type === "device.location.updated");
   useEffect(() => { if (locationEvents.length > 0) void refetch(); }, [locationEvents.length, refetch]);
 
+  const [, navigate] = useLocation();
+
   const devices = data?.devices ?? [];
   if (devices.length === 0) return null;
 
   const center: LatLngTuple = [devices[0]!.lat, devices[0]!.lng];
   const isFresh = (iso: string) => Date.now() - new Date(iso).getTime() < 90_000;
-
-  const [, navigate] = useLocation();
 
   return (
     <button

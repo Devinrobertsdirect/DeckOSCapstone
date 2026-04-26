@@ -429,3 +429,8 @@ html[data-visual-mode="cinematic"] .cinematic-ambient {
   font-size: 9px !important;
 }
 .leaflet-control-attribution a { color: rgba(var(--primary-rgb),0.4) !important; }
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}

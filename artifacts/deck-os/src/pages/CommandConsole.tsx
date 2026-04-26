@@ -33,6 +33,7 @@ type ConsoleLine = {
   pending?: boolean;
   thinkingModel?: string;
   thinkingTier?: string;
+  streaming?: boolean;
   timestamp: string;
 };
 
@@ -49,10 +50,12 @@ export default function CommandConsole() {
   const outputRef = useRef<HTMLDivElement>(null);
 
   const chatRequests   = useWsEvents((e) => e.type === "ai.chat.request");
+  const chatTokens     = useWsEvents((e) => e.type === "ai.chat.token");
   const chatResponses  = useWsEvents((e) => e.type === "ai.chat.response");
   const inferStarted   = useWsEvents((e) => e.type === "ai.inference_started");
   const allEvents      = useWsEvents();
-  const processedEvtKeysRef = useRef(new Set<string>());
+  const processedEvtKeysRef   = useRef(new Set<string>());
+  const processedTokenKeysRef = useRef(new Set<string>());
   const [dotCycle, setDotCycle] = useState(0);
 
   // Animate the thinking dots while any line is pending
@@ -85,6 +88,33 @@ export default function CommandConsole() {
   }, [inferStarted]);
 
   useEffect(() => {
+    chatTokens.forEach((evt) => {
+      const p = evt.payload as { requestId?: string; token?: string };
+      const reqId = p.requestId;
+      const token = p.token ?? "";
+      if (!reqId || !token) return;
+
+      const evtKey = `token:${reqId}:${evt.timestamp}:${evt.id ?? ""}`;
+      if (processedTokenKeysRef.current.has(evtKey)) return;
+      processedTokenKeysRef.current.add(evtKey);
+
+      setLines((prev) => {
+        const idx = prev.findIndex((l) => l.id === reqId);
+        if (idx === -1) return prev;
+        const current = prev[idx]!;
+        const updated = [...prev];
+        updated[idx] = {
+          ...current,
+          output: (current.output ?? "") + token,
+          pending: false,
+          streaming: true,
+        };
+        return updated;
+      });
+    });
+  }, [chatTokens]);
+
+  useEffect(() => {
     chatResponses.forEach((evt) => {
       const p = evt.payload as ChatResponsePayload;
       const reqId = p.requestId;
@@ -101,7 +131,7 @@ export default function CommandConsole() {
         const updated = [...prev];
         updated[idx] = {
           ...current,
-          output: (current.output ?? "") + (p.response ?? ""),
+          output: current.output ?? p.response ?? "",
           model: p.modelUsed ?? p.model ?? current.model,
           latencyMs: p.latencyMs ?? current.latencyMs,
           fromCache: p.fromCache ?? current.fromCache,
@@ -109,6 +139,7 @@ export default function CommandConsole() {
           pending: false,
           thinkingTier: undefined,
           thinkingModel: undefined,
+          streaming: false,
         };
         return updated;
       });
@@ -263,20 +294,23 @@ export default function CommandConsole() {
                     </div>
                   ) : line.output !== undefined ? (
                     <>
-                      <div className="pl-4 whitespace-pre-wrap text-primary/80">{line.output}</div>
-                      <div className="pl-4 flex items-center gap-3 text-primary/30">
-                        <CheckCircle2 className="w-3 h-3 text-[#22ff44]" />
-                        {line.latencyMs !== undefined && <span>{line.latencyMs}ms</span>}
-                        {line.model && (
-                          <span className="flex items-center gap-1">
-                            MODEL: {line.model}
-                          </span>
-                        )}
-                        {line.fromCache && <span className="text-[#ffaa00]">CACHED</span>}
-                        {line.aiAssisted && (
-                          <span className="flex items-center gap-1 text-[#cc44ff]"><Brain className="w-3 h-3" /> AI-ASSISTED</span>
+                      <div className="pl-4 whitespace-pre-wrap text-primary/80">
+                        {line.output}
+                        {line.streaming && (
+                          <span className="inline-block w-[2px] h-[1em] bg-primary align-middle ml-[1px] animate-[blink_1s_step-end_infinite]" />
                         )}
                       </div>
+                      {!line.streaming && (
+                        <div className="pl-4 flex items-center gap-3 text-primary/30">
+                          <CheckCircle2 className="w-3 h-3 text-[#22ff44]" />
+                          {line.latencyMs !== undefined && <span>{line.latencyMs}ms</span>}
+                          {line.model && <span>MODEL: {line.model}</span>}
+                          {line.fromCache && <span className="text-[#ffaa00]">CACHED</span>}
+                          {line.aiAssisted && (
+                            <span className="flex items-center gap-1 text-[#cc44ff]"><Brain className="w-3 h-3" /> AI-ASSISTED</span>
+                          )}
+                        </div>
+                      )}
                     </>
                   ) : null}
                 </div>
