@@ -79,7 +79,8 @@ function useFieldSensors() {
 }
 
 const CONSOLE_SESSION_KEY    = "deckos.console.history";
-const CMD_HISTORY_SESSION_KEY = "deckos.cmd.history";
+const CMD_HISTORY_SESSION_KEY = "deckos.cmd.history"; // legacy sessionStorage key
+const CMD_HISTORY_LOCAL_KEY   = "deckos.cmd.history.local";
 const CMD_HISTORY_MAX         = 100;
 
 const BOOT_LINES: ConsoleLine[] = [
@@ -104,9 +105,23 @@ function saveHistory(lines: ConsoleLine[]) {
 }
 
 function loadCmdHistory(): string[] {
+  // Migrate from sessionStorage if present (one-time, best-effort)
   try {
-    const raw = sessionStorage.getItem(CMD_HISTORY_SESSION_KEY);
-    if (raw) return JSON.parse(raw) as string[];
+    const legacy = sessionStorage.getItem(CMD_HISTORY_SESSION_KEY);
+    if (legacy) {
+      const parsed = JSON.parse(legacy) as string[];
+      localStorage.setItem(CMD_HISTORY_LOCAL_KEY, JSON.stringify(parsed.slice(-CMD_HISTORY_MAX)));
+      sessionStorage.removeItem(CMD_HISTORY_SESSION_KEY);
+      return parsed.slice(-CMD_HISTORY_MAX);
+    }
+  } catch {
+    // Malformed legacy data — remove it so we don't retry on next load
+    try { sessionStorage.removeItem(CMD_HISTORY_SESSION_KEY); } catch { }
+  }
+  // Normal load from localStorage
+  try {
+    const raw = localStorage.getItem(CMD_HISTORY_LOCAL_KEY);
+    if (raw) return (JSON.parse(raw) as string[]).slice(-CMD_HISTORY_MAX);
   } catch {
   }
   return [];
@@ -114,7 +129,7 @@ function loadCmdHistory(): string[] {
 
 function saveCmdHistory(history: string[]) {
   try {
-    sessionStorage.setItem(CMD_HISTORY_SESSION_KEY, JSON.stringify(history));
+    localStorage.setItem(CMD_HISTORY_LOCAL_KEY, JSON.stringify(history.slice(-CMD_HISTORY_MAX)));
   } catch {
   }
 }
@@ -205,7 +220,7 @@ export default function Dashboard() {
     historyIndexRef.current = -1;
     savedInputRef.current = "";
     try {
-      sessionStorage.removeItem(CMD_HISTORY_SESSION_KEY);
+      localStorage.removeItem(CMD_HISTORY_LOCAL_KEY);
     } catch {
     }
     setShowHistory(false);
