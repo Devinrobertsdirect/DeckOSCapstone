@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useWsEvents } from "@/contexts/WebSocketContext";
 import {
   Bot, Mic2, Palette, Brain, MessageSquare, User2,
   ChevronRight, Check, Volume2, RefreshCw, Sparkles, SlidersHorizontal,
@@ -605,6 +606,20 @@ function RecalibrateTab() {
 export default function AiPersonality() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<"persona" | "recalibrate">("persona");
+
+  const configChanged       = useWsEvents((e) => e.type === "system.config_changed");
+  const processedCfgRef     = useRef(new Set<string>());
+
+  useEffect(() => {
+    configChanged.forEach((evt) => {
+      const p = evt.payload as { origin?: string };
+      if (p.origin !== "self_upgrade") return;
+      const key = `${evt.timestamp}:${evt.id ?? ""}`;
+      if (processedCfgRef.current.has(key)) return;
+      processedCfgRef.current.add(key);
+      void qc.invalidateQueries({ queryKey: ["ai-persona"] });
+    });
+  }, [configChanged, qc]);
 
   const { data: saved, isLoading } = useQuery<AiPersona>({
     queryKey: ["ai-persona"],

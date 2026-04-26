@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { TerminalSquare, CheckCircle2, XCircle, Brain, Zap, Loader2, ChevronRight, Circle, Cpu } from "lucide-react";
+import { TerminalSquare, CheckCircle2, Brain, Zap, Loader2, ChevronRight, Circle, Cpu, Sliders } from "lucide-react";
 import { VoiceMicButton } from "@/components/VoiceMicButton";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,7 +35,14 @@ type ConsoleLine = {
   thinkingModel?: string;
   thinkingTier?: string;
   streaming?: boolean;
+  system?: boolean;
   timestamp: string;
+};
+
+const PERSONA_FIELD_LABELS: Record<string, string> = {
+  snarkinessLevel:      "SNARKINESS",
+  gravityLevel:         "GRAVITY",
+  flirtatiousnessLevel: "WARMTH",
 };
 
 const AI_MODES = ["DIRECT_EXECUTION", "LIGHT_REASONING", "DEEP_REASONING", "HYBRID_MODE"] as const;
@@ -51,13 +58,15 @@ export default function CommandConsole() {
   const outputRef = useRef<HTMLDivElement>(null);
   const faceStyle = useFaceStyle();
 
-  const chatRequests   = useWsEvents((e) => e.type === "ai.chat.request");
-  const chatTokens     = useWsEvents((e) => e.type === "ai.chat.token");
-  const chatResponses  = useWsEvents((e) => e.type === "ai.chat.response");
-  const inferStarted   = useWsEvents((e) => e.type === "ai.inference_started");
-  const allEvents      = useWsEvents();
-  const processedEvtKeysRef   = useRef(new Set<string>());
-  const processedTokenKeysRef = useRef(new Set<string>());
+  const chatRequests    = useWsEvents((e) => e.type === "ai.chat.request");
+  const chatTokens      = useWsEvents((e) => e.type === "ai.chat.token");
+  const chatResponses   = useWsEvents((e) => e.type === "ai.chat.response");
+  const inferStarted    = useWsEvents((e) => e.type === "ai.inference_started");
+  const configChanged   = useWsEvents((e) => e.type === "system.config_changed");
+  const allEvents       = useWsEvents();
+  const processedEvtKeysRef    = useRef(new Set<string>());
+  const processedTokenKeysRef  = useRef(new Set<string>());
+  const processedConfigKeysRef = useRef(new Set<string>());
   const [dotCycle, setDotCycle] = useState(0);
 
   // Animate the thinking dots while any line is pending
@@ -88,6 +97,30 @@ export default function CommandConsole() {
       });
     });
   }, [inferStarted]);
+
+  useEffect(() => {
+    configChanged.forEach((evt) => {
+      const p = evt.payload as { origin?: string; changes?: Record<string, number> };
+      if (p.origin !== "self_upgrade" || !p.changes) return;
+      const key = `cfg:${evt.timestamp}:${evt.id ?? ""}`;
+      if (processedConfigKeysRef.current.has(key)) return;
+      processedConfigKeysRef.current.add(key);
+
+      const parts = Object.entries(p.changes)
+        .map(([k, v]) => `${PERSONA_FIELD_LABELS[k] ?? k.replace(/Level$/, "").toUpperCase()}: ${v}`)
+        .join(" · ");
+
+      const sysLine: ConsoleLine = {
+        id:        `sys-${key}`,
+        input:     "[SYSTEM]",
+        output:    `PERSONA CALIBRATED — ${parts}`,
+        system:    true,
+        pending:   false,
+        timestamp: evt.timestamp,
+      };
+      setLines((prev) => [...prev, sysLine].slice(-100));
+    });
+  }, [configChanged]);
 
   useEffect(() => {
     chatTokens.forEach((evt) => {
@@ -135,6 +168,7 @@ export default function CommandConsole() {
           ...current,
           output: current.output ?? p.response ?? "",
           model: p.modelUsed ?? p.model ?? current.model,
+          tier: current.thinkingTier ?? current.tier,
           latencyMs: p.latencyMs ?? current.latencyMs,
           fromCache: p.fromCache ?? current.fromCache,
           aiAssisted: true,
@@ -281,6 +315,14 @@ export default function CommandConsole() {
 
               {lines.map((line) => (
                 <div key={line.id} className="space-y-1">
+                  {line.system ? (
+                    <div className="flex items-center gap-2 text-[#00d4ff]/70">
+                      <Sliders className="w-3 h-3 shrink-0" />
+                      <span className="font-mono text-xs">{line.output}</span>
+                      <span className="text-primary/20 ml-auto">{new Date(line.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                    </div>
+                  ) : (
+                  <>
                   <div className="flex items-center gap-2">
                     <span className="text-[#ffaa00]">&gt;</span>
                     <span className="text-primary">{line.input}</span>
@@ -324,6 +366,15 @@ export default function CommandConsole() {
                         <div className="pl-4 flex items-center gap-3 text-primary/30">
                           <CheckCircle2 className="w-3 h-3 text-[#22ff44]" />
                           {line.latencyMs !== undefined && <span>{line.latencyMs}ms</span>}
+                          {line.tier && (
+                            <span className={`flex items-center gap-1 font-bold uppercase ${
+                              line.tier === "cortex"   ? "text-[#cc44ff]"
+                            : line.tier === "reflex"   ? "text-[#ffc820]"
+                            : "text-[#11d97a]"
+                            }`}>
+                              <Cpu className="w-3 h-3" />{line.tier}
+                            </span>
+                          )}
                           {line.model && <span>MODEL: {line.model}</span>}
                           {line.fromCache && <span className="text-[#ffaa00]">CACHED</span>}
                           {line.aiAssisted && (
@@ -333,6 +384,8 @@ export default function CommandConsole() {
                       )}
                     </>
                   ) : null}
+                  </>
+                  )}
                 </div>
               ))}
             </div>
