@@ -12,7 +12,7 @@ import {
 import { useCamera } from "@/hooks/useCamera";
 import { useHealthCheck, getHealthCheckQueryKey } from "@workspace/api-client-react";
 import { useVisualMode, type VisualMode } from "@/contexts/VisualMode";
-import { useWebSocket, useLatestPayload } from "@/contexts/WebSocketContext";
+import { useWebSocket, useLatestPayload, useActivityLevel } from "@/contexts/WebSocketContext";
 import { EventLogPanel } from "@/components/EventLogPanel";
 import { ParticleOverlay } from "@/components/ParticleOverlay";
 import { useQuery } from "@tanstack/react-query";
@@ -70,6 +70,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [activeColor, setActiveColor] = useState<ColorScheme>(getStoredColor());
   const [now, setNow] = useState(() => new Date());
   const { status: wsStatus, events } = useWebSocket();
+  const activityLevel = useActivityLevel();
   const faceStyle = useFaceStyle();
   const [aiSpeaking, setAiSpeaking] = useState(false);
   const speakTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -278,6 +279,36 @@ export function Layout({ children }: { children: React.ReactNode }) {
               {wsStatus.toUpperCase()}
             </span>
             <span className="text-primary/30">({events.length})</span>
+          </div>
+          {/* Activity indicator */}
+          <div className="hidden sm:flex items-center gap-1.5">
+            <span
+              className="uppercase tracking-wider transition-colors duration-500 text-[10px]"
+              style={{ color: `hsl(var(--primary) / ${0.3 + activityLevel * 0.7})` }}
+            >
+              SYS
+            </span>
+            <div className="flex items-end gap-px">
+              {([0.25, 0.55, 0.85] as const).map((threshold, i) => (
+                <div
+                  key={i}
+                  className="w-1 rounded-sm transition-all duration-300"
+                  style={{
+                    height: `${5 + i * 3}px`,
+                    backgroundColor: "hsl(var(--primary))",
+                    opacity: activityLevel >= threshold ? Math.min(0.6 + activityLevel * 0.4, 1) : 0.12,
+                  }}
+                />
+              ))}
+            </div>
+            {activityLevel > 0.3 && (
+              <span
+                className="text-[10px] uppercase tracking-wider animate-pulse transition-opacity duration-500"
+                style={{ color: `hsl(var(--primary) / ${0.5 + activityLevel * 0.5})` }}
+              >
+                {activityLevel > 0.7 ? "HIGH" : "MED"}
+              </span>
+            )}
           </div>
           {/* Tracker count */}
           {activeTrackers > 0 && (
