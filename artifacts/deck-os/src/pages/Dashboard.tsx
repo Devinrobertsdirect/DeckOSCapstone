@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { Terminal, Cpu, MemoryStick, HardDrive, Activity, Network, Circle, Radio, Zap, Send, MapPin, Battery, Wifi, Eye, CheckCircle2, AlertTriangle, Power, ChevronRight, X, Newspaper, RefreshCw, Loader2 } from "lucide-react";
+import { Terminal, Cpu, MemoryStick, HardDrive, Activity, Network, Circle, Radio, Zap, Send, MapPin, Battery, Wifi, Eye, CheckCircle2, AlertTriangle, Power, ChevronRight, X, Newspaper, RefreshCw, Loader2, History, RotateCcw } from "lucide-react";
 import { VoiceMicButton } from "@/components/VoiceMicButton";
 import { type LucideIcon } from "lucide-react";
 import { Link, useLocation } from "wouter";
@@ -195,6 +195,8 @@ export default function Dashboard() {
   const historyIndexRef = useRef(-1);
   const savedInputRef = useRef("");
 
+  const [showHistory, setShowHistory] = useState(false);
+
   const [commandList, setCommandList] = useState<CommandEntry[]>([]);
   const [suggestionIndex, setSuggestionIndex] = useState(-1);
 
@@ -206,9 +208,28 @@ export default function Dashboard() {
     );
   }, [cmdInput, commandList]);
 
+  const uniqueHistory = useMemo<string[]>(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (let i = cmdHistory.length - 1; i >= 0; i--) {
+      const cmd = cmdHistory[i]!;
+      if (!seen.has(cmd)) {
+        seen.add(cmd);
+        result.push(cmd);
+      }
+    }
+    return result;
+  }, [cmdHistory]);
+
   useEffect(() => {
     setSuggestionIndex(-1);
   }, [cmdInput]);
+
+  useEffect(() => {
+    if (suggestions.length > 0) {
+      setShowHistory(false);
+    }
+  }, [suggestions.length]);
 
   useEffect(() => {
     fetch("/api/commands")
@@ -327,6 +348,7 @@ export default function Dashboard() {
       const cmd = cmdInput.trim();
       if (!cmd || busy) return;
       setSuggestionIndex(-1);
+      setShowHistory(false);
       setCmdInput("");
       historyIndexRef.current = -1;
       savedInputRef.current = "";
@@ -355,6 +377,7 @@ export default function Dashboard() {
 
       if (e.key === "Escape") {
         setSuggestionIndex(-1);
+        setShowHistory(false);
         return;
       }
 
@@ -478,6 +501,45 @@ export default function Dashboard() {
           </div>
 
           <div className="relative border-t border-primary/20">
+            {showHistory && uniqueHistory.length > 0 && (
+              <div className="absolute bottom-full left-0 right-0 z-50 border border-primary/30 bg-[hsl(var(--background))] shadow-[0_0_16px_rgba(0,212,255,0.12)]">
+                <div className="flex items-center justify-between px-3 py-1.5 border-b border-primary/10 bg-primary/5">
+                  <span className="font-mono text-[10px] text-primary/40 uppercase tracking-widest flex items-center gap-1.5">
+                    <History className="w-3 h-3" /> CMD.HISTORY
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowHistory(false)}
+                    className="text-primary/30 hover:text-primary/70 transition-colors"
+                    aria-label="Close history"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+                <ul className="max-h-48 overflow-y-auto">
+                  {uniqueHistory.map((cmd, i) => (
+                    <li key={`${cmd}-${i}`}>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setCmdInput(cmd);
+                          setShowHistory(false);
+                          historyIndexRef.current = -1;
+                        }}
+                        className="w-full text-left px-3 py-1.5 font-mono text-xs flex items-center gap-2 text-primary/70 hover:bg-primary/10 hover:text-primary transition-colors group"
+                      >
+                        <RotateCcw className="w-3 h-3 text-primary/25 group-hover:text-primary/50 shrink-0" />
+                        <span className="truncate">{cmd}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <div className="px-3 py-1 border-t border-primary/10 text-[10px] font-mono text-primary/25">
+                  {uniqueHistory.length} recent command{uniqueHistory.length !== 1 ? "s" : ""} · click to fill
+                </div>
+              </div>
+            )}
             {suggestions.length > 0 && (
               <ul className="absolute bottom-full left-0 right-0 z-50 border border-primary/30 bg-[hsl(var(--background))] shadow-[0_0_16px_rgba(0,212,255,0.12)] max-h-64 overflow-y-auto">
                 {suggestions.map((s, i) => {
@@ -546,6 +608,16 @@ export default function Dashboard() {
                 autoComplete="off"
                 spellCheck={false}
               />
+              <button
+                type="button"
+                onClick={() => setShowHistory((v) => !v)}
+                disabled={busy || uniqueHistory.length === 0}
+                className={`transition-colors disabled:opacity-20 ${showHistory ? "text-primary" : "text-primary/40 hover:text-primary"}`}
+                aria-label="Toggle command history"
+                title="Command history"
+              >
+                <History className="w-3.5 h-3.5" />
+              </button>
               <VoiceMicButton
                 onTranscript={handleVoiceTranscript}
                 disabled={busy}
