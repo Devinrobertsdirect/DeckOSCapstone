@@ -33,7 +33,8 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - **Preview Path**: `/`
 - Full Iron Man JARVIS-style cyberdeck dashboard
 - React + Vite + TailwindCSS, dark-only, JetBrains Mono font
-- Pages: Dashboard HUD, AI Router, Plugins, Memory Bank, Cognitive Model, Devices, Command Console
+- Pages: Dashboard HUD, AI Router, Plugins, Memory Bank, Cognitive Model, Goal Manager, Feedback Loop, Autonomous Layer, Devices, Command Console
+- Nav sections: SYSTEM (6 pages) | COGNITION (4 pages)
 
 ### API Server (`artifacts/api-server`)
 - **Port**: 8080
@@ -81,6 +82,32 @@ Structured identity layer — a continuously-updatable model of the user stored 
 - **Event bus**: emits `memory.stored` on writes, `memory.deleted` on clears, `system.config_changed` on settings changes
 - **Frontend**: COG.MODEL nav page with inline key-value editor per layer, collapsible sections, toggle switches for settings
 
+### Goal Manager + Planning Engine (Level 3 + 4, `/api/goals`)
+- `goals` table: title, description, status, priority, tags, parentGoalId, completion %, deadline
+- `goal_plans` table: step-by-step auto-generated plans with confidence scoring and per-step status tracking
+- API: full CRUD `/api/goals`, subgoal support, `POST /api/goals/:id/plan` for auto-plan generation
+- Frontend: filterable goal list (active/completed/paused/decayed), goal detail panel, plan step completion tracking
+- Route: `/goals` | Nav label: GOALS
+
+### Feedback Loop (Level 5, `/api/feedback`)
+- `feedback_signals` table: signalType, weight, context JSON
+- `behavior_profile` table: verbosityLevel, proactiveFrequency, toneFormality, confidenceThreshold (0-100 scale), learnedPatterns JSONB
+- Signal types: response.accepted/ignored/rejected, command.repeated, suggestion.acted_on/dismissed, error.occurred, session.long/short
+- Adaptive behavior engine adjusts all 4 profile axes via weighted signal accumulation
+- API: `POST /api/feedback/signal`, `GET /api/feedback/profile`, `GET /api/feedback/signals`, `POST /api/feedback/profile/reset`
+- Frontend: live gauge bars, signal injection panel, signal history feed
+- Route: `/feedback` | Nav label: FEEDBACK
+
+### Prediction Engine + Autonomy Controller (Level 6 + 7, `/api/predictions`, `/api/autonomy`)
+- `predictions` table: prediction text, confidence %, suggestedAction, triggerWindow, basis JSON, status (pending/executed/rejected/expired)
+- `autonomy_config` table: enabled, safetyLevel (strict/moderate/permissive), confirmationRequired, allowedActions[], blockedActions[]
+- `autonomy_log` table: action, actionType (allowed/blocked/requires_confirmation), parameters, outcome, reason
+- Prediction generation analyzes active goals and feedback signals to emit actionable predictions
+- Safety enforcement: strict blocks all restricted actions; moderate requires confirmation; permissive allows all whitelisted
+- API: `POST /api/predictions/generate`, `GET /api/predictions`, `PATCH /api/predictions/:id`, `GET /api/autonomy/config`, `PUT /api/autonomy/config`, `POST /api/autonomy/execute`, `GET /api/autonomy/log`
+- Frontend: prediction list with accept/reject actions, autonomy controller config panel, test executor, execution log
+- Route: `/autonomous` | Nav label: AUTONOMOUS
+
 ### Memory System
 - Short-term: session memory with 1h TTL by default (PostgreSQL)
 - Long-term: persistent memory with keyword search (PostgreSQL)
@@ -102,6 +129,13 @@ Structured identity layer — a continuously-updatable model of the user stored 
 - `system_events` — event bus traffic log (`level`, `message`=event type, `source`, `data`=full event JSON)
 - `user_cognitive_model` — UCM singleton (id=1); JSONB columns for 7 layers
 - `ucm_settings` — UCM control knobs singleton (id=1)
+- `goals` — goal entries with priority, status, completion %, parentGoalId for hierarchy
+- `goal_plans` — auto-generated step plans with confidence scoring
+- `feedback_signals` — weighted behavioral signal log
+- `behavior_profile` — adaptive behavior singleton; 4 axes adjusted by signal accumulation
+- `predictions` — AI-generated predictions tied to goals/signals with confidence %
+- `autonomy_config` — autonomy controller config singleton (safety level, allowed/blocked actions)
+- `autonomy_log` — full log of every attempted autonomous action and its outcome
 
 ## Shared Packages
 - `lib/event-bus` — shared event types, EventBus class, Plugin base class

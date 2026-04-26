@@ -12,6 +12,9 @@ import MemorySystem from "@/pages/MemorySystem";
 import DeviceControl from "@/pages/DeviceControl";
 import CommandConsole from "@/pages/CommandConsole";
 import CognitiveModel from "@/pages/CognitiveModel";
+import GoalManager from "@/pages/GoalManager";
+import FeedbackLoop from "@/pages/FeedbackLoop";
+import AutonomousLayer from "@/pages/AutonomousLayer";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,9 +33,12 @@ function Router() {
         <Route path="/ai" component={AiControl} />
         <Route path="/plugins" component={PluginManager} />
         <Route path="/memory" component={MemorySystem} />
+        <Route path="/cognitive" component={CognitiveModel} />
+        <Route path="/goals" component={GoalManager} />
+        <Route path="/feedback" component={FeedbackLoop} />
+        <Route path="/autonomous" component={AutonomousLayer} />
         <Route path="/devices" component={DeviceControl} />
         <Route path="/commands" component={CommandConsole} />
-        <Route path="/cognitive" component={CognitiveModel} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

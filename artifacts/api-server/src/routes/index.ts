@@ -8,6 +8,10 @@ import commandsRouter from "./commands";
 import devicesRouter from "./devices";
 import eventsRouter from "./events";
 import ucmRouter from "./ucm";
+import goalsRouter from "./goals";
+import feedbackRouter from "./feedback";
+import predictionsRouter from "./predictions";
+import autonomyRouter from "./autonomy";
 
 const router: IRouter = Router();
 
@@ -20,5 +24,9 @@ router.use(commandsRouter);
 router.use(devicesRouter);
 router.use(eventsRouter);
 router.use(ucmRouter);
+router.use(goalsRouter);
+router.use(feedbackRouter);
+router.use(predictionsRouter);
+router.use(autonomyRouter);
 
 export default router;
