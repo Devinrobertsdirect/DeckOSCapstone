@@ -842,8 +842,13 @@ export default function PluginStore() {
                     </span>
                   )}
                   {cardReview && (
-                    <span className="flex items-center gap-1 ml-auto">
+                    <span
+                      className="flex items-center gap-1 ml-auto cursor-pointer"
+                      onClick={(e) => { e.stopPropagation(); setSelectedPlugin(plugin); }}
+                      title="Your rating — click to update"
+                    >
                       <StarRating value={cardReview.rating} />
+                      <span className="font-mono text-[9px] text-primary/30 ml-0.5">1</span>
                     </span>
                   )}
                   {plugin.installed && !cardReview && (
