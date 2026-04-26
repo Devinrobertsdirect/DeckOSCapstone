@@ -117,6 +117,13 @@ type BriefingData = {
   generatedAt: string;
 };
 
+type CommandEntry = {
+  id: string;
+  name: string;
+  description: string;
+  syntax: string;
+};
+
 export default function Dashboard() {
   const { sendEvent } = useWebSocket();
 
@@ -139,6 +146,30 @@ export default function Dashboard() {
   const cmdHistoryRef = useRef<string[]>([]);
   const historyIndexRef = useRef(-1);
   const savedInputRef = useRef("");
+
+  const [commandList, setCommandList] = useState<CommandEntry[]>([]);
+  const [suggestionIndex, setSuggestionIndex] = useState(-1);
+
+  const suggestions = useMemo<CommandEntry[]>(() => {
+    const trimmed = cmdInput.trim().toLowerCase();
+    if (!trimmed) return [];
+    return commandList.filter(
+      (c) => c.name.toLowerCase().startsWith(trimmed) && c.name.toLowerCase() !== trimmed
+    );
+  }, [cmdInput, commandList]);
+
+  useEffect(() => {
+    setSuggestionIndex(-1);
+  }, [cmdInput]);
+
+  useEffect(() => {
+    fetch("/api/commands")
+      .then((r) => r.json())
+      .then((d: { commands?: CommandEntry[] }) => {
+        if (Array.isArray(d.commands)) setCommandList(d.commands);
+      })
+      .catch(() => {});
+  }, []);
   useEffect(() => {
     lineIdRef.current = lines.length;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -237,11 +268,17 @@ export default function Dashboard() {
     return data.response ?? "";
   }, [addLine]);
 
+  const acceptSuggestion = useCallback((cmd: CommandEntry) => {
+    setCmdInput(cmd.name);
+    setSuggestionIndex(-1);
+  }, []);
+
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
       const cmd = cmdInput.trim();
       if (!cmd || busy) return;
+      setSuggestionIndex(-1);
       setCmdInput("");
       historyIndexRef.current = -1;
       savedInputRef.current = "";
@@ -257,6 +294,40 @@ export default function Dashboard() {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Tab") {
+        if (suggestions.length > 0) {
+          e.preventDefault();
+          const idx = suggestionIndex < 0 ? 0 : suggestionIndex;
+          const chosen = suggestions[idx];
+          if (chosen) acceptSuggestion(chosen);
+        }
+        return;
+      }
+
+      if (e.key === "Escape") {
+        setSuggestionIndex(-1);
+        return;
+      }
+
+      if (suggestions.length > 0) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setSuggestionIndex((i) => Math.min(i + 1, suggestions.length - 1));
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          if (suggestionIndex > 0) {
+            setSuggestionIndex((i) => i - 1);
+          } else if (suggestionIndex === 0) {
+            setSuggestionIndex(-1);
+          } else {
+            setSuggestionIndex(suggestions.length - 1);
+          }
+          return;
+        }
+      }
+
       if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
       e.preventDefault();
       const history = cmdHistoryRef.current;
@@ -283,7 +354,7 @@ export default function Dashboard() {
         }
       }
     },
-    [cmdInput]
+    [cmdInput, suggestions, suggestionIndex, acceptSuggestion]
   );
 
   return (
@@ -349,39 +420,68 @@ export default function Dashboard() {
             <div ref={consoleEndRef} />
           </div>
 
-          <form
-            onSubmit={handleSubmit}
-            className="p-3 border-t border-primary/20 flex items-center gap-2"
-          >
-            <span className="font-mono text-xs text-primary/40 shrink-0">{">"}</span>
-            <input
-              type="text"
-              value={cmdInput}
-              onChange={(e) => {
-                setCmdInput(e.target.value);
-                historyIndexRef.current = -1;
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder={busy ? "waiting…" : "type a command (help, status, ping…)"}
-              disabled={busy}
-              className="flex-1 bg-transparent font-mono text-xs text-primary placeholder-primary/25 outline-none border-none focus:ring-0"
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <VoiceMicButton
-              onTranscript={handleVoiceTranscript}
-              disabled={busy}
-              compact
-            />
-            <button
-              type="submit"
-              disabled={busy || !cmdInput.trim()}
-              className="text-primary/40 hover:text-primary disabled:opacity-20 transition-colors"
-              aria-label="Send command"
+          <div className="relative border-t border-primary/20">
+            {suggestions.length > 0 && (
+              <ul className="absolute bottom-full left-0 right-0 z-50 border border-primary/30 bg-[hsl(var(--background))] shadow-[0_0_16px_rgba(0,212,255,0.12)] max-h-48 overflow-y-auto">
+                {suggestions.map((s, i) => (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        acceptSuggestion(s);
+                      }}
+                      className={`w-full text-left px-3 py-1.5 font-mono text-xs flex items-center justify-between gap-4 transition-colors ${
+                        i === suggestionIndex
+                          ? "bg-primary/15 text-primary"
+                          : "text-primary/70 hover:bg-primary/10 hover:text-primary"
+                      }`}
+                    >
+                      <span className="font-semibold">{s.name}</span>
+                      <span className="text-primary/35 truncate">{s.description}</span>
+                    </button>
+                  </li>
+                ))}
+                <li className="px-3 py-1 border-t border-primary/10 text-[10px] font-mono text-primary/25 flex items-center gap-2">
+                  <ChevronRight className="w-2.5 h-2.5" />
+                  TAB to complete · ↑↓ to navigate · ESC to dismiss
+                </li>
+              </ul>
+            )}
+            <form
+              onSubmit={handleSubmit}
+              className="p-3 flex items-center gap-2"
             >
-              <Send className="w-3.5 h-3.5" />
-            </button>
-          </form>
+              <span className="font-mono text-xs text-primary/40 shrink-0">{">"}</span>
+              <input
+                type="text"
+                value={cmdInput}
+                onChange={(e) => {
+                  setCmdInput(e.target.value);
+                  historyIndexRef.current = -1;
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder={busy ? "waiting…" : "type a command (help, status, ping…)"}
+                disabled={busy}
+                className="flex-1 bg-transparent font-mono text-xs text-primary placeholder-primary/25 outline-none border-none focus:ring-0"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <VoiceMicButton
+                onTranscript={handleVoiceTranscript}
+                disabled={busy}
+                compact
+              />
+              <button
+                type="submit"
+                disabled={busy || !cmdInput.trim()}
+                className="text-primary/40 hover:text-primary disabled:opacity-20 transition-colors"
+                aria-label="Send command"
+              >
+                <Send className="w-3.5 h-3.5" />
+              </button>
+            </form>
+          </div>
         </div>
 
         <div className="flex flex-col border border-primary/20 bg-card/40 relative overflow-hidden">
