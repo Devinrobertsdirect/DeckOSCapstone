@@ -1,6 +1,6 @@
 import http from "http";
 import app from "./app.js";
-import { logger } from "./lib/logger.js";
+import { logger, isDaemon } from "./lib/logger.js";
 import { bootstrap, teardown } from "./lib/bootstrap.js";
 import { attachWebSocketServer } from "./lib/ws-server.js";
 
@@ -18,6 +18,10 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
+if (isDaemon) {
+  logger.info({ daemon: true }, "Starting in daemon mode — JSON-only stdout logging enabled");
+}
+
 async function main() {
   await bootstrap();
 
@@ -30,7 +34,7 @@ async function main() {
       process.exit(1);
     }
 
-    logger.info({ port }, "Server listening (HTTP + WebSocket)");
+    logger.info({ port, daemon: isDaemon }, "Server listening (HTTP + WebSocket)");
   });
 
   const shutdown = async (signal: string) => {

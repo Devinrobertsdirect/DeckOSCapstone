@@ -6,16 +6,73 @@ import { logger } from "./logger.js";
 import { presenceManager } from "./presence-manager.js";
 import { initiativeEngine } from "./initiative-engine.js";
 import { narrativeManager } from "./narrative-manager.js";
-import { createDeviceManager } from "./device-manager.js";
+import { createDeviceManager, type DeviceManager } from "./device-manager.js";
 import { MqttTransport } from "./mqtt-transport.js";
 import { WsDeviceTransport } from "./ws-device-transport.js";
 import { startSimulatedDevices } from "./simulated-devices.js";
+import type { BusEvent } from "@workspace/event-bus";
 
 export let registry: PluginRegistry;
 
 let mqttTransport: MqttTransport | null = null;
 let wsDeviceTransport: WsDeviceTransport | null = null;
 let stopSimDevices: (() => void) | null = null;
+
+function registerQueryHandlers(deviceManager: DeviceManager): void {
+  bus.subscribe("device.list.request", async (event: BusEvent) => {
+    if (event.type !== "device.list.request") return;
+    const devices = deviceManager.listDevices().map((d) => ({
+      id: d.id,
+      name: d.name,
+      type: d.type,
+      category: d.category,
+      protocol: d.protocol,
+      status: d.state.status,
+      lastSeen: d.state.lastSeen,
+      location: d.location,
+      capabilities: d.capabilities,
+    }));
+    bus.emit({
+      source: "device-manager",
+      target: event.source,
+      type: "device.list.response",
+      payload: { devices, count: devices.length },
+    });
+  });
+
+  bus.subscribe("plugin.list.request", (event: BusEvent) => {
+    if (event.type !== "plugin.list.request") return;
+    const plugins = registry
+      ? registry.listPlugins().map((p) => ({
+          id: p.plugin.id,
+          name: p.plugin.name,
+          version: p.plugin.version,
+          enabled: p.enabled,
+          status: p.status,
+        }))
+      : [];
+    bus.emit({
+      source: "plugin-registry",
+      target: event.source,
+      type: "plugin.list.response",
+      payload: { plugins, count: plugins.length },
+    });
+  });
+
+  bus.subscribe("memory.search.request", async (event: BusEvent) => {
+    if (event.type !== "memory.search.request") return;
+    const p = event.payload as Record<string, unknown>;
+    const query = String(p?.["query"] ?? "");
+    if (!query) return;
+    const results = await memoryService.search(query, 10);
+    bus.emit({
+      source: "memory-service",
+      target: event.source,
+      type: "memory.retrieved",
+      payload: { query, results, count: results.length },
+    });
+  });
+}
 
 export async function bootstrap(): Promise<void> {
   memoryService.start(60_000);
@@ -44,6 +101,8 @@ export async function bootstrap(): Promise<void> {
   await registry.loadPluginsDir();
 
   const deviceManager = createDeviceManager(bus);
+
+  registerQueryHandlers(deviceManager);
 
   stopSimDevices = startSimulatedDevices(deviceManager);
 

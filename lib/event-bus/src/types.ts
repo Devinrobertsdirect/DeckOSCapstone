@@ -6,6 +6,7 @@ export const EventCategorySchema = z.enum([
   "device",
   "ai",
   "memory",
+  "client",
 ]);
 
 export type EventCategory = z.infer<typeof EventCategorySchema>;
@@ -26,6 +27,8 @@ export const PluginEventTypeSchema = z.enum([
   "plugin.error",
   "plugin.executed",
   "plugin.status_changed",
+  "plugin.list.request",
+  "plugin.list.response",
 ]);
 
 export const DeviceEventTypeSchema = z.enum([
@@ -34,6 +37,8 @@ export const DeviceEventTypeSchema = z.enum([
   "device.reading",
   "device.command_sent",
   "device.error",
+  "device.list.request",
+  "device.list.response",
 ]);
 
 export const AiEventTypeSchema = z.enum([
@@ -50,6 +55,12 @@ export const MemoryEventTypeSchema = z.enum([
   "memory.retrieved",
   "memory.deleted",
   "memory.expired",
+  "memory.search.request",
+]);
+
+export const ClientEventTypeSchema = z.enum([
+  "client.connected",
+  "client.disconnected",
 ]);
 
 export const EventTypeSchema = z.union([
@@ -58,6 +69,7 @@ export const EventTypeSchema = z.union([
   DeviceEventTypeSchema,
   AiEventTypeSchema,
   MemoryEventTypeSchema,
+  ClientEventTypeSchema,
 ]);
 
 export type EventType = z.infer<typeof EventTypeSchema>;

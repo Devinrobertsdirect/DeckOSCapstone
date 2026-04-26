@@ -234,6 +234,28 @@ importers:
         specifier: 3.1.0
         version: 3.1.0
 
+  artifacts/deck-cli:
+    dependencies:
+      chalk:
+        specifier: ^5.4.1
+        version: 5.6.2
+      ws:
+        specifier: ^8.20.0
+        version: 8.20.0
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+      esbuild:
+        specifier: 0.27.3
+        version: 0.27.3
+      typescript:
+        specifier: ~5.9.2
+        version: 5.9.3
+
   artifacts/deck-mobile:
     devDependencies:
       '@hookform/resolvers':
@@ -2055,6 +2077,10 @@ packages:
 
   caniuse-lite@1.0.30001777:
     resolution: {integrity: sha512-tmN+fJxroPndC74efCdp12j+0rk0RHwV5Jwa1zWaFVyw2ZxAuPeG8ZgWC3Wz7uSjT3qMRQ5XHZ4COgQmsCMJAQ==}
+
+  chalk@5.6.2:
+    resolution: {integrity: sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA==}
+    engines: {node: ^12.17.0 || ^14.13 || >=16.0.0}
 
   chokidar@4.0.3:
     resolution: {integrity: sha512-Qgzu8kfBvo+cA4962jnP1KkS6Dop5NS6g7R5LFYJr4b8Ub94PPQXUksCw9PvXoeXPRRddRNC5C1JQUR2SMGtnA==}
@@ -4914,6 +4940,8 @@ snapshots:
       get-intrinsic: 1.3.0
 
   caniuse-lite@1.0.30001777: {}
+
+  chalk@5.6.2: {}
 
   chokidar@4.0.3:
     dependencies:

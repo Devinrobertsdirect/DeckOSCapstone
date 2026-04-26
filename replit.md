@@ -41,6 +41,16 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - Cinematic mode: breathing card glow (card-breathe), value flicker, enhanced scanline, nav active glow
 - Minimal mode: no scanline, no grid, no glow animations, desaturated palette
 
+### DeckOS CLI (`artifacts/deck-cli`)
+- **Binary**: `node artifacts/deck-cli/dist/index.mjs`
+- Standalone Node.js CLI tool connecting to the API server via WebSocket (`/api/ws`)
+- **Interactive REPL**: readline-based prompt (`deck>`) with color-coded event display using chalk
+- **Commands**: `status`, `infer <prompt>`, `mode <mode>`, `devices list`, `memory search <query>`, `plugins list`, `monitor`, `help`, `exit`
+- **Daemon mode** (`--daemon`): streams all events as NDJSON to stdout; stderr for connection status
+- **Auto-reconnect**: 3s reconnect on disconnect
+- **Config**: `WS_URL` env var (default `ws://localhost:PORT/api/ws`)
+- **Color scheme**: system=blue, ai=cyan, device=yellow, plugin=green, memory=magenta, ws=gray
+
 ### DeckOS Mobile — JARVIS Chat (`artifacts/deck-mobile`)
 - **Port**: 26138
 - **Preview Path**: `/mobile/`
@@ -56,6 +66,10 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - **Preview Path**: `/api`
 - Express 5 backend with all Deck OS routes
 - **WebSocket**: `ws` package attached at `/api/ws` — broadcasts all EventBus events to connected clients
+- **History replay**: On new WebSocket connection, immediately replays last 50 events from `system_events` DB as a `history.replay` batch
+- **Command ingestion**: Clients can send `{ type, payload }` JSON over WebSocket; server validates and emits onto the bus. Malformed messages get a `ws.error` response
+- **Lifecycle events**: `client.connected` and `client.disconnected` emitted on the bus for each connection
+- **Daemon mode**: `--daemon` flag suppresses interactive output and enables JSON-only stdout logging (systemd-compatible)
 - **POST /api/chat** — routes through AI inference, writes to memory, emits ai.chat.request/response events, returns `{response, channel, sessionId, latencyMs, modelUsed, fromCache}`
 - **GET /api/chat/history** — returns session chat history
 - **GET/PUT /api/voice-identity** — manages the Voice Identity profile (tone, pacing, formality, verbosity, emotionRange)
@@ -68,7 +82,8 @@ Central nervous system for all inter-component communication. All components com
 
 - **EventBus class**: async, non-blocking processing loop; `emit`, `subscribe`, `unsubscribe`, `history` methods
 - **Event envelope**: `id`, `source`, `target`, `type`, `payload`, `timestamp`
-- **Event types**: discriminated unions for `system.*`, `plugin.*`, `device.*`, `ai.*`, `memory.*`
+- **Event types**: discriminated unions for `system.*`, `plugin.*`, `device.*`, `ai.*`, `memory.*`, `client.*`
+- **Client event types added**: `client.connected`, `client.disconnected`
 - **Persistence**: fire-and-forget writes to `system_events` DB table
 - **Plugin interface**: abstract `Plugin` base class with `init(context)`, `on_event(event)`, `execute(payload)`, `shutdown()`
 - **PluginContext**: sandboxed — `emit`, `subscribe`, optional `memory` (PluginMemory), optional `infer` (AI inference fn) exposed
