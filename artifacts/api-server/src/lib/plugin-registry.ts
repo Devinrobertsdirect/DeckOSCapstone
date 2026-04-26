@@ -2,7 +2,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { readdir, access } from "fs/promises";
 import { Worker } from "worker_threads";
-import type { EventBus, BusEvent, EventType, EventHandler } from "@workspace/event-bus";
+import type { EventBus, BusEvent, PluginBusEvent, EventType, EventHandler } from "@workspace/event-bus";
 import { isValidPlugin } from "@workspace/event-bus";
 import type { Plugin, PluginContext } from "@workspace/event-bus";
 import { logger } from "./logger.js";
@@ -275,7 +275,7 @@ export class PluginRegistry {
             const entry = proxyPlugin ? this.plugins.get(proxyPlugin.id) : null;
             if (entry) entry.lastActivity = new Date();
             try {
-              this.bus.emit(msg["event"] as Omit<BusEvent, "id" | "timestamp" | "version">);
+              this.bus.emitPlugin(msg["event"] as Omit<PluginBusEvent, "id" | "timestamp" | "version">);
             } catch (err) {
               logger.warn({ err, pluginId }, "PluginRegistry: sandboxed plugin emit rejected");
             }

@@ -334,6 +334,14 @@ router.post("/plugins/store/install/:pluginId", async (req, res) => {
     });
 
     const { loaded, warning } = await loadCommunityPlugin(entry);
+    if (loaded && existing.length > 0) {
+      bus.emit({
+        source: "store",
+        target: null,
+        type: "plugin.reload",
+        payload: { pluginId, version: entry.version },
+      });
+    }
     logger.info({ pluginId, version: entry.version, runtimeLoaded: loaded }, "Community plugin installed");
     res.json({ pluginId, installed: true, version: entry.version, runtimeLoaded: loaded, ...(warning ? { warning } : {}) });
   } catch (err) {
@@ -454,6 +462,64 @@ router.get("/plugins/store/installed", async (_req, res) => {
     .orderBy(communityPluginsTable.installedAt);
 
   res.json({ plugins: installed, count: installed.length });
+});
+
+const CommunityExecuteBody = z.object({
+  command: z.string().min(1).default("default"),
+  args: z.record(z.unknown()).optional().default({}),
+});
+
+router.post("/plugins/store/community/:pluginId/execute", async (req, res) => {
+  const { pluginId } = req.params;
+
+  if (!SAFE_PLUGIN_ID_RE.test(pluginId)) {
+    res.status(400).json({ error: "Invalid plugin ID format" });
+    return;
+  }
+
+  const bodyParsed = CommunityExecuteBody.safeParse(req.body ?? {});
+  if (!bodyParsed.success) {
+    res.status(400).json({ error: "Invalid request body", issues: bodyParsed.error.issues });
+    return;
+  }
+
+  const { command, args } = bodyParsed.data;
+
+  const { registry } = await import("../lib/bootstrap.js").catch(() => ({ registry: null as null }));
+  if (!registry) {
+    res.status(503).json({ error: "Plugin registry unavailable" });
+    return;
+  }
+
+  const entry = registry.getPlugin(pluginId);
+  if (!entry) {
+    res.status(404).json({
+      error: `Community plugin '${pluginId}' is not loaded — ensure it is installed and enabled`,
+    });
+    return;
+  }
+
+  const start = Date.now();
+  try {
+    const result = await entry.plugin.execute({ command, ...args });
+    res.json({
+      pluginId,
+      command,
+      success: true,
+      output: (result as Record<string, unknown>)?.["output"] ?? "",
+      data: (result as Record<string, unknown>)?.["data"] ?? null,
+      executionTimeMs: Date.now() - start,
+    });
+  } catch (err) {
+    logger.error({ err, pluginId, command }, "Community plugin execute error");
+    res.status(500).json({
+      pluginId,
+      command,
+      success: false,
+      error: err instanceof Error ? err.message : "Execution failed",
+      executionTimeMs: Date.now() - start,
+    });
+  }
 });
 
 export default router;

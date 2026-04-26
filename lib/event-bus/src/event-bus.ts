@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
-import { BusEventSchema } from "./types.js";
-import type { BusEvent, EventFilter, EventHandler, EventType } from "./types.js";
+import { BusEventSchema, PluginBusEventSchema } from "./types.js";
+import type { BusEvent, EventFilter, EventHandler, EventType, PluginBusEvent } from "./types.js";
 
 type Subscription = {
   id: string;
@@ -51,6 +51,27 @@ export class EventBus {
 
     const validated = parsed.data;
     this.traceLog("queued", { eventId: validated.id, type: validated.type, source: validated.source });
+    this.queue.push(validated);
+    this.drain();
+  }
+
+  emitPlugin(event: Omit<PluginBusEvent, "id" | "timestamp" | "version">): void {
+    const full = {
+      ...event,
+      version: "v1" as const,
+      id: randomUUID(),
+      timestamp: new Date().toISOString(),
+    };
+    const parsed = PluginBusEventSchema.safeParse(full);
+    if (!parsed.success) {
+      this.logError("EventBus: rejected invalid plugin event", {
+        type: (event as { type?: unknown }).type,
+        issues: parsed.error.issues,
+      });
+      return;
+    }
+    const validated = parsed.data as BusEvent;
+    this.traceLog("queued[plugin]", { eventId: validated.id, type: validated.type, source: validated.source });
     this.queue.push(validated);
     this.drain();
   }

@@ -124,10 +124,22 @@ export const BusEventSchema = z.object({
   version: z.literal("v1"),
   source: z.string(),
   target: z.string().nullable(),
+  type: EventTypeSchema,
+  payload: z.unknown(),
+  timestamp: z.string(),
+});
+
+export const PluginBusEventSchema = z.object({
+  id: z.string(),
+  version: z.literal("v1"),
+  source: z.string(),
+  target: z.string().nullable(),
   type: z.string().min(1),
   payload: z.unknown(),
   timestamp: z.string(),
 });
+
+export type PluginBusEvent = z.infer<typeof PluginBusEventSchema>;
 
 export type BusEvent = z.infer<typeof BusEventSchema>;
 
