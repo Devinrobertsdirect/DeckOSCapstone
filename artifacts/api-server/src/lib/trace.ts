@@ -20,7 +20,7 @@ class TraceState {
   }
 
   log(msg: string, data?: unknown): void {
-    logger.info({ _trace: true, data }, msg);
+    logger.trace({ data }, msg);
   }
 }
 
