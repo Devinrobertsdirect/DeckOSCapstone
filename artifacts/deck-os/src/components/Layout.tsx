@@ -12,6 +12,7 @@ import { useHealthCheck, getHealthCheckQueryKey } from "@workspace/api-client-re
 import { useVisualMode, type VisualMode } from "@/contexts/VisualMode";
 import { useWebSocket } from "@/contexts/WebSocketContext";
 import { EventLogPanel } from "@/components/EventLogPanel";
+import { ParticleOverlay } from "@/components/ParticleOverlay";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -325,6 +326,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
         {/* MAIN */}
         <main className="flex-1 overflow-y-auto p-5 relative">
+          <ParticleOverlay />
           <div className="absolute inset-0 pointer-events-none border border-primary/8 m-3 rounded" />
           <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(ellipse at center, rgba(0,200,255,0.04) 0%, transparent 70%)" }} />
           <div className="relative z-10 h-full">
