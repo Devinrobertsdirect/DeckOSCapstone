@@ -10,12 +10,16 @@ export class MqttTransport {
   private reconnectAttempts = 0;
   private shuttingDown = false;
   private brokerUrl: string;
+  private brokerUser: string | undefined;
+  private brokerPass: string | undefined;
 
   constructor(
     private bus: EventBus,
     private deviceManager: DeviceManager,
   ) {
-    this.brokerUrl = process.env["MQTT_BROKER_URL"] ?? "";
+    this.brokerUrl  = process.env["MQTT_BROKER_URL"]  ?? "";
+    this.brokerUser = process.env["MQTT_BROKER_USER"] || undefined;
+    this.brokerPass = process.env["MQTT_BROKER_PASS"] || undefined;
 
     this.bus.subscribe("device.command.send", (event) => {
       const p = event.payload as Record<string, unknown>;
@@ -49,7 +53,11 @@ export class MqttTransport {
     const scheme = this.brokerUrl.split("://")[0] ?? "mqtt";
     const hostPart = (this.brokerUrl.split("://")[1] ?? "").replace(/^[^@]+@/, "***@").split("/")[0];
     logger.info(
-      { broker: `${scheme}://${hostPart}` },
+      {
+        broker: `${scheme}://${hostPart}`,
+        hasUser: !!this.brokerUser,
+        hasPass: !!this.brokerPass,
+      },
       "MqttTransport: MQTT_BROKER_URL secret found — connecting to broker",
     );
     await this.connect();
@@ -64,6 +72,8 @@ export class MqttTransport {
         clientId: `jarvis-deck-os-${Date.now()}`,
         reconnectPeriod: 0,
         connectTimeout: 10_000,
+        ...(this.brokerUser ? { username: this.brokerUser } : {}),
+        ...(this.brokerPass ? { password: this.brokerPass } : {}),
       });
 
       this.client.on("connect", () => {
