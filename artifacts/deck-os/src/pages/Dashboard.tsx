@@ -134,6 +134,11 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   const consoleEndRef = useRef<HTMLDivElement>(null);
   const lineIdRef = useRef(0);
+
+  const [cmdHistory, setCmdHistory] = useState<string[]>([]);
+  const cmdHistoryRef = useRef<string[]>([]);
+  const historyIndexRef = useRef(-1);
+  const savedInputRef = useRef("");
   useEffect(() => {
     lineIdRef.current = lines.length;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -238,9 +243,47 @@ export default function Dashboard() {
       const cmd = cmdInput.trim();
       if (!cmd || busy) return;
       setCmdInput("");
+      historyIndexRef.current = -1;
+      savedInputRef.current = "";
+      setCmdHistory((prev) => {
+        const next = [...prev, cmd];
+        cmdHistoryRef.current = next;
+        return next;
+      });
       await runCommand(cmd);
     },
     [cmdInput, busy, runCommand]
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      e.preventDefault();
+      const history = cmdHistoryRef.current;
+      if (history.length === 0) return;
+      let idx = historyIndexRef.current;
+      if (e.key === "ArrowUp") {
+        if (idx === -1) {
+          savedInputRef.current = cmdInput;
+          idx = history.length - 1;
+        } else if (idx > 0) {
+          idx -= 1;
+        }
+        historyIndexRef.current = idx;
+        setCmdInput(history[idx] ?? "");
+      } else {
+        if (idx === -1) return;
+        if (idx < history.length - 1) {
+          idx += 1;
+          historyIndexRef.current = idx;
+          setCmdInput(history[idx] ?? "");
+        } else {
+          historyIndexRef.current = -1;
+          setCmdInput(savedInputRef.current);
+        }
+      }
+    },
+    [cmdInput]
   );
 
   return (
@@ -314,7 +357,11 @@ export default function Dashboard() {
             <input
               type="text"
               value={cmdInput}
-              onChange={(e) => setCmdInput(e.target.value)}
+              onChange={(e) => {
+                setCmdInput(e.target.value);
+                historyIndexRef.current = -1;
+              }}
+              onKeyDown={handleKeyDown}
               placeholder={busy ? "waiting…" : "type a command (help, status, ping…)"}
               disabled={busy}
               className="flex-1 bg-transparent font-mono text-xs text-primary placeholder-primary/25 outline-none border-none focus:ring-0"
