@@ -17,7 +17,7 @@ export class MqttTransport {
     private bus: EventBus,
     private deviceManager: DeviceManager,
   ) {
-    this.brokerUrl  = process.env["MQTT_BROKER_URL"]  ?? "";
+    this.brokerUrl  = MqttTransport.normalizeBrokerUrl(process.env["MQTT_BROKER_URL"] ?? "");
     this.brokerUser = process.env["MQTT_BROKER_USER"] || undefined;
     this.brokerPass = process.env["MQTT_BROKER_PASS"] || undefined;
 
@@ -39,6 +39,12 @@ export class MqttTransport {
         }
       }
     });
+  }
+
+  private static normalizeBrokerUrl(raw: string): string {
+    if (!raw) return raw;
+    if (/^[a-z]+:\/\//i.test(raw)) return raw;
+    return `mqtts://${raw}`;
   }
 
   async start(): Promise<void> {
@@ -110,8 +116,17 @@ export class MqttTransport {
         this.handleIncomingMessage(topic, payload);
       });
 
-      this.client.on("error", (err: Error) => {
-        logger.error({ err }, "MqttTransport: MQTT error");
+      this.client.on("error", (err: Error & { code?: number }) => {
+        const isAuthError = err.code === 5 || err.message?.includes("Not authorized") || err.message?.includes("Bad User Name");
+        if (isAuthError) {
+          logger.error(
+            { err },
+            "MqttTransport: authentication rejected — check MQTT_BROKER_USER and MQTT_BROKER_PASS secrets in Replit, then restart the server",
+          );
+          this.shuttingDown = true;
+        } else {
+          logger.error({ err }, "MqttTransport: MQTT error");
+        }
         this.bus.emit({
           source: "mqtt-transport",
           target: null,
