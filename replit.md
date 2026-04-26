@@ -34,7 +34,7 @@ Initializes the EventBus, PluginRegistry (auto-scans `dist/plugins/`), MemorySer
 
 ## AI Router Layer
 
-Manages AI inference, supporting Ollama, llama.cpp, and OpenAI-compatible APIs. Includes response caching and intelligent mode switching (DIRECT_EXECUTION, LIGHT_REASONING, DEEP_REASONING, HYBRID_MODE).
+3-tier model routing gateway: CORTEX (gemma3:9b — chat/planning/reasoning), REFLEX (phi3 — classification/commands), AUTOPILOT (rule-engine — deterministic/offline). Model names and Ollama URL are configurable at runtime via `/api/config` and stored in `app_config` DB table; inference.ts reads them dynamically. The `ai_chat` plugin emits `ai.inference_started` with `{ tier, model, requestId }` before each LLM call so the frontend can show JARVIS's thinking state in real time.
 
 ## Plugin System
 

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { TerminalSquare, CheckCircle2, XCircle, Brain, Zap, Loader2, ChevronRight, Circle } from "lucide-react";
+import { TerminalSquare, CheckCircle2, XCircle, Brain, Zap, Loader2, ChevronRight, Circle, Cpu } from "lucide-react";
 import { VoiceMicButton } from "@/components/VoiceMicButton";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,10 +26,13 @@ type ConsoleLine = {
   input: string;
   output?: string;
   model?: string;
+  tier?: string;
   latencyMs?: number;
   fromCache?: boolean;
   aiAssisted?: boolean;
   pending?: boolean;
+  thinkingModel?: string;
+  thinkingTier?: string;
   timestamp: string;
 };
 
@@ -45,16 +48,41 @@ export default function CommandConsole() {
   const [lines, setLines] = useState<ConsoleLine[]>([]);
   const outputRef = useRef<HTMLDivElement>(null);
 
-  const chatRequests = useWsEvents((e) => e.type === "ai.chat.request");
-  const chatResponses = useWsEvents((e) => e.type === "ai.chat.response");
-  const allEvents = useWsEvents();
+  const chatRequests   = useWsEvents((e) => e.type === "ai.chat.request");
+  const chatResponses  = useWsEvents((e) => e.type === "ai.chat.response");
+  const inferStarted   = useWsEvents((e) => e.type === "ai.inference_started");
+  const allEvents      = useWsEvents();
   const processedEvtKeysRef = useRef(new Set<string>());
+  const [dotCycle, setDotCycle] = useState(0);
+
+  // Animate the thinking dots while any line is pending
+  const hasPendingLines = lines.some((l) => l.pending);
+  useEffect(() => {
+    if (!hasPendingLines) return;
+    const id = setInterval(() => setDotCycle((c) => (c + 1) % 4), 400);
+    return () => clearInterval(id);
+  }, [hasPendingLines]);
 
   useEffect(() => {
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
   }, [lines]);
+
+  // When inference_started fires, update the matching pending line with tier/model
+  useEffect(() => {
+    inferStarted.forEach((evt) => {
+      const p = evt.payload as { requestId?: string; tier?: string; model?: string };
+      if (!p.requestId) return;
+      setLines((prev) => {
+        const idx = prev.findIndex((l) => l.id === p.requestId && l.pending);
+        if (idx === -1) return prev;
+        const updated = [...prev];
+        updated[idx] = { ...updated[idx]!, thinkingTier: p.tier, thinkingModel: p.model };
+        return updated;
+      });
+    });
+  }, [inferStarted]);
 
   useEffect(() => {
     chatResponses.forEach((evt) => {
@@ -79,6 +107,8 @@ export default function CommandConsole() {
           fromCache: p.fromCache ?? current.fromCache,
           aiAssisted: true,
           pending: false,
+          thinkingTier: undefined,
+          thinkingModel: undefined,
         };
         return updated;
       });
@@ -123,7 +153,7 @@ export default function CommandConsole() {
     }
   };
 
-  const hasPending = lines.some((l) => l.pending);
+  const hasPending = hasPendingLines;
 
   const handleVoiceTranscript = useCallback(async (transcript: string): Promise<string> => {
     const res = await fetch("/api/chat", {
@@ -206,9 +236,30 @@ export default function CommandConsole() {
                     <span className="text-primary/20 ml-auto">{new Date(line.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
                   </div>
                   {line.pending ? (
-                    <div className="pl-4 flex items-center gap-2 text-primary/60">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      <span>Waiting for ai.chat.response...</span>
+                    <div className="pl-4 flex items-center gap-2 text-primary/70 font-mono text-xs">
+                      {line.thinkingTier ? (
+                        <>
+                          <Cpu className="w-3 h-3 text-[#cc44ff] animate-pulse" />
+                          <span className={`uppercase font-bold ${
+                            line.thinkingTier === "cortex"    ? "text-[#cc44ff]"
+                          : line.thinkingTier === "reflex"    ? "text-[#ffc820]"
+                          : "text-[#11d97a]"
+                          }`}>{line.thinkingTier}</span>
+                          <span className="text-primary/30">•</span>
+                          <span className="text-primary/60">{line.thinkingModel}</span>
+                          <span className="text-primary/30">•</span>
+                          <span className="text-primary/50 tracking-widest">
+                            {"THINKING" + "•".repeat(dotCycle)}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin text-primary/40" />
+                          <span className="text-primary/40">
+                            {"ROUTING" + "•".repeat(dotCycle)}
+                          </span>
+                        </>
+                      )}
                     </div>
                   ) : line.output !== undefined ? (
                     <>
@@ -216,7 +267,11 @@ export default function CommandConsole() {
                       <div className="pl-4 flex items-center gap-3 text-primary/30">
                         <CheckCircle2 className="w-3 h-3 text-[#22ff44]" />
                         {line.latencyMs !== undefined && <span>{line.latencyMs}ms</span>}
-                        {(line.model) && <span>MODEL: {line.model}</span>}
+                        {line.model && (
+                          <span className="flex items-center gap-1">
+                            MODEL: {line.model}
+                          </span>
+                        )}
                         {line.fromCache && <span className="text-[#ffaa00]">CACHED</span>}
                         {line.aiAssisted && (
                           <span className="flex items-center gap-1 text-[#cc44ff]"><Brain className="w-3 h-3" /> AI-ASSISTED</span>

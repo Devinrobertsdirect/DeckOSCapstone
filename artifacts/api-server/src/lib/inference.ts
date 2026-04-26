@@ -1,4 +1,5 @@
 import os from "os";
+import { getConfig } from "./app-config.js";
 
 // ── Task types ─────────────────────────────────────────────────────────────
 // Callers declare what they're asking for — the gateway picks the right model.
@@ -30,6 +31,8 @@ export type InferenceOptions = {
   context?: Array<{ role: string; content: string }>;
   useCache?: boolean;
   latencyBudgetMs?: number; // if set and < 200, forces fast model
+  /** Called synchronously once tier+model are resolved, BEFORE the slow LLM call */
+  onTierResolved?: (tier: "cortex" | "reflex" | "autopilot", model: string) => void;
 };
 
 export type InferenceResult = {
@@ -80,12 +83,38 @@ export function getInferenceState() {
   return inferenceState;
 }
 
+// ── Dynamic config helpers ───────────────────────────────────────────────────
+export async function getOllamaBaseUrl(): Promise<string> {
+  try {
+    const fromDb = await getConfig("OLLAMA_HOST");
+    return fromDb ?? process.env["OLLAMA_HOST"] ?? "http://localhost:11434";
+  } catch {
+    return process.env["OLLAMA_HOST"] ?? "http://localhost:11434";
+  }
+}
+
+async function getDynamicModels(): Promise<{ reasoning: string; fast: string }> {
+  try {
+    const [reasoning, fast] = await Promise.all([
+      getConfig("REASONING_MODEL"),
+      getConfig("FAST_MODEL"),
+    ]);
+    return {
+      reasoning: reasoning ?? process.env["REASONING_MODEL"] ?? MODEL_CONFIG.REASONING,
+      fast:      fast      ?? process.env["FAST_MODEL"]      ?? MODEL_CONFIG.FAST,
+    };
+  } catch {
+    return { reasoning: MODEL_CONFIG.REASONING, fast: MODEL_CONFIG.FAST };
+  }
+}
+
 // ── Ollama detection ────────────────────────────────────────────────────────
 export async function detectOllama(): Promise<boolean> {
   try {
+    const base = await getOllamaBaseUrl();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch("http://localhost:11434/api/tags", {
+    const res = await fetch(`${base}/api/tags`, {
       signal: controller.signal,
     });
     clearTimeout(timeout);
@@ -191,6 +220,7 @@ export async function callOllama(
   model: string,
   context: Array<{ role: string; content: string }>,
 ): Promise<string> {
+  const base = await getOllamaBaseUrl();
   const hasSystemMsg = context.some((m) => m.role === "system");
   const messages = [
     ...(!hasSystemMsg
@@ -200,7 +230,7 @@ export async function callOllama(
     { role: "user", content: prompt },
   ];
 
-  const res = await fetch("http://localhost:11434/api/chat", {
+  const res = await fetch(`${base}/api/chat`, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ model, messages, stream: false }),
@@ -214,11 +244,15 @@ export async function callOllama(
 
 // ── Primary inference entry point ───────────────────────────────────────────
 export async function runInference(opts: InferenceOptions): Promise<InferenceResult> {
-  const { prompt, mode, task, context = [], useCache = true, latencyBudgetMs } = opts;
+  const { prompt, mode, task, context = [], useCache = true, latencyBudgetMs, onTierResolved } = opts;
   inferenceState.totalRequests++;
 
+  // Read dynamic model overrides from DB/env
+  const dynModels = await getDynamicModels();
   const tier  = resolveGateway(task, mode, latencyBudgetMs);
-  const model = tierToModel(tier);
+  const model = tier === "cortex"  ? dynModels.reasoning
+              : tier === "reflex"  ? dynModels.fast
+              : MODEL_CONFIG.RULE_ENGINE;
 
   const cacheKey = `${tier}:${prompt}`;
   if (useCache && inferenceState.cache.has(cacheKey)) {
@@ -234,6 +268,9 @@ export async function runInference(opts: InferenceOptions): Promise<InferenceRes
       };
     }
   }
+
+  // Notify caller which tier/model was resolved — happens before the slow LLM call
+  if (onTierResolved) onTierResolved(tier, model);
 
   const start = Date.now();
   let response = "";
@@ -257,8 +294,8 @@ export async function runInference(opts: InferenceOptions): Promise<InferenceRes
     // Graceful degradation: cortex fails → try reflex, reflex fails → autopilot
     if (tier === "cortex") {
       try {
-        response  = await callOllama(prompt, MODEL_CONFIG.FAST, context);
-        modelUsed = MODEL_CONFIG.FAST;
+        response  = await callOllama(prompt, dynModels.fast, context);
+        modelUsed = dynModels.fast;
         usedTier  = "reflex";
         inferenceState.reflexRequests++;
       } catch {

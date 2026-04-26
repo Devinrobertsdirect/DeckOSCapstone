@@ -20,6 +20,7 @@ import CommandConsole from "@/pages/CommandConsole";
 import MapView from "@/pages/MapView";
 import RoutinesPage from "@/pages/RoutinesPage";
 import BriefingsPage from "@/pages/BriefingsPage";
+import SettingsPage from "@/pages/Settings";
 
 applyColor(getStoredColor());
 
@@ -46,6 +47,7 @@ function Router() {
         <Route path="/map" component={MapView} />
         <Route path="/routines" component={RoutinesPage} />
         <Route path="/briefings" component={BriefingsPage} />
+        <Route path="/settings" component={SettingsPage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

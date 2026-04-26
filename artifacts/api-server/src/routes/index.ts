@@ -23,6 +23,7 @@ import personaRouter from "./persona";
 import routinesRouter from "./routines";
 import notificationsRouter from "./notifications";
 import briefingsRouter from "./briefings";
+import configRouter from "./config";
 
 const router: IRouter = Router();
 
@@ -50,5 +51,6 @@ router.use(locationRouter);
 router.use(routinesRouter);
 router.use(notificationsRouter);
 router.use(briefingsRouter);
+router.use(configRouter);
 
 export default router;

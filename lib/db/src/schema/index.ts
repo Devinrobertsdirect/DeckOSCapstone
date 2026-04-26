@@ -8,3 +8,4 @@ export * from "./presence";
 export * from "./location";
 export * from "./devices";
 export * from "./persona";
+export * from "./config";

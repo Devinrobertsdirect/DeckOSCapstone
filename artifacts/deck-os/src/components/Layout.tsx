@@ -190,6 +190,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         { href: "/commands",  icon: TerminalSquare,  label: "CONSOLE"   },
         { href: "/routines",   icon: Clock,           label: "ROUTINES"  },
         { href: "/briefings",  icon: Newspaper,       label: "BRIEFINGS" },
+        { href: "/settings",   icon: Settings,        label: "SETTINGS"  },
       ],
     },
     {

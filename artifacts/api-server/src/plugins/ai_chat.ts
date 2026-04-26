@@ -77,6 +77,16 @@ export default class AiChatPlugin extends Plugin {
         }
       }
 
+      // Broadcast thinking state immediately so the UI can animate before the LLM replies
+      const emitThinking = (tier: string, model: string) => {
+        context.emit({
+          source:  this.id,
+          target:  "broadcast",
+          type:    "ai.inference_started",
+          payload: { requestId, tier, model, thinking: true },
+        });
+      };
+
       let result: { response: string; modelUsed: string; latencyMs: number; fromCache: boolean };
 
       if (context.infer) {
@@ -87,13 +97,15 @@ export default class AiChatPlugin extends Plugin {
           context:  extraContext,
           useCache: false,
         });
+        emitThinking("cortex", "thinking");
       } else {
         result = await runInference({
-          prompt:   enrichedPrompt,
+          prompt:          enrichedPrompt,
           mode,
-          task:     "chat",
-          context:  extraContext,
-          useCache: false,
+          task:            "chat",
+          context:         extraContext,
+          useCache:        false,
+          onTierResolved:  emitThinking,
         });
       }
 
