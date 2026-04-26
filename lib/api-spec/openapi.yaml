@@ -546,6 +546,54 @@ paths:
               schema:
                 $ref: "#/components/schemas/EventHistoryResponse"
 
+  /devices/{deviceId}/command:
+    post:
+      operationId: sendDeviceCommand
+      tags: [devices]
+      summary: Send a command to a device via the event bus
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceCommandRequest"
+      responses:
+        "200":
+          description: Command result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceCommandResult"
+        "404":
+          description: Device not found
+
+  /devices/{deviceId}/history:
+    get:
+      operationId: getDeviceHistory
+      tags: [devices]
+      summary: Get reading history for a device
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Device reading history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceHistory"
+        "404":
+          description: Device not found
+
   /devices/stats:
     get:
       operationId: getDeviceStats
@@ -1254,6 +1302,53 @@ components:
       required:
         - success
         - message
+
+    DeviceCommandRequest:
+      type: object
+      properties:
+        action:
+          type: string
+        parameters:
+          type: object
+          additionalProperties: true
+          nullable: true
+      required:
+        - action
+
+    DeviceCommandResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        deviceId:
+          type: string
+        action:
+          type: string
+        message:
+          type: string
+      required:
+        - success
+        - deviceId
+        - action
+        - message
+
+    DeviceHistory:
+      type: object
+      properties:
+        deviceId:
+          type: string
+        history:
+          type: array
+          items:
+            type: array
+            items:
+              $ref: "#/components/schemas/DeviceReading"
+        total:
+          type: integer
+      required:
+        - deviceId
+        - history
+        - total
 
     DeviceStats:
       type: object

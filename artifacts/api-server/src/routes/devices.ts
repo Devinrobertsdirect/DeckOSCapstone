@@ -8,139 +8,52 @@ import {
   ControlDeviceResponse,
   GetDeviceStatsResponse,
 } from "@workspace/api-zod";
+import { getDeviceManager } from "../lib/device-manager.js";
 
 const router = Router();
 
-type DeviceStatus = "online" | "offline" | "error" | "standby";
-
-interface DeviceReading {
-  sensor: string;
-  value: number | string | boolean;
-  unit: string | null;
-  timestamp: string;
-}
-
-interface Device {
+type ApiDevice = {
   id: string;
   name: string;
   type: "sensor" | "actuator" | "display" | "network" | "simulated";
-  status: DeviceStatus;
+  status: "online" | "offline" | "error" | "standby";
   protocol: "mqtt" | "websocket" | "http" | "simulated";
-  readings: DeviceReading[];
+  readings: { sensor: string; value: number | string | boolean; unit: string | null; timestamp: string }[];
   capabilities: string[];
   lastSeen: string | null;
   location: string | null;
+};
+
+function toApiDevice(d: ReturnType<ReturnType<typeof getDeviceManager>["getDevice"]>): ApiDevice | null {
+  if (!d) return null;
+  return {
+    id: d.id,
+    name: d.name,
+    type: d.type,
+    status: d.state.status,
+    protocol: d.protocol === "websocket" ? "websocket" : d.protocol === "mqtt" ? "mqtt" : "simulated",
+    readings: d.state.readings,
+    capabilities: d.capabilities,
+    lastSeen: d.state.lastSeen,
+    location: d.location,
+  };
 }
 
-function randomFloat(min: number, max: number, decimals = 1): number {
-  return Math.round((Math.random() * (max - min) + min) * Math.pow(10, decimals)) / Math.pow(10, decimals);
-}
-
-function makeDevices(): Device[] {
-  const now = new Date().toISOString();
-  return [
-    {
-      id: "temp-sensor-01",
-      name: "Temperature Sensor A1",
-      type: "sensor",
-      status: "online",
-      protocol: "simulated",
-      capabilities: ["read", "alert"],
-      location: "Lab Bay 1",
-      lastSeen: now,
-      readings: [
-        { sensor: "temperature", value: randomFloat(18, 35), unit: "°C", timestamp: now },
-        { sensor: "humidity", value: randomFloat(40, 80), unit: "%", timestamp: now },
-      ],
-    },
-    {
-      id: "humidity-sensor-01",
-      name: "Humidity Sensor B1",
-      type: "sensor",
-      status: "online",
-      protocol: "simulated",
-      capabilities: ["read"],
-      location: "Lab Bay 2",
-      lastSeen: now,
-      readings: [
-        { sensor: "humidity", value: randomFloat(35, 75), unit: "%", timestamp: now },
-        { sensor: "dew_point", value: randomFloat(10, 25), unit: "°C", timestamp: now },
-      ],
-    },
-    {
-      id: "relay-controller-01",
-      name: "Power Relay Array",
-      type: "actuator",
-      status: "online",
-      protocol: "simulated",
-      capabilities: ["on", "off", "toggle", "schedule"],
-      location: "Control Panel",
-      lastSeen: now,
-      readings: [
-        { sensor: "channel_1", value: true, unit: null, timestamp: now },
-        { sensor: "channel_2", value: false, unit: null, timestamp: now },
-        { sensor: "channel_3", value: true, unit: null, timestamp: now },
-        { sensor: "power_draw", value: randomFloat(45, 150), unit: "W", timestamp: now },
-      ],
-    },
-    {
-      id: "oled-display-01",
-      name: "OLED Status Display",
-      type: "display",
-      status: "standby",
-      protocol: "simulated",
-      capabilities: ["write", "clear", "brightness"],
-      location: "Main Console",
-      lastSeen: new Date(Date.now() - 300000).toISOString(),
-      readings: [
-        { sensor: "brightness", value: 80, unit: "%", timestamp: now },
-        { sensor: "last_message", value: "DECK OS ONLINE", unit: null, timestamp: now },
-      ],
-    },
-    {
-      id: "network-probe-01",
-      name: "Network Monitor",
-      type: "network",
-      status: "online",
-      protocol: "simulated",
-      capabilities: ["ping", "scan", "traffic"],
-      location: "Network Rack",
-      lastSeen: now,
-      readings: [
-        { sensor: "latency_ms", value: randomFloat(1, 15), unit: "ms", timestamp: now },
-        { sensor: "packet_loss", value: randomFloat(0, 0.5), unit: "%", timestamp: now },
-        { sensor: "bandwidth_mbps", value: randomFloat(85, 950), unit: "Mbps", timestamp: now },
-      ],
-    },
-    {
-      id: "pi-gpio-01",
-      name: "Pi GPIO Controller",
-      type: "simulated",
-      status: "offline",
-      protocol: "simulated",
-      capabilities: ["digital_read", "digital_write", "pwm", "i2c"],
-      location: "Raspberry Pi",
-      lastSeen: new Date(Date.now() - 3600000).toISOString(),
-      readings: [],
-    },
-  ];
-}
-
-const deviceStates: Map<string, Record<string, unknown>> = new Map();
-
-router.get("/devices", (req, res) => {
-  const devices = makeDevices();
+router.get("/devices", (_req, res) => {
+  const dm = getDeviceManager();
+  const devices = dm.listDevices().map((d) => toApiDevice(d)!);
   const body = ListDevicesResponse.parse({ devices });
   res.json(body);
 });
 
-router.get("/devices/stats", (req, res) => {
-  const devices = makeDevices();
+router.get("/devices/stats", (_req, res) => {
+  const dm = getDeviceManager();
+  const devices = dm.listDevices();
   const stats = {
     total: devices.length,
-    online: devices.filter((d) => d.status === "online").length,
-    offline: devices.filter((d) => d.status === "offline").length,
-    error: devices.filter((d) => d.status === "error").length,
+    online: devices.filter((d) => d.state.status === "online").length,
+    offline: devices.filter((d) => d.state.status === "offline").length,
+    error: devices.filter((d) => d.state.status === "error").length,
     byType: devices.reduce(
       (acc, d) => {
         acc[d.type] = (acc[d.type] ?? 0) + 1;
@@ -160,38 +73,98 @@ router.get("/devices/:deviceId", (req, res) => {
     return;
   }
 
-  const devices = makeDevices();
-  const device = devices.find((d) => d.id === params.data.deviceId);
+  const dm = getDeviceManager();
+  const device = dm.getDevice(params.data.deviceId);
   if (!device) {
     res.status(404).json({ error: "Device not found" });
     return;
   }
 
-  const body = GetDeviceResponse.parse(device);
+  const body = GetDeviceResponse.parse(toApiDevice(device));
   res.json(body);
+});
+
+router.get("/devices/:deviceId/history", (req, res) => {
+  const deviceId = req.params["deviceId"];
+  if (!deviceId) {
+    res.status(400).json({ error: "deviceId required" });
+    return;
+  }
+
+  const dm = getDeviceManager();
+  const device = dm.getDevice(deviceId);
+  if (!device) {
+    res.status(404).json({ error: "Device not found" });
+    return;
+  }
+
+  const history = dm.getHistory(deviceId);
+  res.json({ deviceId, history, total: history.length });
 });
 
 router.post("/devices/:deviceId/control", (req, res) => {
   const params = ControlDeviceParams.safeParse(req.params);
-  const body = ControlDeviceBody.safeParse(req.body);
-  if (!params.success || !body.success) {
+  const bodyParsed = ControlDeviceBody.safeParse(req.body);
+  if (!params.success || !bodyParsed.success) {
     res.status(400).json({ error: "Invalid request" });
     return;
   }
 
-  const { action, parameters } = body.data;
+  const { action, parameters } = bodyParsed.data;
   const deviceId = params.data.deviceId;
 
-  const existingState = deviceStates.get(deviceId) ?? {};
-  const newState = { ...existingState, lastAction: action, parameters, updatedAt: new Date().toISOString() };
-  deviceStates.set(deviceId, newState);
+  const dm = getDeviceManager();
+  const device = dm.getDevice(deviceId);
+  if (!device) {
+    res.status(404).json({ error: "Device not found" });
+    return;
+  }
+
+  const dispatched = dm.sendCommand(deviceId, {
+    action,
+    parameters: parameters ?? undefined,
+  });
 
   const response = ControlDeviceResponse.parse({
-    success: true,
-    message: `Action "${action}" executed on device ${deviceId}`,
-    newState,
+    success: dispatched,
+    message: dispatched
+      ? `Action "${action}" dispatched to device ${deviceId}`
+      : `Failed to dispatch action "${action}" to device ${deviceId}`,
+    newState: null,
   });
   res.json(response);
+});
+
+router.post("/devices/:deviceId/command", (req, res) => {
+  const deviceId = req.params["deviceId"];
+  if (!deviceId) {
+    res.status(400).json({ error: "deviceId required" });
+    return;
+  }
+
+  const { action, parameters } = req.body as { action?: string; parameters?: Record<string, unknown> };
+  if (!action) {
+    res.status(400).json({ error: "action is required" });
+    return;
+  }
+
+  const dm = getDeviceManager();
+  const device = dm.getDevice(deviceId);
+  if (!device) {
+    res.status(404).json({ error: "Device not found" });
+    return;
+  }
+
+  const dispatched = dm.sendCommand(deviceId, { action, parameters });
+
+  res.json({
+    success: dispatched,
+    deviceId,
+    action,
+    message: dispatched
+      ? `Command "${action}" dispatched to ${deviceId} via event bus`
+      : `Failed to dispatch command "${action}" to ${deviceId}`,
+  });
 });
 
 export default router;
