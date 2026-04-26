@@ -5,7 +5,7 @@ import {
   Activity, HardDrive, Cpu as Microchip, Network, Settings,
   TerminalSquare, AlertTriangle, CheckCircle2,
   ChevronRight, Layers, Eye, Minimize2, Film, List,
-  Camera, CameraOff, Shield, Zap, Map, MapPin, Bot, Clock, Newspaper, Package,
+  Camera, CameraOff, Shield, Zap, Map, MapPin, Bot, Clock, Newspaper, Package, GitBranch,
 } from "lucide-react";
 import { useCamera } from "@/hooks/useCamera";
 import { useHealthCheck, getHealthCheckQueryKey } from "@workspace/api-client-react";
@@ -212,6 +212,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         { href: "/commands",  icon: TerminalSquare,  label: "CONSOLE"   },
         { href: "/routines",   icon: Clock,           label: "ROUTINES"  },
         { href: "/briefings",  icon: Newspaper,       label: "BRIEFINGS" },
+        { href: "/timeline",   icon: GitBranch,       label: "TIMELINE"  },
         { href: "/settings",   icon: Settings,        label: "SETTINGS"  },
       ],
     },
