@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm } from "node:fs/promises";
+import { rm, readdir } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -14,8 +14,20 @@ async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
   await rm(distDir, { recursive: true, force: true });
 
+  const pluginsSrcDir = path.resolve(artifactDir, "src/plugins");
+  let pluginEntryPoints = [];
+  try {
+    const files = await readdir(pluginsSrcDir);
+    pluginEntryPoints = files
+      .filter((f) => f.endsWith(".ts") && !f.startsWith("_"))
+      .map((f) => path.resolve(pluginsSrcDir, f));
+  } catch {
+    // No plugins directory — skip
+  }
+
   await esbuild({
     entryPoints: [path.resolve(artifactDir, "src/index.ts")],
+    absWorkingDir: artifactDir,
     platform: "node",
     bundle: true,
     format: "esm",
@@ -118,6 +130,54 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
   });
+
+  // Build each plugin file as a separate bundle into dist/plugins/
+  if (pluginEntryPoints.length > 0) {
+    const pluginsDistDir = path.resolve(distDir, "plugins");
+    const externalList = [
+      "*.node", "sharp", "better-sqlite3", "sqlite3", "canvas", "bcrypt", "argon2",
+      "fsevents", "re2", "farmhash", "xxhash-addon", "bufferutil", "utf-8-validate",
+      "ssh2", "cpu-features", "dtrace-provider", "isolated-vm", "lightningcss",
+      "pg-native", "oracledb", "mongodb-client-encryption", "nodemailer", "handlebars",
+      "knex", "typeorm", "protobufjs", "onnxruntime-node", "@tensorflow/*",
+      "@prisma/client", "@mikro-orm/*", "@grpc/*", "@swc/*", "@aws-sdk/*", "@azure/*",
+      "@opentelemetry/*", "@google-cloud/*", "@google/*", "googleapis", "firebase-admin",
+      "@parcel/watcher", "@sentry/profiling-node", "@tree-sitter/*", "aws-sdk",
+      "classic-level", "dd-trace", "ffi-napi", "grpc", "hiredis", "kerberos",
+      "leveldown", "miniflare", "mysql2", "newrelic", "odbc", "piscina", "realm",
+      "ref-napi", "rocksdb", "sass-embedded", "sequelize", "serialport", "snappy",
+      "tinypool", "usb", "workerd", "wrangler", "zeromq", "zeromq-prebuilt",
+      "playwright", "puppeteer", "puppeteer-core", "electron",
+    ];
+
+    for (const entryPoint of pluginEntryPoints) {
+      const pluginName = path.basename(entryPoint, ".ts");
+      console.log(`Building plugin: ${pluginName}`);
+      await esbuild({
+        entryPoints: [entryPoint],
+        absWorkingDir: artifactDir,
+        platform: "node",
+        bundle: true,
+        format: "esm",
+        outdir: pluginsDistDir,
+        outExtension: { ".js": ".mjs" },
+        logLevel: "info",
+        external: externalList,
+        sourcemap: "linked",
+        banner: {
+          js: `import { createRequire as __bannerCrReq } from 'node:module';
+import __bannerPath from 'node:path';
+import __bannerUrl from 'node:url';
+
+globalThis.require = __bannerCrReq(import.meta.url);
+globalThis.__filename = __bannerUrl.fileURLToPath(import.meta.url);
+globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
+          `,
+        },
+      });
+    }
+    console.log(`Built ${pluginEntryPoints.length} plugin(s) to ${pluginsDistDir}`);
+  }
 }
 
 buildAll().catch((err) => {

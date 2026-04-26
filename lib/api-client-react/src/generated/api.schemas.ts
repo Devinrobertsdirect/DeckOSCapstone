@@ -219,6 +219,28 @@ export interface MemoryEntryCreate {
   ttlSeconds?: number | null;
 }
 
+export interface MemorySearchResult {
+  entries: MemoryEntry[];
+  total: number;
+  query: string;
+}
+
+export type MemoryInjectRequestType =
+  (typeof MemoryInjectRequestType)[keyof typeof MemoryInjectRequestType];
+
+export const MemoryInjectRequestType = {
+  short_term: "short_term",
+  long_term: "long_term",
+} as const;
+
+export interface MemoryInjectRequest {
+  content: string;
+  keywords?: string[];
+  source: string;
+  type: MemoryInjectRequestType;
+  ttlSeconds?: number | null;
+}
+
 export type SystemStatsCpu = {
   usage: number;
   cores: number;
@@ -443,6 +465,18 @@ export interface EventHistoryResponse {
 
 export type GetLongTermMemoryParams = {
   query?: string;
+  limit?: number;
+};
+
+export type SearchMemoryParams = {
+  /**
+   * Keyword or phrase to search for
+   */
+  q: string;
+  limit?: number;
+};
+
+export type GetRecentMemoryParams = {
   limit?: number;
 };
 

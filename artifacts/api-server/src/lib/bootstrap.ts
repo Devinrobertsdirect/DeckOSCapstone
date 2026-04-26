@@ -1,11 +1,21 @@
 import { bus } from "./bus.js";
 import { PluginRegistry } from "./plugin-registry.js";
+import { memoryService } from "./memory-service.js";
+import { runInference, refreshOllamaDetection } from "./inference.js";
 import { logger } from "./logger.js";
 
 export let registry: PluginRegistry;
 
 export async function bootstrap(): Promise<void> {
-  registry = new PluginRegistry(bus);
+  memoryService.start(60_000);
+
+  registry = new PluginRegistry(bus, {
+    memory: memoryService,
+    infer: async (opts) => {
+      const result = await runInference(opts);
+      return result;
+    },
+  });
 
   bus.emit({
     source: "system",
@@ -13,6 +23,8 @@ export async function bootstrap(): Promise<void> {
     type: "system.boot",
     payload: { startedAt: new Date().toISOString() },
   });
+
+  await refreshOllamaDetection().catch(() => {});
 
   await registry.loadPluginsDir();
 
@@ -23,6 +35,7 @@ export async function teardown(): Promise<void> {
   if (registry) {
     await registry.shutdownAll();
   }
+  memoryService.stop();
   bus.emit({
     source: "system",
     target: null,

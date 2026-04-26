@@ -283,6 +283,84 @@ paths:
         "204":
           description: Memory deleted
 
+  /memory/search:
+    get:
+      operationId: searchMemory
+      tags: [memory]
+      summary: Keyword-based search across all memory entries
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Keyword or phrase to search for
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemorySearchResult"
+
+  /memory/recent:
+    get:
+      operationId: getRecentMemory
+      tags: [memory]
+      summary: Get the most recent memory entries across all types
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Recent memory entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryStore"
+
+  /memory:
+    post:
+      operationId: storeMemory
+      tags: [memory]
+      summary: Manually inject a memory entry (short-term or long-term)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemoryInjectRequest"
+      responses:
+        "201":
+          description: Memory entry created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryEntry"
+
+  /memory/{id}:
+    delete:
+      operationId: deleteMemoryById
+      tags: [memory]
+      summary: Delete a memory entry by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Memory deleted
+
   /system/stats:
     get:
       operationId: getSystemStats
@@ -795,6 +873,45 @@ components:
         - content
         - keywords
         - source
+
+    MemorySearchResult:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemoryEntry"
+        total:
+          type: integer
+        query:
+          type: string
+      required:
+        - entries
+        - total
+        - query
+
+    MemoryInjectRequest:
+      type: object
+      properties:
+        content:
+          type: string
+        keywords:
+          type: array
+          items:
+            type: string
+        source:
+          type: string
+        type:
+          type: string
+          enum: [short_term, long_term]
+          default: short_term
+        ttlSeconds:
+          type: integer
+          nullable: true
+      required:
+        - content
+        - source
+        - type
 
     SystemStats:
       type: object

@@ -283,6 +283,78 @@ export const DeleteMemoryEntryParams = zod.object({
 });
 
 /**
+ * @summary Keyword-based search across all memory entries
+ */
+export const searchMemoryQueryLimitDefault = 20;
+
+export const SearchMemoryQueryParams = zod.object({
+  q: zod.coerce.string().describe("Keyword or phrase to search for"),
+  limit: zod.coerce.number().default(searchMemoryQueryLimitDefault),
+});
+
+export const SearchMemoryResponse = zod.object({
+  entries: zod.array(
+    zod.object({
+      id: zod.string(),
+      type: zod.enum(["short_term", "long_term"]),
+      content: zod.string(),
+      keywords: zod.array(zod.string()),
+      source: zod.string(),
+      createdAt: zod.coerce.date(),
+      expiresAt: zod.coerce.date().nullish(),
+    }),
+  ),
+  total: zod.number(),
+  query: zod.string(),
+});
+
+/**
+ * @summary Get the most recent memory entries across all types
+ */
+export const getRecentMemoryQueryLimitDefault = 20;
+
+export const GetRecentMemoryQueryParams = zod.object({
+  limit: zod.coerce.number().default(getRecentMemoryQueryLimitDefault),
+});
+
+export const GetRecentMemoryResponse = zod.object({
+  entries: zod.array(
+    zod.object({
+      id: zod.string(),
+      type: zod.enum(["short_term", "long_term"]),
+      content: zod.string(),
+      keywords: zod.array(zod.string()),
+      source: zod.string(),
+      createdAt: zod.coerce.date(),
+      expiresAt: zod.coerce.date().nullish(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * @summary Manually inject a memory entry (short-term or long-term)
+ */
+export const storeMemoryBodyTypeDefault = `short_term`;
+
+export const StoreMemoryBody = zod.object({
+  content: zod.string(),
+  keywords: zod.array(zod.string()).optional(),
+  source: zod.string(),
+  type: zod
+    .enum(["short_term", "long_term"])
+    .default(storeMemoryBodyTypeDefault),
+  ttlSeconds: zod.number().nullish(),
+});
+
+/**
+ * @summary Delete a memory entry by ID
+ */
+export const DeleteMemoryByIdParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
  * @summary Get live system stats (CPU, memory, uptime, network)
  */
 export const GetSystemStatsResponse = zod.object({

@@ -6,10 +6,52 @@ export type PluginLogger = {
   error: (msg: string, data?: unknown) => void;
 };
 
+export type MemoryEntry = {
+  id: string;
+  type: "short_term" | "long_term";
+  content: string;
+  keywords: string[];
+  source: string;
+  createdAt: Date;
+  expiresAt: Date | null;
+};
+
+export type MemoryStoreOptions = {
+  type: "short_term" | "long_term";
+  content: string;
+  keywords?: string[];
+  source: string;
+  ttlSeconds?: number;
+};
+
+export type PluginMemory = {
+  store: (opts: MemoryStoreOptions) => Promise<MemoryEntry>;
+  search: (keyword: string, limit?: number) => Promise<MemoryEntry[]>;
+  getRecent: (limit?: number) => Promise<MemoryEntry[]>;
+  getById: (id: string) => Promise<MemoryEntry | null>;
+  expire: () => Promise<number>;
+};
+
+export type InferOptions = {
+  prompt: string;
+  mode: "fast" | "deep" | "none";
+  context?: Array<{ role: string; content: string }>;
+  useCache?: boolean;
+};
+
+export type InferResult = {
+  response: string;
+  modelUsed: string;
+  latencyMs: number;
+  fromCache: boolean;
+};
+
 export type PluginContext = {
   emit: (event: Omit<BusEvent, "id" | "timestamp">) => void;
   subscribe: (type: EventType | string, handler: EventHandler) => string;
   logger: PluginLogger;
+  memory?: PluginMemory;
+  infer?: (opts: InferOptions) => Promise<InferResult>;
 };
 
 export abstract class Plugin {

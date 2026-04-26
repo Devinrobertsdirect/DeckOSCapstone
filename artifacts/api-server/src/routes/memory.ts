@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, memoryEntriesTable } from "@workspace/db";
-import { eq, like, or, ilike, desc } from "drizzle-orm";
+import { eq, ilike, or, desc } from "drizzle-orm";
 import {
   GetShortTermMemoryResponse,
   StoreShortTermMemoryBody,
@@ -8,7 +8,14 @@ import {
   GetLongTermMemoryResponse,
   StoreLongTermMemoryBody,
   DeleteMemoryEntryParams,
+  SearchMemoryQueryParams,
+  SearchMemoryResponse,
+  GetRecentMemoryQueryParams,
+  GetRecentMemoryResponse,
+  StoreMemoryBody,
+  DeleteMemoryByIdParams,
 } from "@workspace/api-zod";
+import { memoryService } from "../lib/memory-service.js";
 
 const router = Router();
 
@@ -122,6 +129,75 @@ router.delete("/memory/long-term/:id", async (req, res) => {
   }
 
   await db.delete(memoryEntriesTable).where(eq(memoryEntriesTable.id, parseInt(params.data.id)));
+  res.status(204).send();
+});
+
+router.get("/memory/search", async (req, res) => {
+  const parsed = SearchMemoryQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { q, limit = 20 } = parsed.data;
+  if (!q || q.trim() === "") {
+    res.status(400).json({ error: "Query parameter 'q' is required" });
+    return;
+  }
+
+  const entries = await memoryService.search(q, limit);
+
+  const body = SearchMemoryResponse.parse({
+    entries,
+    total: entries.length,
+    query: q,
+  });
+  res.json(body);
+});
+
+router.get("/memory/recent", async (req, res) => {
+  const parsed = GetRecentMemoryQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { limit = 20 } = parsed.data;
+
+  const entries = await memoryService.getRecent(limit);
+
+  const body = GetRecentMemoryResponse.parse({
+    entries,
+    total: entries.length,
+  });
+  res.json(body);
+});
+
+router.post("/memory", async (req, res) => {
+  const parsed = StoreMemoryBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { content, keywords, source, type, ttlSeconds } = parsed.data;
+  const entry = await memoryService.store({ content, keywords, source, type, ttlSeconds: ttlSeconds ?? undefined });
+  res.status(201).json(entry);
+});
+
+router.delete("/memory/:id", async (req, res) => {
+  const parsed = DeleteMemoryByIdParams.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  if (isNaN(parseInt(parsed.data.id))) {
+    res.status(400).json({ error: "Invalid id" });
+    return;
+  }
+
+  await memoryService.deleteById(parsed.data.id);
   res.status(204).send();
 });
 

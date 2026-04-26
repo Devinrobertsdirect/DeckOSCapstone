@@ -51,14 +51,18 @@ Central nervous system for all inter-component communication. All components com
 - **Event types**: discriminated unions for `system.*`, `plugin.*`, `device.*`, `ai.*`, `memory.*`
 - **Persistence**: fire-and-forget writes to `system_events` DB table
 - **Plugin interface**: abstract `Plugin` base class with `init(context)`, `on_event(event)`, `execute(payload)`, `shutdown()`
-- **PluginContext**: sandboxed — only `emit` and `subscribe` exposed; no direct DB or bus access
+- **PluginContext**: sandboxed — `emit`, `subscribe`, optional `memory` (PluginMemory), optional `infer` (AI inference fn) exposed
+- **Types added**: `PluginMemory`, `MemoryStoreOptions`, `MemoryEntry`, `InferOptions`, `InferResult`
 
 ### API Server Bootstrap
-- **Bootstrap**: `src/lib/bootstrap.ts` — initializes EventBus singleton and PluginRegistry, emits `system.boot`
+- **Bootstrap**: `src/lib/bootstrap.ts` — initializes EventBus singleton, PluginRegistry with memory+infer injection, MemoryService, emits `system.boot`
 - **Bus singleton**: `src/lib/bus.ts` — wired to DB persistence via `system_events` table
-- **Plugin registry**: `src/lib/plugin-registry.ts` — loads `.js` files from `artifacts/api-server/plugins/` at startup
+- **Plugin registry**: `src/lib/plugin-registry.ts` — auto-scans `dist/plugins/` at startup, injects `memory` and `infer` into PluginContext
+- **MemoryService**: `src/lib/memory-service.ts` — wraps `memory_entries` table; `store`, `search`, `getRecent`, `getById`, `expire` (TTL timer)
+- **Inference module**: `src/lib/inference.ts` — extracted AI inference logic (Ollama, rule-engine, caching) shared by ai-router route and ai_chat plugin
 - **Events endpoint**: `GET /api/events/history` — paginated, filterable event history (`?limit`, `?offset`, `?type`, `?source`)
-- **Graceful shutdown**: `SIGTERM`/`SIGINT` handlers call `registry.shutdownAll()` before closing
+- **Graceful shutdown**: `SIGTERM`/`SIGINT` handlers call `registry.shutdownAll()` + `memoryService.stop()` before closing
+- **Plugin build**: `build.mjs` compiles each `src/plugins/*.ts` as a separate esbuild bundle into `dist/plugins/`; `absWorkingDir: artifactDir` required for workspace package resolution
 
 ### AI Router Layer
 - Detects Ollama at localhost:11434 (auto-refresh every 30s)
@@ -69,8 +73,12 @@ Central nervous system for all inter-component communication. All components com
 - Intelligence modes: DIRECT_EXECUTION, LIGHT_REASONING, DEEP_REASONING, HYBRID_MODE
 
 ### Plugin System
-- 5 core plugins: system_monitor, file_manager, ai_chat, device_control, automation_scheduler
-- Enable/disable via API, execute plugin commands, status tracking
+- Auto-loaded from `dist/plugins/` at startup (each plugin is a separate esbuild bundle)
+- 2 production plugins: `system_monitor` (src/plugins/system_monitor.ts), `ai_chat` (src/plugins/ai_chat.ts)
+- 5 static API plugins in plugins route (file_manager, device_control, automation_scheduler, plus the above two)
+- system_monitor: polls every 5s, emits `system.monitor.metrics`, responds to `system.monitor.request`, writes to long-term memory every 12 polls (60s)
+- ai_chat: subscribes to `ai.chat.request`, enriches prompt with memory context, calls AI inference directly (not HTTP), emits `ai.chat.response`, writes exchange to short-term memory
+- Plugins receive `memory` (PluginMemory) and `infer` (AI fn) via PluginContext injection from PluginRegistry
 
 ### User Cognitive Model (`/api/ucm`)
 Structured identity layer — a continuously-updatable model of the user stored separately from event/memory logs.
@@ -109,8 +117,9 @@ Structured identity layer — a continuously-updatable model of the user stored 
 - Route: `/autonomous` | Nav label: AUTONOMOUS
 
 ### Memory System
-- Short-term: session memory with 1h TTL by default (PostgreSQL)
+- Short-term: session memory with 1h TTL by default (PostgreSQL), auto-expired on timer
 - Long-term: persistent memory with keyword search (PostgreSQL)
+- New endpoints: `GET /api/memory/search?q=`, `GET /api/memory/recent`, `POST /api/memory`, `DELETE /api/memory/:id`
 
 ### Device Abstraction Layer
 - 6 simulated devices: temperature sensor, humidity sensor, relay array, OLED display, network probe, Pi GPIO

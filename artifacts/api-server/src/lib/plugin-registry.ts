@@ -1,10 +1,12 @@
 import path from "path";
 import { fileURLToPath } from "url";
-import { readdir } from "fs/promises";
+import { readdir, access } from "fs/promises";
 import type { EventBus, BusEvent, EventType, EventHandler } from "@workspace/event-bus";
 import { isValidPlugin } from "@workspace/event-bus";
 import type { Plugin, PluginContext } from "@workspace/event-bus";
 import { logger } from "./logger.js";
+import type { PluginMemory } from "@workspace/event-bus";
+import type { InferOptions, InferResult } from "@workspace/event-bus";
 
 type PluginEntry = {
   plugin: Plugin;
@@ -17,14 +19,40 @@ type PluginEntry = {
 export class PluginRegistry {
   private plugins = new Map<string, PluginEntry>();
   private bus: EventBus;
+  private memory: PluginMemory | undefined;
+  private inferFn: ((opts: InferOptions) => Promise<InferResult>) | undefined;
 
-  constructor(bus: EventBus) {
+  constructor(bus: EventBus, opts?: { memory?: PluginMemory; infer?: (opts: InferOptions) => Promise<InferResult> }) {
     this.bus = bus;
+    this.memory = opts?.memory;
+    this.inferFn = opts?.infer;
   }
 
   async loadPluginsDir(): Promise<void> {
     const __dirname = fileURLToPath(new URL(".", import.meta.url));
-    const pluginsDir = path.resolve(__dirname, "..", "plugins");
+    const candidateDirs = [
+      path.resolve(__dirname, "plugins"),
+      path.resolve(__dirname, "..", "plugins"),
+      path.resolve(process.cwd(), "dist", "plugins"),
+    ];
+
+    let pluginsDir: string | undefined;
+    for (const candidate of candidateDirs) {
+      try {
+        await access(candidate);
+        pluginsDir = candidate;
+        break;
+      } catch {
+        // try next
+      }
+    }
+
+    if (!pluginsDir) {
+      logger.warn({ candidateDirs }, "No plugins directory found — skipping plugin load");
+      return;
+    }
+
+    logger.info({ pluginsDir }, "PluginRegistry: using plugins directory");
 
     let files: string[];
     try {
@@ -88,7 +116,7 @@ export class PluginRegistry {
       await plugin.init(context);
       entry.status = "active";
       entry.lastActivity = new Date();
-      logger.info({ pluginId: plugin.id, name: plugin.name }, "PluginRegistry: plugin loaded");
+      logger.info({ pluginId: plugin.id, name: plugin.name }, "PluginRegistry: plugin loaded successfully");
       this.bus.emit({
         source: "plugin-registry",
         target: null,
@@ -134,6 +162,8 @@ export class PluginRegistry {
         warn: (msg, data) => logger.warn({ pluginId: plugin.id, data }, msg),
         error: (msg, data) => logger.error({ pluginId: plugin.id, data }, msg),
       },
+      memory: this.memory,
+      infer: this.inferFn,
     };
   }
 
