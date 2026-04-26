@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { Terminal, Cpu, MemoryStick, Activity, Network, Circle, Radio, Zap, Send, MapPin, Battery, Wifi, Eye, CheckCircle2, AlertTriangle, Power, ChevronRight, X, Newspaper, RefreshCw, Loader2 } from "lucide-react";
+import { Terminal, Cpu, MemoryStick, HardDrive, Activity, Network, Circle, Radio, Zap, Send, MapPin, Battery, Wifi, Eye, CheckCircle2, AlertTriangle, Power, ChevronRight, X, Newspaper, RefreshCw, Loader2 } from "lucide-react";
 import { VoiceMicButton } from "@/components/VoiceMicButton";
 import { type LucideIcon } from "lucide-react";
 import { Link, useLocation } from "wouter";
@@ -387,7 +387,7 @@ export default function Dashboard() {
 
   return (
     <div className="flex flex-col h-full gap-4">
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
         <MetricCard
           title="CPU.LOAD"
           value={`${(metrics?.cpu?.usage ?? 0).toFixed(1)}%`}
@@ -401,6 +401,12 @@ export default function Dashboard() {
           icon={MemoryStick}
           live={!!metrics}
           alert={memAlerted}
+        />
+        <MetricCard
+          title="DISK.USAGE"
+          value={`${(metrics?.disk?.percentage ?? 0).toFixed(1)}%`}
+          icon={HardDrive}
+          live={!!metrics}
         />
         <MetricCard
           title="AI.MODE"
