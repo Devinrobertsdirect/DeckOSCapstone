@@ -52,6 +52,9 @@ export function ParticleOverlay() {
   const multiplierRef  = useRef<number>(1);
   const densityRef     = useRef<number>(particlePrefs.density);
   const speedRef       = useRef<number>(particlePrefs.speed);
+  const pulseRef          = useRef<number>(0);
+  const prevActivityRef   = useRef<number>(0);
+  const pulseCooldownRef  = useRef<number>(0);
 
   useEffect(() => { activityRef.current = activity; }, [activity]);
 
@@ -139,6 +142,22 @@ export function ParticleOverlay() {
       multiplierRef.current += (targetMultiplier - multiplierRef.current) * 0.04;
       const mult = multiplierRef.current;
 
+      // ── Accent pulse on activity surge (rising-edge only) ─────────────
+      const prevActivity = prevActivityRef.current;
+      const curActivity  = activityRef.current;
+      if (pulseCooldownRef.current > 0) {
+        pulseCooldownRef.current--;
+      }
+      if (prevActivity <= 0.5 && curActivity > 0.5 && pulseCooldownRef.current === 0) {
+        pulseRef.current        = 1;
+        pulseCooldownRef.current = 18;
+      }
+      prevActivityRef.current = curActivity;
+      if (pulseRef.current > 0) {
+        pulseRef.current = Math.max(0, pulseRef.current - 1 / 60);
+      }
+      const pulse = pulseRef.current;
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       const w = canvas.width;
       const h = canvas.height;
@@ -206,7 +225,9 @@ export function ParticleOverlay() {
         }
 
         if (p.tier === "accent") {
-          ctx.fillStyle = `rgba(${rgb}, ${Math.min(p.opacity * 1.8, 0.9)})`;
+          const baseOpacity   = Math.min(p.opacity * 1.8, 0.9);
+          const pulsedOpacity = baseOpacity + pulse * (0.95 - baseOpacity);
+          ctx.fillStyle = `rgba(${rgb}, ${pulsedOpacity})`;
           ctx.fillText(p.char, p.x, p.y);
         }
 
