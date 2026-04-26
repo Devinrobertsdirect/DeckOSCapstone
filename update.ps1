@@ -95,13 +95,16 @@ if ($Docker) {
 
   Log "Pulling updated Docker images..."
   docker compose pull
+  if ($LASTEXITCODE -ne 0) { Fail "docker compose pull failed. Check your Docker setup and try again." }
   Ok "Docker images updated"
 
   Log "Rebuilding and restarting services..."
   docker compose up -d --build
+  if ($LASTEXITCODE -ne 0) { Fail "docker compose up failed. Check docker compose logs for details." }
   Ok "Services restarted"
 
   $version = Get-DeckVersion
+  if (-not $version.StartsWith("v")) { $version = "v$version" }
   Write-Host ""
   Write-Host "  Updated to $version!" -ForegroundColor Green
   Write-Host ""
@@ -178,6 +181,7 @@ Ok "Database schema up to date"
 # Done
 # ─────────────────────────────────────
 $version = Get-DeckVersion
+if (-not $version.StartsWith("v")) { $version = "v$version" }
 Write-Host ""
 Write-Host "  Updated to $version!" -ForegroundColor Green
 Write-Host ""

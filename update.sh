@@ -80,6 +80,7 @@ if [[ "$USE_DOCKER" == true ]]; then
   ok "Services restarted"
 
   VERSION=$(get_version)
+  [[ "$VERSION" == v* ]] || VERSION="v${VERSION}"
   echo ""
   echo -e "${GREEN}${BOLD}  ✓ Updated to ${VERSION}!${RESET}"
   echo ""
@@ -145,6 +146,7 @@ fi
 # Done
 # ─────────────────────────────────────
 VERSION=$(get_version)
+[[ "$VERSION" == v* ]] || VERSION="v${VERSION}"
 echo ""
 echo -e "${GREEN}${BOLD}  ✓ Updated to ${VERSION}!${RESET}"
 echo ""
