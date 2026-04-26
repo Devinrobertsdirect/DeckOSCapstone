@@ -22,6 +22,6 @@ RUN pnpm run build
 
 # ── Serve with nginx ──────────────────────────────────────────────────────────
 FROM nginx:alpine
-COPY --from=builder /app/artifacts/deck-os/dist /usr/share/nginx/html
+COPY --from=builder /app/artifacts/deck-os/dist/public /usr/share/nginx/html
 COPY artifacts/deck-os/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
