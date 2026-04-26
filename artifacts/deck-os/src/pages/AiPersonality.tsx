@@ -12,6 +12,7 @@ import {
   FACE_OPTIONS, QUIZ_QUESTIONS, VOICE_OPTIONS, VOICE_KEY, AI_NAME_KEY,
 } from "@/components/CinematicOnboarding";
 import { getStoredConfig } from "@/components/Onboarding";
+import { AI_NAME_UPDATED_EVENT } from "@/hooks/useAiName";
 import type { FaceStyle } from "@/components/AIFace";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -234,8 +235,6 @@ function PersonaPreview({ persona }: { persona: Partial<AiPersona> }) {
 // ── Recalibrate Tab ───────────────────────────────────────────────────────
 
 const API_BASE = `${import.meta.env.BASE_URL}api`;
-
-export const AI_NAME_UPDATED_EVENT = "deckos:ai_name_updated";
 
 function RecalibrateTab() {
   const currentFace  = useFaceStyle();
