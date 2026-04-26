@@ -122,8 +122,8 @@ async function loadCommunityPlugin(entry: RegistryPlugin): Promise<{ loaded: boo
   try {
     const { registry } = await import("../lib/bootstrap.js");
     if (registry) {
-      await registry.loadPlugin(localPath);
-      logger.info({ pluginId: entry.id, localPath }, "Store: community plugin loaded into runtime");
+      await registry.loadCommunityPlugin(localPath, entry.id);
+      logger.info({ pluginId: entry.id, localPath }, "Store: community plugin loaded into sandboxed worker");
       return { loaded: true };
     }
     return { loaded: false, warning: "Runtime registry not yet initialised" };
@@ -152,8 +152,8 @@ export async function loadEnabledCommunityPlugins(): Promise<void> {
       try {
         const { registry } = await import("../lib/bootstrap.js");
         if (registry) {
-          await registry.loadPlugin(localPath);
-          logger.info({ pluginId: row.pluginId }, "Store: restored community plugin into runtime");
+          await registry.loadCommunityPlugin(localPath, row.pluginId);
+          logger.info({ pluginId: row.pluginId }, "Store: restored community plugin into sandboxed worker");
         }
       } catch (err) {
         logger.warn({ err, pluginId: row.pluginId }, "Store: failed to restore community plugin at startup");
@@ -378,7 +378,7 @@ router.patch("/plugins/store/:pluginId/toggle", async (req, res) => {
     if (enabled && !registry.getPlugin(pluginId)) {
       const localPath = communityPluginLocalPath(pluginId);
       if (existsSync(localPath)) {
-        await registry.loadPlugin(localPath).catch((err) =>
+        await registry.loadCommunityPlugin(localPath, pluginId).catch((err) =>
           logger.warn({ err, pluginId }, "Store: toggle-enable runtime load failed"),
         );
       }

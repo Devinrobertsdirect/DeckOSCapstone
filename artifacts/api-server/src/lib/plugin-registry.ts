@@ -1,6 +1,7 @@
 import path from "path";
 import { fileURLToPath } from "url";
 import { readdir, access } from "fs/promises";
+import { Worker } from "worker_threads";
 import type { EventBus, BusEvent, EventType, EventHandler } from "@workspace/event-bus";
 import { isValidPlugin } from "@workspace/event-bus";
 import type { Plugin, PluginContext } from "@workspace/event-bus";
@@ -18,6 +19,7 @@ type PluginEntry = {
 
 export class PluginRegistry {
   private plugins = new Map<string, PluginEntry>();
+  private workerMap = new Map<string, Worker>();
   private bus: EventBus;
   private memory: PluginMemory | undefined;
   private inferFn: ((opts: InferOptions) => Promise<InferResult>) | undefined;
@@ -132,6 +134,262 @@ export class PluginRegistry {
     }
   }
 
+  async loadCommunityPlugin(filePath: string, pluginId: string): Promise<void> {
+    const __dirname = fileURLToPath(new URL(".", import.meta.url));
+    const candidateWorkerPaths = [
+      path.resolve(__dirname, "community-plugin-worker.mjs"),
+      path.resolve(__dirname, "..", "community-plugin-worker.mjs"),
+      path.resolve(process.cwd(), "dist", "community-plugin-worker.mjs"),
+    ];
+
+    let workerPath: string | undefined;
+    for (const candidate of candidateWorkerPaths) {
+      try {
+        await access(candidate);
+        workerPath = candidate;
+        break;
+      } catch {
+        // try next
+      }
+    }
+
+    if (!workerPath) {
+      logger.warn(
+        { pluginId, candidateWorkerPaths },
+        "PluginRegistry: community-plugin-worker.mjs not found — falling back to direct import (no sandbox)",
+      );
+      return this.loadPlugin(filePath);
+    }
+
+    logger.info({ pluginId, workerPath }, "PluginRegistry: spawning community plugin in worker sandbox");
+
+    const worker = new Worker(workerPath, { workerData: { filePath } });
+
+    const subscribedTypes = new Set<string>();
+    const pendingExecutions = new Map<
+      string,
+      { resolve: (r: unknown) => void; reject: (e: Error) => void }
+    >();
+
+    await new Promise<void>((resolve) => {
+      const initTimeout = setTimeout(() => {
+        logger.error({ pluginId }, "PluginRegistry: community plugin worker init timeout");
+        void worker.terminate();
+        resolve();
+      }, 30_000);
+
+      let proxyPlugin: Plugin | null = null;
+      let busSubscriptionId: string | null = null;
+
+      const handleMessage = async (msg: Record<string, unknown>): Promise<void> => {
+        switch (msg["type"]) {
+          case "subscribe": {
+            subscribedTypes.add(msg["eventType"] as string);
+            break;
+          }
+
+          case "ready": {
+            clearTimeout(initTimeout);
+
+            const pluginIdFromWorker = msg["pluginId"] as string;
+            const name = msg["name"] as string;
+            const version = msg["version"] as string;
+            const description = msg["description"] as string;
+            const category = msg["category"] as string;
+
+            const self = this;
+
+            const proxy = {
+              id: pluginIdFromWorker,
+              name,
+              version,
+              description,
+              category,
+              async init(_ctx: PluginContext): Promise<void> {
+                // Already initialised in the worker — nothing to do
+              },
+              async on_event(_event: BusEvent): Promise<void> {
+                // Events are forwarded via the bus subscription below
+              },
+              async execute(payload: unknown): Promise<unknown> {
+                const execId = `exec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                return new Promise<unknown>((res, rej) => {
+                  pendingExecutions.set(execId, { resolve: res, reject: rej });
+                  const execTimeout = setTimeout(() => {
+                    if (pendingExecutions.has(execId)) {
+                      pendingExecutions.delete(execId);
+                      rej(new Error("Community plugin execute timeout"));
+                    }
+                  }, 10_000);
+                  worker.postMessage({ type: "execute", id: execId, payload });
+                  execTimeout; // referenced to silence lint
+                });
+              },
+              async shutdown(): Promise<void> {
+                if (busSubscriptionId) {
+                  self.bus.unsubscribe(busSubscriptionId);
+                  busSubscriptionId = null;
+                }
+                worker.postMessage({ type: "shutdown" });
+                await new Promise((r) => setTimeout(r, 1_500));
+                await worker.terminate().catch(() => {});
+              },
+            } as unknown as Plugin;
+
+            proxyPlugin = proxy;
+
+            const entry: PluginEntry = {
+              plugin: proxy,
+              enabled: true,
+              status: "active",
+              lastActivity: new Date(),
+            };
+            this.plugins.set(pluginIdFromWorker, entry);
+            this.workerMap.set(pluginIdFromWorker, worker);
+
+            busSubscriptionId = this.bus.subscribe("*", (event: BusEvent) => {
+              const pEntry = this.plugins.get(pluginIdFromWorker);
+              if (!pEntry || !pEntry.enabled) return;
+              if (subscribedTypes.has("*") || subscribedTypes.has(event.type)) {
+                worker.postMessage({ type: "dispatch_event", event });
+              }
+            });
+
+            logger.info(
+              { pluginId: pluginIdFromWorker, name, version },
+              "PluginRegistry: community plugin loaded in worker sandbox",
+            );
+            this.bus.emit({
+              source: "plugin-registry",
+              target: null,
+              type: "plugin.loaded",
+              payload: { pluginId: pluginIdFromWorker, name, version, sandboxed: true },
+            });
+
+            resolve();
+            break;
+          }
+
+          case "emit": {
+            const entry = proxyPlugin ? this.plugins.get(proxyPlugin.id) : null;
+            if (entry) entry.lastActivity = new Date();
+            try {
+              this.bus.emit(msg["event"] as Omit<BusEvent, "id" | "timestamp" | "version">);
+            } catch (err) {
+              logger.warn({ err, pluginId }, "PluginRegistry: sandboxed plugin emit rejected");
+            }
+            break;
+          }
+
+          case "log": {
+            const level = (msg["level"] as string) === "error"
+              ? "error"
+              : (msg["level"] as string) === "warn"
+              ? "warn"
+              : "info";
+            logger[level]({ pluginId }, `[community:${pluginId}] ${msg["msg"] as string}`);
+            break;
+          }
+
+          case "execute_result": {
+            const pending = pendingExecutions.get(msg["id"] as string);
+            if (pending) {
+              pendingExecutions.delete(msg["id"] as string);
+              pending.resolve(msg["result"]);
+            }
+            break;
+          }
+
+          case "rpc_request": {
+            const rpcId = msg["id"] as string;
+            const method = msg["method"] as string;
+            const args = msg["args"];
+            try {
+              let result: unknown;
+              if (method === "infer" && this.inferFn) {
+                result = await this.inferFn(args as InferOptions);
+              } else if (method === "memory.store" && this.memory) {
+                result = await this.memory.store(args as Parameters<PluginMemory["store"]>[0]);
+              } else if (method === "memory.search" && this.memory) {
+                const a = args as { keyword: string; limit?: number };
+                result = await this.memory.search(a.keyword, a.limit);
+              } else if (method === "memory.getRecent" && this.memory) {
+                const a = args as { limit?: number };
+                result = await this.memory.getRecent(a.limit);
+              } else if (method === "memory.getById" && this.memory) {
+                const a = args as { id: string };
+                result = await this.memory.getById(a.id);
+              } else if (method === "memory.expire" && this.memory) {
+                result = await this.memory.expire();
+              } else {
+                throw new Error(`Unknown RPC method or service unavailable: ${method}`);
+              }
+              worker.postMessage({ type: "rpc_response", id: rpcId, result });
+            } catch (err) {
+              worker.postMessage({ type: "rpc_response", id: rpcId, error: String(err) });
+            }
+            break;
+          }
+
+          case "load_error": {
+            clearTimeout(initTimeout);
+            logger.error(
+              { pluginId, error: msg["error"] },
+              "PluginRegistry: community plugin failed to load in worker",
+            );
+            this.bus.emit({
+              source: "plugin-registry",
+              target: null,
+              type: "plugin.error",
+              payload: { pluginId, error: msg["error"] },
+            });
+            void worker.terminate();
+            resolve();
+            break;
+          }
+
+          case "error": {
+            logger.error({ pluginId, error: msg["error"] }, "PluginRegistry: community plugin runtime error");
+            if (proxyPlugin) {
+              const entry = this.plugins.get(proxyPlugin.id);
+              if (entry) {
+                entry.status = "error";
+                entry.errorMessage = msg["error"] as string;
+              }
+            }
+            break;
+          }
+
+          default:
+            break;
+        }
+      };
+
+      worker.on("message", (msg: Record<string, unknown>) => {
+        void handleMessage(msg);
+      });
+
+      worker.on("error", (err) => {
+        clearTimeout(initTimeout);
+        logger.error({ err, pluginId }, "PluginRegistry: community plugin worker thread error");
+        void worker.terminate();
+        resolve();
+      });
+
+      worker.on("exit", (code) => {
+        if (code !== 0 && proxyPlugin) {
+          const entry = this.plugins.get(proxyPlugin.id);
+          if (entry) {
+            entry.status = "error";
+            entry.errorMessage = `Worker exited with code ${code}`;
+          }
+          logger.warn({ pluginId: proxyPlugin.id, code }, "PluginRegistry: community plugin worker exited");
+        }
+        this.workerMap.delete(pluginId);
+      });
+    });
+  }
+
   private buildContext(plugin: Plugin): PluginContext {
     return {
       emit: (event) => {
@@ -179,6 +437,14 @@ export class PluginRegistry {
       }
     }
     this.plugins.clear();
+    for (const [id, worker] of this.workerMap) {
+      try {
+        await worker.terminate();
+      } catch {
+        // ignore
+      }
+      this.workerMap.delete(id);
+    }
   }
 
   getPlugin(id: string): PluginEntry | undefined {
@@ -212,6 +478,17 @@ export class PluginRegistry {
       logger.error({ err, pluginId: id }, "PluginRegistry: shutdown error during unload");
     }
     this.plugins.delete(id);
+
+    const worker = this.workerMap.get(id);
+    if (worker) {
+      try {
+        await worker.terminate();
+      } catch {
+        // ignore
+      }
+      this.workerMap.delete(id);
+    }
+
     this.bus.emit({
       source: "plugin-registry",
       target: null,

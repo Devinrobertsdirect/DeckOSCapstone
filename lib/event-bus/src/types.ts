@@ -34,6 +34,9 @@ export const PluginEventTypeSchema = z.enum([
   "plugin.list.request",
   "plugin.list.response",
   "plugin.toggle.request",
+  "plugin.installed",
+  "plugin.uninstalled",
+  "plugin.reload",
 ]);
 
 export const DeviceEventTypeSchema = z.enum([
@@ -121,7 +124,7 @@ export const BusEventSchema = z.object({
   version: z.literal("v1"),
   source: z.string(),
   target: z.string().nullable(),
-  type: EventTypeSchema,
+  type: z.string().min(1),
   payload: z.unknown(),
   timestamp: z.string(),
 });

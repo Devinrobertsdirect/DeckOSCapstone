@@ -25,6 +25,22 @@ async function buildAll() {
     // No plugins directory — skip
   }
 
+  // Build the community-plugin worker as a standalone module (runs in worker_threads)
+  await esbuild({
+    entryPoints: [path.resolve(artifactDir, "src/lib/community-plugin-worker.ts")],
+    absWorkingDir: artifactDir,
+    platform: "node",
+    bundle: true,
+    format: "esm",
+    outfile: path.resolve(distDir, "community-plugin-worker.mjs"),
+    logLevel: "info",
+    external: [
+      "*.node", "mqtt", "ws", "sharp", "better-sqlite3", "sqlite3", "canvas", "bcrypt", "argon2",
+      "fsevents", "re2", "farmhash", "xxhash-addon", "bufferutil", "utf-8-validate",
+    ],
+    sourcemap: "linked",
+  });
+
   await esbuild({
     entryPoints: [path.resolve(artifactDir, "src/index.ts")],
     absWorkingDir: artifactDir,
