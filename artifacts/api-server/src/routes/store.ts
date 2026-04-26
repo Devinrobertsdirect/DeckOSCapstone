@@ -17,26 +17,29 @@ const APPROVED_ENTRYPOINT_ORIGINS = new Set([
   "https://unpkg.com",
 ]);
 
-interface RegistryPlugin {
-  id: string;
-  name: string;
-  author: string;
-  description: string;
-  version: string;
-  category: string;
-  permissions: string[];
-  tags: string[];
-  iconUrl: string | null;
-  entrypointUrl: string | null;
-  installCount: number;
-  readme: string;
-}
+const RegistryPluginSchema = z.object({
+  id: z.string().regex(SAFE_PLUGIN_ID_RE),
+  name: z.string().min(1),
+  author: z.string().min(1),
+  description: z.string(),
+  version: z.string().min(1),
+  category: z.string().min(1),
+  permissions: z.array(z.string()),
+  tags: z.array(z.string()),
+  iconUrl: z.string().url().nullable(),
+  entrypointUrl: z.string().url().nullable(),
+  installCount: z.number().int().nonnegative(),
+  readme: z.string(),
+});
 
-interface Registry {
-  version: string;
-  updatedAt: string;
-  plugins: RegistryPlugin[];
-}
+const RegistrySchema = z.object({
+  version: z.string().min(1),
+  updatedAt: z.string().min(1),
+  plugins: z.array(RegistryPluginSchema),
+});
+
+type RegistryPlugin = z.infer<typeof RegistryPluginSchema>;
+type Registry = z.infer<typeof RegistrySchema>;
 
 let registryCache: Registry | null = null;
 let cacheExpiresAt = 0;
@@ -52,7 +55,8 @@ async function fetchRegistry(): Promise<Registry> {
   if (registryUrl) {
     const res = await fetch(registryUrl, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) throw new Error(`Registry fetch failed: ${res.status}`);
-    const data = (await res.json()) as Registry;
+    const raw = await res.json();
+    const data = RegistrySchema.parse(raw);
     registryCache = data;
     cacheExpiresAt = Date.now() + CACHE_TTL_MS;
     return data;
@@ -60,7 +64,7 @@ async function fetchRegistry(): Promise<Registry> {
 
   const localPath = path.resolve(process.cwd(), "registry.json");
   const raw = readFileSync(localPath, "utf-8");
-  const data = JSON.parse(raw) as Registry;
+  const data = RegistrySchema.parse(JSON.parse(raw));
   registryCache = data;
   cacheExpiresAt = Date.now() + CACHE_TTL_MS;
   return data;
@@ -166,13 +170,20 @@ router.get("/plugins/store/registry", async (_req, res) => {
     const installed = await db.select().from(communityPluginsTable);
     const installedIds = new Set(installed.map((p) => p.pluginId));
 
+    const { registry: runtimeRegistry } = await import("../lib/bootstrap.js").catch(() => ({ registry: null }));
+    const runtimePluginIds = new Set(runtimeRegistry?.listPlugins().map((p) => p.plugin.id) ?? []);
+
     const plugins = storeRegistry.plugins.map((p) => {
-      const row = installed.find((i) => i.pluginId === p.id);
+      const dbRow = installed.find((i) => i.pluginId === p.id);
+      const isInRuntime = runtimePluginIds.has(p.id);
+      const isOfficialBuiltin = p.author.startsWith("deck-os/official");
+
       return {
         ...p,
-        installed: installedIds.has(p.id),
-        enabled: row?.enabled ?? false,
-        installedAt: row?.installedAt?.toISOString() ?? null,
+        installed: dbRow != null || (isOfficialBuiltin && isInRuntime),
+        enabled: dbRow?.enabled ?? (isOfficialBuiltin && isInRuntime),
+        installedAt: dbRow?.installedAt?.toISOString() ?? null,
+        official: isOfficialBuiltin,
       };
     });
 
@@ -227,6 +238,11 @@ router.post("/plugins/store/install/:pluginId", async (req, res) => {
 
   try {
     if (existing.length > 0) {
+      const { registry: rtReg } = await import("../lib/bootstrap.js").catch(() => ({ registry: null }));
+      if (rtReg) {
+        await rtReg.unloadPlugin(pluginId).catch(() => {});
+      }
+
       await db
         .update(communityPluginsTable)
         .set({
