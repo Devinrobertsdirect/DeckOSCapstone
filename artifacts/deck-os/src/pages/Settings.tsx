@@ -103,6 +103,8 @@ export default function Settings() {
   const [healthChecking, setHealthChecking] = useState(false);
 
   const [version, setVersion]             = useState<string | null>(null);
+  const [adminToken, setAdminToken]       = useState<string | null>(null);
+  const [tokenError, setTokenError]       = useState(false);
   const [updateRunning, setUpdateRunning] = useState(false);
   const [updateLog, setUpdateLog]         = useState<{ line: string; stderr?: boolean }[]>([]);
   const [updateDone, setUpdateDone]       = useState<{ success: boolean; version?: string; error?: string } | null>(null);
@@ -205,7 +207,9 @@ export default function Settings() {
   }, [tab, health, healthChecking, fetchHealth]);
 
   useEffect(() => {
-    if (tab === "about" && version === null) {
+    if (tab !== "about") return;
+
+    if (version === null) {
       fetch("/api/admin/version")
         .then((r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -214,7 +218,17 @@ export default function Settings() {
         .then((d) => setVersion(d.version ?? "unknown"))
         .catch(() => setVersion("unknown"));
     }
-  }, [tab, version]);
+
+    if (adminToken === null && !tokenError) {
+      fetch("/api/admin/token")
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json() as Promise<{ token: string }>;
+        })
+        .then((d) => setAdminToken(d.token))
+        .catch(() => setTokenError(true));
+    }
+  }, [tab, version, adminToken, tokenError]);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -381,28 +395,38 @@ export default function Settings() {
   }
 
   async function runUpdate() {
+    if (!adminToken) return;
     setUpdateRunning(true);
     setUpdateLog([]);
     setUpdateDone(null);
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Admin-Token": adminToken,
+    };
+
     try {
-      const res = await fetch("/api/admin/update", {
+      const startRes = await fetch("/api/admin/update", {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body:    JSON.stringify({ docker: useDocker }),
       });
-      if (!res.ok) {
-        let errMsg = `Server error (${res.status})`;
+      if (!startRes.ok) {
+        let errMsg = `Server error (${startRes.status})`;
         try {
-          const j = await res.json() as { error?: string; dockerHint?: boolean };
+          const j = await startRes.json() as { error?: string };
           if (j.error) errMsg = j.error;
         } catch {}
         setUpdateDone({ success: false, error: errMsg });
         return;
       }
-      if (!res.body) throw new Error("No response body");
 
-      const reader = res.body.getReader();
+      const streamRes = await fetch("/api/admin/update/stream", {
+        headers: { "X-Admin-Token": adminToken },
+      });
+      if (!streamRes.body) throw new Error("No response body from stream");
+
+      const reader = streamRes.body.getReader();
       const decoder = new TextDecoder();
       let buf = "";
 
@@ -1143,16 +1167,30 @@ export default function Settings() {
                 </span>
               </div>
 
-              <button
-                onClick={runUpdate}
-                disabled={updateRunning}
-                className="flex items-center gap-2 px-5 py-2.5 border border-primary/50 font-mono text-xs text-primary hover:bg-primary/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {updateRunning
-                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />UPDATING...</>
-                  : <><RefreshCw className="w-3.5 h-3.5" />RUN UPDATE</>
-                }
-              </button>
+              {tokenError && (
+                <div className="p-3 border border-[#ffc820]/30 bg-[#ffc820]/5 font-mono text-xs text-[#ffc820] flex items-start gap-2">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  <span>
+                    Admin access unavailable from this network location. To run updates in Docker mode,
+                    use the CLI: <code className="bg-black/30 px-1">bash update.sh --docker</code>
+                  </span>
+                </div>
+              )}
+
+              {!tokenError && (
+                <button
+                  onClick={runUpdate}
+                  disabled={updateRunning || !adminToken}
+                  className="flex items-center gap-2 px-5 py-2.5 border border-primary/50 font-mono text-xs text-primary hover:bg-primary/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {updateRunning
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />UPDATING...</>
+                    : !adminToken
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />INITIALIZING...</>
+                    : <><RefreshCw className="w-3.5 h-3.5" />RUN UPDATE</>
+                  }
+                </button>
+              )}
 
               {/* Log terminal */}
               {(updateLog.length > 0 || updateRunning) && (
