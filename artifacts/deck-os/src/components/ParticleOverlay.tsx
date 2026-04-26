@@ -63,7 +63,7 @@ export function ParticleOverlay() {
 
   useEffect(() => {
     const isCinematic = mode === "cinematic";
-    if (!isCinematic && !particlePrefs.particlesEnabled) return;
+    if (mode === "minimal" || (!isCinematic && !particlePrefs.particlesEnabled)) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -257,7 +257,7 @@ export function ParticleOverlay() {
     };
   }, [mode, particlePrefs.particlesEnabled]);
 
-  if (mode !== "cinematic" && !particlePrefs.particlesEnabled) return null;
+  if (mode === "minimal" || (mode !== "cinematic" && !particlePrefs.particlesEnabled)) return null;
 
   return (
     <canvas
