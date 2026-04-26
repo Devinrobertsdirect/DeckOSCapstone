@@ -8,6 +8,7 @@ import { VisualModeProvider } from "@/contexts/VisualMode";
 import { WebSocketProvider } from "@/contexts/WebSocketContext";
 import { Onboarding, isInitialized, applyColor, getStoredColor } from "@/components/Onboarding";
 import { StartScreen } from "@/components/StartScreen";
+import { CinematicOnboarding, isCinematicDone } from "@/components/CinematicOnboarding";
 import NotFound from "@/pages/not-found";
 
 import Dashboard from "@/pages/Dashboard";
@@ -60,11 +61,17 @@ function Router() {
 
 function App() {
   const [started, setStarted] = useState(() => sessionStorage.getItem("deckos_session") === "1");
+  const [cinematicDone, setCinematicDone] = useState(() => isCinematicDone());
   const [initialized, setInitialized] = useState(() => isInitialized());
 
   function handleStart() {
     sessionStorage.setItem("deckos_session", "1");
     setStarted(true);
+  }
+
+  function handleCinematicComplete() {
+    setCinematicDone(true);
+    setInitialized(true);
   }
 
   return (
@@ -74,6 +81,8 @@ function App() {
           <TooltipProvider>
             {!started ? (
               <StartScreen onStart={handleStart} />
+            ) : !cinematicDone ? (
+              <CinematicOnboarding onComplete={handleCinematicComplete} />
             ) : !initialized ? (
               <Onboarding onComplete={() => setInitialized(true)} />
             ) : (

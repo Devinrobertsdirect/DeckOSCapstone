@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { getStoredConfig, applyColor, getStoredColor, type ColorScheme } from "@/components/Onboarding";
+import { AIFace, useFaceStyle } from "@/components/AIFace";
 import { Link, useLocation } from "wouter";
 import {
   Activity, HardDrive, Cpu as Microchip, Network, Settings,
@@ -68,6 +69,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [activeColor, setActiveColor] = useState<ColorScheme>(getStoredColor());
   const [now, setNow] = useState(() => new Date());
   const { status: wsStatus, events } = useWebSocket();
+  const faceStyle = useFaceStyle();
+  const [aiSpeaking, setAiSpeaking] = useState(false);
+  const speakTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const routerStatus = useLatestPayload<{ ollamaAvailable?: boolean; mode?: string }>("ai.router.status");
   const wsOllamaOnline = routerStatus === null ? null : (routerStatus?.ollamaAvailable ?? false);
   const [httpOllamaOnline, setHttpOllamaOnline] = useState<boolean | null>(null);
@@ -120,6 +124,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
       const action = eventToAction(typed.type, typed.payload ?? {});
       if (action) {
         setRecentActions((prev) => [action, ...prev].slice(0, 3));
+      }
+      if (
+        typed.type === "ai.response" ||
+        typed.type === "ai.chat.response" ||
+        typed.type === "ai.stream.token" ||
+        typed.type === "tts.started"
+      ) {
+        setAiSpeaking(true);
+        if (speakTimerRef.current) clearTimeout(speakTimerRef.current);
+        speakTimerRef.current = setTimeout(() => setAiSpeaking(false), 4000);
       }
     }
   }, [events]);
@@ -366,6 +380,37 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <div className="flex flex-1 overflow-hidden">
         {/* SIDEBAR */}
         <aside className="w-52 border-r border-primary/30 bg-card/50 flex flex-col overflow-y-auto shrink-0 relative z-30">
+          {/* AI FACE — persistent animated identity */}
+          <div
+            className="border-b border-primary/15 flex flex-col items-center py-3 gap-1.5"
+            style={{ background: "rgba(var(--primary-rgb),0.02)" }}
+          >
+            <div
+              className="flex items-center justify-center transition-all"
+              style={{
+                padding: faceStyle === "iris" ? "4px" : "6px 0",
+                filter: aiSpeaking ? "drop-shadow(0 0 6px rgba(var(--primary-rgb),0.6))" : "none",
+              }}
+            >
+              <AIFace
+                style={faceStyle}
+                speaking={aiSpeaking}
+                size={faceStyle === "iris" ? 48 : 80}
+                color="var(--color-primary)"
+              />
+            </div>
+            <div
+              className="font-mono text-xs tracking-widest uppercase"
+              style={{
+                color: aiSpeaking ? "var(--color-primary)" : "rgba(var(--primary-rgb),0.4)",
+                fontSize: "0.6rem",
+                transition: "color 0.3s",
+              }}
+            >
+              {aiSpeaking ? "TRANSMITTING" : aiName}
+            </div>
+          </div>
+
           <div className="flex-1 p-2 pt-3 flex flex-col gap-0.5">
             {navSections.map((section) => (
               <div key={section.label}>

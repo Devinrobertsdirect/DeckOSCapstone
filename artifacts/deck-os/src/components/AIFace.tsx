@@ -1,0 +1,337 @@
+import { useEffect, useRef, useState, useCallback } from "react";
+
+export type FaceStyle = "vocoder" | "oscilloscope" | "iris" | "spectrum";
+
+interface Props {
+  style: FaceStyle;
+  speaking?: boolean;
+  size?: number;
+  color?: string;
+  className?: string;
+}
+
+const TAU = Math.PI * 2;
+
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t;
+}
+
+function useAnimLoop(cb: (t: number) => void, active = true) {
+  const rafRef = useRef<number>(0);
+  const startRef = useRef<number>(0);
+  const cbRef = useRef(cb);
+  cbRef.current = cb;
+
+  useEffect(() => {
+    if (!active) return;
+    function loop(ts: number) {
+      if (!startRef.current) startRef.current = ts;
+      cbRef.current(ts - startRef.current);
+      rafRef.current = requestAnimationFrame(loop);
+    }
+    rafRef.current = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [active]);
+}
+
+function VocoderFace({ speaking, size, color }: { speaking: boolean; size: number; color: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const barsRef = useRef<number[]>(Array.from({ length: 12 }, () => 0.1));
+  const targetRef = useRef<number[]>(Array.from({ length: 12 }, () => 0.1));
+
+  const tick = useCallback((t: number) => {
+    if (!canvasRef.current) return;
+    const ctx = canvasRef.current.getContext("2d");
+    if (!ctx) return;
+
+    const W = size;
+    const H = Math.round(size * 0.45);
+    ctx.clearRect(0, 0, W, H);
+
+    const now = t / 1000;
+    const bars = barsRef.current;
+    const targets = targetRef.current;
+
+    if (speaking) {
+      for (let i = 0; i < bars.length; i++) {
+        const wave = 0.3 + 0.5 * Math.abs(
+          Math.sin(now * (2 + i * 0.4) + i * 0.7) *
+          Math.sin(now * (1.3 + i * 0.2))
+        );
+        targets[i] = wave;
+      }
+    } else {
+      for (let i = 0; i < bars.length; i++) {
+        const idle = 0.08 + 0.06 * Math.abs(Math.sin(now * 0.7 + i * 0.5));
+        targets[i] = idle;
+      }
+    }
+
+    for (let i = 0; i < bars.length; i++) {
+      const spd = speaking ? 0.22 : 0.08;
+      bars[i] = lerp(bars[i]!, targets[i]!, spd);
+    }
+
+    const barW = Math.floor((W - 8) / bars.length) - 2;
+    const gap = 2;
+    const startX = (W - bars.length * (barW + gap)) / 2;
+
+    ctx.fillStyle = color;
+    ctx.shadowBlur = speaking ? 8 : 2;
+    ctx.shadowColor = color;
+
+    for (let i = 0; i < bars.length; i++) {
+      const barH = Math.round(bars[i]! * H * 0.9);
+      const x = startX + i * (barW + gap);
+      const y = (H - barH) / 2;
+      const cornerR = Math.min(2, barW / 2);
+
+      ctx.beginPath();
+      ctx.roundRect(x, y, barW, barH, cornerR);
+      ctx.fill();
+    }
+  }, [speaking, size, color]);
+
+  useAnimLoop(tick);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={size}
+      height={Math.round(size * 0.45)}
+      style={{ display: "block", margin: "0 auto" }}
+    />
+  );
+}
+
+function OscilloscopeFace({ speaking, size, color }: { speaking: boolean; size: number; color: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const tick = useCallback((t: number) => {
+    if (!canvasRef.current) return;
+    const ctx = canvasRef.current.getContext("2d");
+    if (!ctx) return;
+
+    const W = size;
+    const H = Math.round(size * 0.45);
+    ctx.clearRect(0, 0, W, H);
+
+    const now = t / 1000;
+    const cx = W / 2;
+    const cy = H / 2;
+    const amp = speaking
+      ? H * 0.38 * Math.abs(0.5 + 0.5 * Math.sin(now * 3.1))
+      : H * 0.06;
+    const freq = speaking ? 3 + 2 * Math.sin(now * 0.8) : 1.5;
+
+    ctx.shadowBlur = speaking ? 12 : 3;
+    ctx.shadowColor = color;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    for (let px = 0; px <= W; px++) {
+      const x = px / W;
+      const y = cy + amp * Math.sin(x * TAU * freq + now * 8);
+      if (px === 0) ctx.moveTo(px, y);
+      else ctx.lineTo(px, y);
+    }
+    ctx.stroke();
+
+    if (speaking) {
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.3;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let px = 0; px <= W; px++) {
+        const x = px / W;
+        const y = cy + amp * 0.6 * Math.sin(x * TAU * (freq * 1.5) + now * 10 + 1.2);
+        if (px === 0) ctx.moveTo(px, y);
+        else ctx.lineTo(px, y);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }, [speaking, size, color]);
+
+  useAnimLoop(tick);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={size}
+      height={Math.round(size * 0.45)}
+      style={{ display: "block", margin: "0 auto" }}
+    />
+  );
+}
+
+function IrisFace({ speaking, size, color }: { speaking: boolean; size: number; color: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const openRef = useRef(0.4);
+  const targetOpenRef = useRef(0.4);
+
+  const tick = useCallback((t: number) => {
+    if (!canvasRef.current) return;
+    const ctx = canvasRef.current.getContext("2d");
+    if (!ctx) return;
+
+    const W = size;
+    const H = size;
+    ctx.clearRect(0, 0, W, H);
+
+    const now = t / 1000;
+    const cx = W / 2;
+    const cy = H / 2;
+    const r = Math.min(W, H) * 0.42;
+
+    if (speaking) {
+      targetOpenRef.current = 0.45 + 0.35 * Math.abs(Math.sin(now * 4.5));
+    } else {
+      targetOpenRef.current = 0.25 + 0.08 * Math.abs(Math.sin(now * 0.5));
+    }
+    openRef.current = lerp(openRef.current, targetOpenRef.current, 0.15);
+
+    const aperture = openRef.current;
+    const BLADES = 8;
+
+    ctx.shadowBlur = speaking ? 14 : 4;
+    ctx.shadowColor = color;
+
+    for (let i = 0; i < BLADES; i++) {
+      const angle = (i / BLADES) * TAU + now * (speaking ? 0.4 : 0.12);
+      const innerAngle = aperture * TAU / BLADES;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(angle);
+
+      const outerR = r;
+      const innerR = r * (1 - aperture * 1.1);
+
+      ctx.beginPath();
+      ctx.moveTo(0, -innerR);
+      ctx.arc(0, 0, outerR, -Math.PI / 2 - innerAngle, -Math.PI / 2 + innerAngle);
+      ctx.closePath();
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.8;
+      ctx.stroke();
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * aperture * 0.9, 0, TAU);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.5;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }, [speaking, size, color]);
+
+  useAnimLoop(tick);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={size}
+      height={size}
+      style={{ display: "block", margin: "0 auto" }}
+    />
+  );
+}
+
+function SpectrumFace({ speaking, size, color }: { speaking: boolean; size: number; color: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const barsRef = useRef<number[]>(Array.from({ length: 24 }, () => 0.05));
+
+  const tick = useCallback((t: number) => {
+    if (!canvasRef.current) return;
+    const ctx = canvasRef.current.getContext("2d");
+    if (!ctx) return;
+
+    const W = size;
+    const H = Math.round(size * 0.55);
+    ctx.clearRect(0, 0, W, H);
+
+    const now = t / 1000;
+    const bars = barsRef.current;
+    const N = bars.length;
+
+    for (let i = 0; i < N; i++) {
+      let target: number;
+      if (speaking) {
+        const f1 = Math.sin(now * (1.5 + i * 0.15) + i * 0.4);
+        const f2 = Math.sin(now * (3.2 + i * 0.08) + i * 0.9);
+        target = 0.08 + 0.75 * Math.abs(f1 * f2) * Math.pow(1 - Math.abs(2 * i / N - 1), 0.4);
+      } else {
+        target = 0.04 + 0.04 * Math.abs(Math.sin(now * 0.5 + i * 0.3));
+      }
+      bars[i] = lerp(bars[i]!, target, speaking ? 0.25 : 0.06);
+    }
+
+    const barW = (W - (N - 1) * 2) / N;
+    const startX = (W - N * barW - (N - 1) * 2) / 2;
+
+    for (let i = 0; i < N; i++) {
+      const barH = Math.max(2, Math.round(bars[i]! * H * 0.92));
+      const x = startX + i * (barW + 2);
+      const y = H - barH;
+
+      const alpha = speaking
+        ? 0.4 + 0.6 * bars[i]!
+        : 0.3 + 0.3 * bars[i]!;
+
+      ctx.globalAlpha = alpha;
+      ctx.shadowBlur = speaking ? 6 : 0;
+      ctx.shadowColor = color;
+      ctx.fillStyle = color;
+
+      const grad = ctx.createLinearGradient(x, y, x, H);
+      grad.addColorStop(0, color);
+      grad.addColorStop(1, color + "44");
+      ctx.fillStyle = grad;
+      ctx.fillRect(Math.round(x), y, Math.max(1, Math.round(barW)), barH);
+    }
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  }, [speaking, size, color]);
+
+  useAnimLoop(tick);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={size}
+      height={Math.round(size * 0.55)}
+      style={{ display: "block", margin: "0 auto" }}
+    />
+  );
+}
+
+export function AIFace({ style, speaking = false, size = 120, color = "#3f84f3", className = "" }: Props) {
+  const isSquare = style === "iris";
+
+  return (
+    <div className={className} style={{ width: size, height: isSquare ? size : Math.round(size * 0.55) }}>
+      {style === "vocoder" && <VocoderFace speaking={speaking} size={size} color={color} />}
+      {style === "oscilloscope" && <OscilloscopeFace speaking={speaking} size={size} color={color} />}
+      {style === "iris" && <IrisFace speaking={speaking} size={size} color={color} />}
+      {style === "spectrum" && <SpectrumFace speaking={speaking} size={size} color={color} />}
+    </div>
+  );
+}
+
+export function useFaceStyle(): FaceStyle {
+  const [style] = useState<FaceStyle>(() => {
+    const raw = localStorage.getItem("deckos_face_style");
+    const valid: FaceStyle[] = ["vocoder", "oscilloscope", "iris", "spectrum"];
+    return (valid.includes(raw as FaceStyle) ? raw : "vocoder") as FaceStyle;
+  });
+  return style;
+}
