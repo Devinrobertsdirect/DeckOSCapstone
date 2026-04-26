@@ -4,10 +4,13 @@
  * Emits notification.created on the bus so the WS layer forwards them to frontends.
  */
 import { db, notificationsTable } from "@workspace/db";
-import { eq, desc, or } from "drizzle-orm";
+import { eq, desc, or, and, lt } from "drizzle-orm";
 import { bus } from "./bus.js";
 import { logger } from "./logger.js";
 import type { BusEvent } from "@workspace/event-bus";
+
+const SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const RETENTION_DAYS    = 7;
 
 type Severity = "info" | "warning" | "critical";
 
@@ -20,7 +23,23 @@ interface NotificationSpec {
 }
 
 class NotificationService {
-  private subIds: string[] = [];
+  private subIds:     string[] = [];
+  private sweepTimer: ReturnType<typeof setInterval> | null = null;
+
+  private async sweep(): Promise<void> {
+    try {
+      const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
+      const deleted = await db
+        .delete(notificationsTable)
+        .where(and(eq(notificationsTable.read, true), lt(notificationsTable.createdAt, cutoff)))
+        .returning({ id: notificationsTable.id });
+      if (deleted.length > 0) {
+        logger.info({ count: deleted.length, olderThan: cutoff.toISOString() }, "NotificationService: swept stale read notifications");
+      }
+    } catch (err) {
+      logger.warn({ err }, "NotificationService: sweep failed");
+    }
+  }
 
   async createNotification(spec: NotificationSpec): Promise<void> {
     try {
@@ -207,12 +226,22 @@ class NotificationService {
       });
     }));
 
-    logger.info({ subscriptions: this.subIds.length }, "NotificationService started");
+    this.sweepTimer = setInterval(() => void this.sweep(), SWEEP_INTERVAL_MS);
+    void this.sweep();
+
+    logger.info(
+      { subscriptions: this.subIds.length, sweepIntervalHours: SWEEP_INTERVAL_MS / 3_600_000, retentionDays: RETENTION_DAYS },
+      "NotificationService started",
+    );
   }
 
   stop(): void {
     for (const id of this.subIds) bus.unsubscribe(id);
     this.subIds = [];
+    if (this.sweepTimer) {
+      clearInterval(this.sweepTimer);
+      this.sweepTimer = null;
+    }
   }
 }
 
