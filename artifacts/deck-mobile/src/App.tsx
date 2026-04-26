@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, type FormEvent } from "react";
 import { useVoiceRecorder } from "./hooks/useVoiceRecorder";
 import { useAudioPlayback } from "./hooks/useAudioPlayback";
 
@@ -108,6 +108,29 @@ interface VoiceIdentity {
   emotionRange: string;
 }
 
+interface Persona {
+  aiName?: string;
+  attitude?: string;
+  thinkingDepth?: string;
+  responseLength?: string;
+  gravityLevel?: number;
+  snarkinessLevel?: number;
+}
+
+interface ChannelEntry {
+  configured: boolean;
+  instructions: string;
+  envVars?: string[];
+  note?: string;
+}
+
+interface ChannelStatus {
+  inboundWebhook: string;
+  note: string;
+  channels: Record<string, ChannelEntry>;
+  supported: string[];
+}
+
 const SESSION_ID = `mobile_${Math.random().toString(36).slice(2, 10)}`;
 
 function useWebSocket(onMessage: (data: unknown) => void) {
@@ -157,10 +180,13 @@ export default function App() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [identity, setIdentity] = useState<VoiceIdentity | null>(null);
-  const [showIdentity, setShowIdentity] = useState(false);
   const [aiName, setAiName] = useState("JARVIS");
   const [userName, setUserName] = useState<string | null>(null);
   const [voiceState, setVoiceState] = useState<VoicePipelineState>("idle");
+  const [showSettings, setShowSettings] = useState(false);
+  const [persona, setPersona] = useState<Persona | null>(null);
+  const [channelStatus, setChannelStatus] = useState<ChannelStatus | null>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const voicePressedRef = useRef(false);
@@ -219,9 +245,25 @@ export default function App() {
       } catch {}
     };
 
+    const loadPersona = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/ai/persona`);
+        if (res.ok) setPersona(await res.json() as Persona);
+      } catch {}
+    };
+
+    const loadChannelStatus = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/channels/status`);
+        if (res.ok) setChannelStatus(await res.json() as ChannelStatus);
+      } catch {}
+    };
+
     void loadHistory();
     void loadIdentity();
     void loadUcmIdentity();
+    void loadPersona();
+    void loadChannelStatus();
   }, []);
 
   useEffect(() => {
@@ -408,30 +450,19 @@ export default function App() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowIdentity((v) => !v)}
-            className={`font-mono text-xs px-2 py-1 border transition-colors ${showIdentity ? "border-primary/60 bg-primary/10 text-primary" : "border-primary/20 text-primary/40 hover:border-primary/40"}`}
-          >
-            VOICE.ID
-          </button>
           <WsIndicator state={wsState} />
+          <button
+            onClick={() => setShowSettings(true)}
+            className="w-8 h-8 flex items-center justify-center border border-primary/20 text-primary/40 hover:border-primary/50 hover:text-primary/70 transition-colors"
+            aria-label="Settings"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
         </div>
       </header>
-
-      {/* VOICE IDENTITY PANEL */}
-      {showIdentity && identity && (
-        <div className="shrink-0 border-b border-primary/20 bg-card/50 px-4 py-3">
-          <div className="font-mono text-xs text-primary/40 uppercase tracking-widest mb-2">Voice Identity Profile</div>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-1 font-mono text-xs">
-            <IdentityRow label="ID" value={identity.voiceId} />
-            <IdentityRow label="Tone" value={identity.tone} />
-            <IdentityRow label="Pacing" value={identity.pacing} />
-            <IdentityRow label="Formality" value={`${identity.formality}%`} />
-            <IdentityRow label="Verbosity" value={`${identity.verbosity}%`} />
-            <IdentityRow label="Emotion" value={identity.emotionRange} />
-          </div>
-        </div>
-      )}
 
       {/* MESSAGES */}
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-3 overscroll-contain">
@@ -464,6 +495,48 @@ export default function App() {
              voiceState === "speaking" ? "SPEAKING…" : "ERROR"}
           </span>
         </div>
+      )}
+
+      {/* SETTINGS PANEL */}
+      {showSettings && (
+        <SettingsPanel
+          aiName={aiName}
+          userName={userName ?? ""}
+          identity={identity}
+          persona={persona}
+          channelStatus={channelStatus}
+          saving={settingsSaving}
+          onClose={() => setShowSettings(false)}
+          onSave={async (fields) => {
+            setSettingsSaving(true);
+            try {
+              if (fields.aiName !== undefined || fields.userName !== undefined) {
+                await fetch(`${API_BASE}/ucm/identity`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    data: {
+                      ...(fields.aiName   !== undefined ? { aiName: fields.aiName }     : {}),
+                      ...(fields.userName !== undefined ? { userName: fields.userName } : {}),
+                    },
+                    merge: true,
+                  }),
+                });
+                if (fields.aiName   !== undefined) setAiName(fields.aiName || "JARVIS");
+                if (fields.userName !== undefined) setUserName(fields.userName || null);
+              }
+              if (fields.persona) {
+                await fetch(`${API_BASE}/ai/persona`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(fields.persona),
+                });
+                setPersona((prev) => ({ ...prev, ...fields.persona }));
+              }
+            } catch {}
+            setSettingsSaving(false);
+          }}
+        />
       )}
 
       {/* INPUT */}
@@ -617,6 +690,241 @@ function IdentityRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between gap-2">
       <span className="text-primary/40">{label}:</span>
       <span className="text-primary/70 truncate">{value}</span>
+    </div>
+  );
+}
+
+type SaveFields = {
+  aiName?: string;
+  userName?: string;
+  persona?: Partial<Persona>;
+};
+
+function SettingsPanel({
+  aiName, userName, identity, persona, channelStatus, saving, onClose, onSave,
+}: {
+  aiName: string;
+  userName: string;
+  identity: VoiceIdentity | null;
+  persona: Persona | null;
+  channelStatus: ChannelStatus | null;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (fields: SaveFields) => Promise<void>;
+}) {
+  const [tab, setTab] = useState<"identity" | "persona" | "channels">("identity");
+  const [draftAiName, setDraftAiName] = useState(aiName);
+  const [draftUserName, setDraftUserName] = useState(userName);
+  const [draftAttitude, setDraftAttitude] = useState(persona?.attitude ?? "professional");
+  const [draftDepth, setDraftDepth] = useState(persona?.thinkingDepth ?? "standard");
+  const [draftLength, setDraftLength] = useState(persona?.responseLength ?? "balanced");
+
+  const handleIdentitySave = async (e: FormEvent) => {
+    e.preventDefault();
+    await onSave({ aiName: draftAiName.trim() || "JARVIS", userName: draftUserName.trim() || undefined });
+    onClose();
+  };
+
+  const handlePersonaSave = async (e: FormEvent) => {
+    e.preventDefault();
+    await onSave({
+      persona: { attitude: draftAttitude, thinkingDepth: draftDepth, responseLength: draftLength },
+    });
+    onClose();
+  };
+
+  const ATTITUDES = ["professional", "casual", "witty", "serious", "empathetic", "commanding", "gentle", "playful"];
+  const DEPTHS    = ["quick", "standard", "detailed"];
+  const LENGTHS   = ["brief", "balanced", "thorough", "comprehensive"];
+
+  const CHANNEL_ICONS: Record<string, string> = {
+    discord: "🟣", telegram: "✈️", whatsapp: "💬", imessage: "🍎",
+    slack: "🔷", signal: "🔵", line: "🟢", matrix: "⬛", irc: "📡", sms: "📱",
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+      <div className="scanline pointer-events-none" />
+
+      {/* Header */}
+      <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-primary/30 bg-card/80">
+        <span className="font-mono text-sm text-primary tracking-widest uppercase">System Settings</span>
+        <button onClick={onClose} className="font-mono text-xs px-2 py-1 border border-primary/20 text-primary/50 hover:border-primary/50 hover:text-primary transition-colors">
+          ✕ CLOSE
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="shrink-0 flex border-b border-primary/20">
+        {(["identity", "persona", "channels"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`flex-1 py-2.5 font-mono text-xs uppercase tracking-wider transition-colors ${
+              tab === t ? "border-b-2 border-primary text-primary bg-primary/5" : "text-primary/30 hover:text-primary/60"
+            }`}
+          >
+            {t === "identity" ? "Identity" : t === "persona" ? "AI Persona" : "Channels"}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+
+        {/* Identity Tab */}
+        {tab === "identity" && (
+          <form onSubmit={(e) => void handleIdentitySave(e)} className="space-y-4">
+            <p className="font-mono text-xs text-primary/30 leading-relaxed">
+              These values control how the AI introduces itself and addresses you across all channels.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block font-mono text-xs text-primary/40 uppercase tracking-widest mb-1.5">AI Designation</label>
+                <input
+                  value={draftAiName}
+                  onChange={(e) => setDraftAiName(e.target.value)}
+                  maxLength={32}
+                  placeholder="JARVIS"
+                  className="w-full bg-transparent border border-primary/30 px-3 py-2 font-mono text-sm text-primary placeholder-primary/20 outline-none focus:border-primary/60"
+                />
+              </div>
+              <div>
+                <label className="block font-mono text-xs text-primary/40 uppercase tracking-widest mb-1.5">Your Name</label>
+                <input
+                  value={draftUserName}
+                  onChange={(e) => setDraftUserName(e.target.value)}
+                  maxLength={32}
+                  placeholder="Commander"
+                  className="w-full bg-transparent border border-primary/30 px-3 py-2 font-mono text-sm text-primary placeholder-primary/20 outline-none focus:border-primary/60"
+                />
+              </div>
+              {identity && (
+                <div className="border border-primary/10 bg-primary/5 p-3 space-y-1">
+                  <p className="font-mono text-[9px] text-primary/25 uppercase tracking-widest mb-2">Voice Identity (read-only)</p>
+                  {[
+                    ["Voice ID", identity.voiceId],
+                    ["Tone", identity.tone],
+                    ["Pacing", identity.pacing],
+                    ["Formality", `${identity.formality}%`],
+                    ["Verbosity", `${identity.verbosity}%`],
+                    ["Emotion Range", identity.emotionRange],
+                  ].map(([l, v]) => (
+                    <div key={l} className="flex justify-between font-mono text-xs">
+                      <span className="text-primary/30">{l}</span>
+                      <span className="text-primary/60">{v}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              type="submit"
+              disabled={saving}
+              className="w-full py-2.5 font-mono text-xs border border-primary/40 text-primary bg-primary/10 hover:bg-primary/20 disabled:opacity-40 transition-colors uppercase tracking-widest"
+            >
+              {saving ? "Saving…" : "Save Identity"}
+            </button>
+          </form>
+        )}
+
+        {/* Persona Tab */}
+        {tab === "persona" && (
+          <form onSubmit={(e) => void handlePersonaSave(e)} className="space-y-4">
+            <p className="font-mono text-xs text-primary/30 leading-relaxed">
+              Controls the AI's communication style across all channels including Discord, Telegram, and WhatsApp.
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block font-mono text-xs text-primary/40 uppercase tracking-widest mb-2">Attitude</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {ATTITUDES.map((a) => (
+                    <button
+                      key={a} type="button"
+                      onClick={() => setDraftAttitude(a)}
+                      className={`py-2 font-mono text-xs border transition-colors capitalize ${
+                        draftAttitude === a ? "border-primary/60 bg-primary/10 text-primary" : "border-primary/15 text-primary/35 hover:border-primary/35"
+                      }`}
+                    >{a}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block font-mono text-xs text-primary/40 uppercase tracking-widest mb-2">Thinking Depth</label>
+                <div className="flex gap-2">
+                  {DEPTHS.map((d) => (
+                    <button
+                      key={d} type="button"
+                      onClick={() => setDraftDepth(d)}
+                      className={`flex-1 py-2 font-mono text-xs border transition-colors capitalize ${
+                        draftDepth === d ? "border-primary/60 bg-primary/10 text-primary" : "border-primary/15 text-primary/35 hover:border-primary/35"
+                      }`}
+                    >{d}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block font-mono text-xs text-primary/40 uppercase tracking-widest mb-2">Response Length</label>
+                <div className="flex gap-2 flex-wrap">
+                  {LENGTHS.map((l) => (
+                    <button
+                      key={l} type="button"
+                      onClick={() => setDraftLength(l)}
+                      className={`flex-1 py-2 font-mono text-xs border transition-colors capitalize ${
+                        draftLength === l ? "border-primary/60 bg-primary/10 text-primary" : "border-primary/15 text-primary/35 hover:border-primary/35"
+                      }`}
+                    >{l}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <button
+              type="submit"
+              disabled={saving}
+              className="w-full py-2.5 font-mono text-xs border border-primary/40 text-primary bg-primary/10 hover:bg-primary/20 disabled:opacity-40 transition-colors uppercase tracking-widest"
+            >
+              {saving ? "Saving…" : "Save Persona"}
+            </button>
+          </form>
+        )}
+
+        {/* Channels Tab */}
+        {tab === "channels" && channelStatus && (
+          <div className="space-y-3">
+            <div className="border border-primary/10 bg-primary/5 p-3">
+              <p className="font-mono text-[9px] text-primary/30 uppercase tracking-widest mb-1">Inbound Webhook (OpenClaw)</p>
+              <p className="font-mono text-xs text-primary/60 break-all">{channelStatus.inboundWebhook}</p>
+              <p className="font-mono text-[9px] text-primary/25 mt-1 leading-relaxed">{channelStatus.note}</p>
+            </div>
+            {Object.entries(channelStatus.channels).map(([name, ch]) => (
+              <div key={name} className={`border p-3 ${ch.configured ? "border-[#00ff88]/20 bg-[#00ff88]/3" : "border-primary/10 bg-card/20"}`}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span>{CHANNEL_ICONS[name] ?? "📨"}</span>
+                    <span className="font-mono text-xs text-primary/70 uppercase tracking-wider">{name}</span>
+                  </div>
+                  <span className={`font-mono text-[10px] ${ch.configured ? "text-[#00ff88]" : "text-primary/25"}`}>
+                    {ch.configured ? "● ACTIVE" : "○ NOT SET"}
+                  </span>
+                </div>
+                <p className="font-mono text-[10px] text-primary/35 leading-relaxed">{ch.instructions}</p>
+                {ch.note && <p className="font-mono text-[9px] text-primary/20 mt-1 italic">{ch.note}</p>}
+              </div>
+            ))}
+            <div className="border border-primary/10 p-3 bg-card/20">
+              <p className="font-mono text-[9px] text-primary/30 uppercase tracking-widest mb-1">OpenClaw Setup</p>
+              <p className="font-mono text-[10px] text-primary/40 leading-relaxed">
+                Run <span className="text-primary/60">openclaw configure</span> to set up your channels, then point OpenClaw's AI bridge to POST to the webhook URL above.
+              </p>
+            </div>
+          </div>
+        )}
+        {tab === "channels" && !channelStatus && (
+          <div className="flex items-center justify-center h-32">
+            <span className="font-mono text-xs text-primary/25 animate-pulse">Loading channel status…</span>
+          </div>
+        )}
+
+      </div>
     </div>
   );
 }
