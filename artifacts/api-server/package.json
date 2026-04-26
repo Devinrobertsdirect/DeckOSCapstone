@@ -12,7 +12,9 @@
   "dependencies": {
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
+    "@workspace/event-bus": "workspace:*",
     "cookie-parser": "^1.4.7",
+    "zod": "catalog:",
     "cors": "^2",
     "drizzle-orm": "catalog:",
     "express": "^5",

@@ -482,6 +482,34 @@ export const ControlDeviceResponse = zod.object({
 });
 
 /**
+ * @summary Get paginated event bus history
+ */
+export const getEventHistoryQueryLimitDefault = 50;
+export const getEventHistoryQueryOffsetDefault = 0;
+
+export const GetEventHistoryQueryParams = zod.object({
+  limit: zod.coerce.number().default(getEventHistoryQueryLimitDefault),
+  offset: zod.coerce.number().default(getEventHistoryQueryOffsetDefault),
+  type: zod.coerce.string().optional().describe("Filter by event type"),
+  source: zod.coerce.string().optional().describe("Filter by event source"),
+});
+
+export const GetEventHistoryResponse = zod.object({
+  events: zod.array(
+    zod.object({
+      id: zod.string(),
+      type: zod.string(),
+      source: zod.string(),
+      level: zod.string(),
+      payload: zod.record(zod.string(), zod.unknown()).nullish(),
+      timestamp: zod.coerce.date(),
+    }),
+  ),
+  limit: zod.number(),
+  offset: zod.number(),
+});
+
+/**
  * @summary Aggregated device statistics
  */
 export const GetDeviceStatsResponse = zod.object({

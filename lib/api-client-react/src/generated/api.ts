@@ -27,7 +27,9 @@ import type {
   DeviceControlResult,
   DeviceList,
   DeviceStats,
+  EventHistoryResponse,
   GetCommandHistoryParams,
+  GetEventHistoryParams,
   GetLongTermMemoryParams,
   GetSystemEventsParams,
   HealthStatus,
@@ -2045,6 +2047,100 @@ export const useControlDevice = <
 > => {
   return useMutation(getControlDeviceMutationOptions(options));
 };
+
+/**
+ * @summary Get paginated event bus history
+ */
+export const getGetEventHistoryUrl = (params?: GetEventHistoryParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/events/history?${stringifiedParams}`
+    : `/api/events/history`;
+};
+
+export const getEventHistory = async (
+  params?: GetEventHistoryParams,
+  options?: RequestInit,
+): Promise<EventHistoryResponse> => {
+  return customFetch<EventHistoryResponse>(getGetEventHistoryUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEventHistoryQueryKey = (params?: GetEventHistoryParams) => {
+  return [`/api/events/history`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetEventHistoryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEventHistory>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetEventHistoryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEventHistory>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetEventHistoryQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getEventHistory>>> = ({
+    signal,
+  }) => getEventHistory(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEventHistory>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEventHistoryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEventHistory>>
+>;
+export type GetEventHistoryQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get paginated event bus history
+ */
+
+export function useGetEventHistory<
+  TData = Awaited<ReturnType<typeof getEventHistory>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetEventHistoryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEventHistory>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEventHistoryQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Aggregated device statistics

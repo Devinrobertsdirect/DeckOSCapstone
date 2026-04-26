@@ -6,6 +6,7 @@ import memoryRouter from "./memory";
 import systemRouter from "./system";
 import commandsRouter from "./commands";
 import devicesRouter from "./devices";
+import eventsRouter from "./events";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(memoryRouter);
 router.use(systemRouter);
 router.use(commandsRouter);
 router.use(devicesRouter);
+router.use(eventsRouter);
 
 export default router;

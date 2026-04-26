@@ -424,6 +424,23 @@ export interface DeviceStats {
   byType: DeviceStatsByType;
 }
 
+export type EventHistoryEntryPayload = { [key: string]: unknown } | null;
+
+export interface EventHistoryEntry {
+  id: string;
+  type: string;
+  source: string;
+  level: string;
+  payload?: EventHistoryEntryPayload;
+  timestamp: string;
+}
+
+export interface EventHistoryResponse {
+  events: EventHistoryEntry[];
+  limit: number;
+  offset: number;
+}
+
 export type GetLongTermMemoryParams = {
   query?: string;
   limit?: number;
@@ -435,4 +452,17 @@ export type GetSystemEventsParams = {
 
 export type GetCommandHistoryParams = {
   limit?: number;
+};
+
+export type GetEventHistoryParams = {
+  limit?: number;
+  offset?: number;
+  /**
+   * Filter by event type
+   */
+  type?: string;
+  /**
+   * Filter by event source
+   */
+  source?: string;
 };

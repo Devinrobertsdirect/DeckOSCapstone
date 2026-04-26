@@ -40,7 +40,24 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - **Preview Path**: `/api`
 - Express 5 backend with all Deck OS routes
 
-## Deck OS Architecture
+## Architecture
+
+### Event Bus (`lib/event-bus`)
+Central nervous system for all inter-component communication. All components communicate exclusively through the event bus — never directly.
+
+- **EventBus class**: async, non-blocking processing loop; `emit`, `subscribe`, `unsubscribe`, `history` methods
+- **Event envelope**: `id`, `source`, `target`, `type`, `payload`, `timestamp`
+- **Event types**: discriminated unions for `system.*`, `plugin.*`, `device.*`, `ai.*`, `memory.*`
+- **Persistence**: fire-and-forget writes to `system_events` DB table
+- **Plugin interface**: abstract `Plugin` base class with `init(context)`, `on_event(event)`, `execute(payload)`, `shutdown()`
+- **PluginContext**: sandboxed — only `emit` and `subscribe` exposed; no direct DB or bus access
+
+### API Server Bootstrap
+- **Bootstrap**: `src/lib/bootstrap.ts` — initializes EventBus singleton and PluginRegistry, emits `system.boot`
+- **Bus singleton**: `src/lib/bus.ts` — wired to DB persistence via `system_events` table
+- **Plugin registry**: `src/lib/plugin-registry.ts` — loads `.js` files from `artifacts/api-server/plugins/` at startup
+- **Events endpoint**: `GET /api/events/history` — paginated, filterable event history (`?limit`, `?offset`, `?type`, `?source`)
+- **Graceful shutdown**: `SIGTERM`/`SIGINT` handlers call `registry.shutdownAll()` before closing
 
 ### AI Router Layer
 - Detects Ollama at localhost:11434 (auto-refresh every 30s)
@@ -72,4 +89,10 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 
 - `memory_entries` — short and long-term memory storage
 - `command_history` — full command execution history
-- `system_events` — system event log
+- `system_events` — event bus traffic log (`level`, `message`=event type, `source`, `data`=full event JSON)
+
+## Shared Packages
+- `lib/event-bus` — shared event types, EventBus class, Plugin base class
+- `lib/api-zod` — generated Zod validators from OpenAPI spec
+- `lib/api-client-react` — generated React Query hooks from OpenAPI spec
+- `lib/db` — Drizzle ORM client and schema

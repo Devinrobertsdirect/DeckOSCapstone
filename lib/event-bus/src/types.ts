@@ -1,0 +1,80 @@
+import { z } from "zod";
+
+export const EventCategorySchema = z.enum([
+  "system",
+  "plugin",
+  "device",
+  "ai",
+  "memory",
+]);
+
+export type EventCategory = z.infer<typeof EventCategorySchema>;
+
+export const SystemEventTypeSchema = z.enum([
+  "system.boot",
+  "system.shutdown",
+  "system.error",
+  "system.heartbeat",
+  "system.config_changed",
+]);
+
+export const PluginEventTypeSchema = z.enum([
+  "plugin.loaded",
+  "plugin.unloaded",
+  "plugin.error",
+  "plugin.executed",
+  "plugin.status_changed",
+]);
+
+export const DeviceEventTypeSchema = z.enum([
+  "device.connected",
+  "device.disconnected",
+  "device.reading",
+  "device.command_sent",
+  "device.error",
+]);
+
+export const AiEventTypeSchema = z.enum([
+  "ai.inference_started",
+  "ai.inference_completed",
+  "ai.model_changed",
+  "ai.error",
+]);
+
+export const MemoryEventTypeSchema = z.enum([
+  "memory.stored",
+  "memory.retrieved",
+  "memory.deleted",
+  "memory.expired",
+]);
+
+export const EventTypeSchema = z.union([
+  SystemEventTypeSchema,
+  PluginEventTypeSchema,
+  DeviceEventTypeSchema,
+  AiEventTypeSchema,
+  MemoryEventTypeSchema,
+  z.string(),
+]);
+
+export type EventType = z.infer<typeof EventTypeSchema>;
+
+export const BusEventSchema = z.object({
+  id: z.string(),
+  source: z.string(),
+  target: z.string().nullable(),
+  type: EventTypeSchema,
+  payload: z.unknown(),
+  timestamp: z.string(),
+});
+
+export type BusEvent = z.infer<typeof BusEventSchema>;
+
+export type EventHandler = (event: BusEvent) => Promise<void> | void;
+
+export type EventFilter = {
+  type?: string;
+  source?: string;
+  limit?: number;
+  offset?: number;
+};

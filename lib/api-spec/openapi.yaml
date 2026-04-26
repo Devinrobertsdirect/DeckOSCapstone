@@ -22,6 +22,8 @@ tags:
     description: Command execution and dispatch
   - name: devices
     description: IoT device simulation and control
+  - name: events
+    description: Event bus history and introspection
 paths:
   /healthz:
     get:
@@ -431,6 +433,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeviceControlResult"
+
+  /events/history:
+    get:
+      operationId: getEventHistory
+      tags: [events]
+      summary: Get paginated event bus history
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: type
+          in: query
+          schema:
+            type: string
+          description: Filter by event type
+        - name: source
+          in: query
+          schema:
+            type: string
+          description: Filter by event source
+      responses:
+        "200":
+          description: Event history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventHistoryResponse"
 
   /devices/stats:
     get:
@@ -1123,3 +1159,44 @@ components:
         - offline
         - error
         - byType
+
+    EventHistoryEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        source:
+          type: string
+        level:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - id
+        - type
+        - source
+        - level
+        - timestamp
+
+    EventHistoryResponse:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventHistoryEntry"
+        limit:
+          type: integer
+        offset:
+          type: integer
+      required:
+        - events
+        - limit
+        - offset
