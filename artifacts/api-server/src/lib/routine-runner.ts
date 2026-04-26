@@ -13,7 +13,7 @@ import { db, routinesTable, routineExecutionsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { bus } from "./bus.js";
 import { logger } from "./logger.js";
-import type { BusEvent } from "@workspace/event-bus";
+import type { BusEvent, EventType } from "@workspace/event-bus";
 
 const TICK_MS = 60_000;
 
@@ -160,11 +160,12 @@ async function executeAction(actionType: string, params: ActionParams): Promise<
     case "emit_bus_event": {
       const eventType = (params["eventType"] as string) || "routine.triggered";
       const payload   = (params["payload"]   as Record<string, unknown>) || {};
+      // Emit the requested event type directly; bus validates and rejects unknown types gracefully
       bus.emit({
         source: "routine-runner",
         target: null,
-        type: "routine.triggered",
-        payload: { delegatedType: eventType, ...payload, timestamp: new Date().toISOString() },
+        type: eventType as EventType,
+        payload: { ...payload, timestamp: new Date().toISOString() },
       });
       return `Bus event emitted: ${eventType}`;
     }
@@ -178,7 +179,7 @@ async function executeAction(actionType: string, params: ActionParams): Promise<
 
 export class RoutineRunner {
   private timer: ReturnType<typeof setInterval> | null = null;
-  private eventUnsubs: Array<() => void> = [];
+  private eventSubIds: string[] = [];
   private eventRoutineIds = new Set<number>();
 
   start(): void {
@@ -191,16 +192,16 @@ export class RoutineRunner {
 
   stop(): void {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
-    for (const unsub of this.eventUnsubs) unsub();
-    this.eventUnsubs = [];
+    for (const subId of this.eventSubIds) bus.unsubscribe(subId);
+    this.eventSubIds = [];
     this.eventRoutineIds.clear();
   }
 
   // Called after create/update/delete to refresh event subscriptions
   async resubscribeEventRoutines(): Promise<void> {
-    // Clear old subscriptions
-    for (const unsub of this.eventUnsubs) unsub();
-    this.eventUnsubs = [];
+    // Clear old subscriptions using their IDs
+    for (const subId of this.eventSubIds) bus.unsubscribe(subId);
+    this.eventSubIds = [];
     this.eventRoutineIds.clear();
 
     try {
@@ -210,13 +211,14 @@ export class RoutineRunner {
       for (const r of routines) {
         if (!r.enabled) continue;
         this.eventRoutineIds.add(r.id);
-        const unsub = bus.subscribe(r.triggerValue as never, async (event: BusEvent) => {
+        // bus.subscribe accepts EventType | string — no cast needed
+        const subId = bus.subscribe(r.triggerValue, async (event: BusEvent) => {
           if (!r.enabled) return;
           if (event.type !== r.triggerValue) return;
           logger.info({ routineId: r.id, event: r.triggerValue }, "RoutineRunner: event trigger fired");
           await this.executeRoutine(r);
         });
-        this.eventUnsubs.push(unsub);
+        this.eventSubIds.push(subId);
       }
 
       logger.debug({ count: routines.length }, "RoutineRunner: event subscriptions refreshed");
