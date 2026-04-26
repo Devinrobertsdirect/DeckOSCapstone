@@ -141,6 +141,7 @@ type CommandEntry = {
   name: string;
   description: string;
   syntax: string;
+  examples?: string[];
 };
 
 export default function Dashboard() {
@@ -478,26 +479,48 @@ export default function Dashboard() {
 
           <div className="relative border-t border-primary/20">
             {suggestions.length > 0 && (
-              <ul className="absolute bottom-full left-0 right-0 z-50 border border-primary/30 bg-[hsl(var(--background))] shadow-[0_0_16px_rgba(0,212,255,0.12)] max-h-48 overflow-y-auto">
-                {suggestions.map((s, i) => (
-                  <li key={s.id}>
-                    <button
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        acceptSuggestion(s);
-                      }}
-                      className={`w-full text-left px-3 py-1.5 font-mono text-xs flex items-center justify-between gap-4 transition-colors ${
-                        i === suggestionIndex
-                          ? "bg-primary/15 text-primary"
-                          : "text-primary/70 hover:bg-primary/10 hover:text-primary"
-                      }`}
-                    >
-                      <span className="font-semibold">{s.name}</span>
-                      <span className="text-primary/35 truncate">{s.description}</span>
-                    </button>
-                  </li>
-                ))}
+              <ul className="absolute bottom-full left-0 right-0 z-50 border border-primary/30 bg-[hsl(var(--background))] shadow-[0_0_16px_rgba(0,212,255,0.12)] max-h-64 overflow-y-auto">
+                {suggestions.map((s, i) => {
+                  const active = i === suggestionIndex;
+                  return (
+                    <li key={s.id}>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          acceptSuggestion(s);
+                        }}
+                        onMouseEnter={() => setSuggestionIndex(i)}
+                        className={`w-full text-left px-3 py-1.5 font-mono text-xs flex items-center justify-between gap-4 transition-colors ${
+                          active
+                            ? "bg-primary/15 text-primary"
+                            : "text-primary/70 hover:bg-primary/10 hover:text-primary"
+                        }`}
+                      >
+                        <span className="font-semibold">{s.name}</span>
+                        <span className="text-primary/35 truncate">{s.description}</span>
+                      </button>
+                      {active && (s.syntax || (s.examples && s.examples.length > 0)) && (
+                        <div className="px-3 pb-2 pt-1 border-t border-primary/10 bg-primary/5 space-y-1">
+                          {s.syntax && (
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-[9px] font-mono text-primary/30 uppercase tracking-widest shrink-0">SYNTAX</span>
+                              <span className="text-[11px] font-mono text-primary/80">{s.syntax}</span>
+                            </div>
+                          )}
+                          {s.examples && s.examples.length > 0 && (
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-[9px] font-mono text-primary/30 uppercase tracking-widest shrink-0">EX</span>
+                              <span className="text-[11px] font-mono text-primary/50 truncate">
+                                {s.examples.slice(0, 2).join("  ·  ")}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
                 <li className="px-3 py-1 border-t border-primary/10 text-[10px] font-mono text-primary/25 flex items-center gap-2">
                   <ChevronRight className="w-2.5 h-2.5" />
                   TAB to complete · ↑↓ to navigate · ESC to dismiss
