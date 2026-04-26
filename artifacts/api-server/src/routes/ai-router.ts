@@ -168,6 +168,18 @@ router.post("/ai-router/infer", async (req, res) => {
     bus.emit({
       source: "ai-router",
       target: null,
+      type: "ai.inference_completed",
+      payload: {
+        modelUsed: "unknown",
+        latencyMs,
+        fromCache: false,
+        status: "error",
+        error: String(err),
+      },
+    });
+    bus.emit({
+      source: "ai-router",
+      target: null,
       type: "ai.error",
       payload: { error: String(err), latencyMs },
     });
