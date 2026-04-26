@@ -132,6 +132,14 @@ export default function Dashboard() {
   const pluginList = useLatestPayload<PluginPayload>("plugin.list.response");
   const { mobile: mobileSnap, vision: cameraSnap } = useFieldSensors();
 
+  const pluginStatusEvents = useWsEvents((e) => e.type === "plugin.status_changed");
+  useEffect(() => {
+    if (pluginStatusEvents.length > 0) {
+      sendEvent({ type: "plugin.list.request", payload: {} });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pluginStatusEvents.length]);
+
   const [briefing, setBriefing] = useState<BriefingData | null>(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
   const [generatingBriefing, setGeneratingBriefing] = useState(false);
@@ -666,6 +674,7 @@ function PluginsCard({
 }) {
   const [open, setOpen] = useState(false);
   const [, navigate] = useLocation();
+  const { sendEvent } = useWebSocket();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -716,29 +725,51 @@ function PluginsCard({
             )}
             {plugins.map((p) => {
               const statusColor = PLUGIN_STATUS_COLOR[p.status ?? "inactive"] ?? "text-primary/30";
+              const isEnabled = p.enabled !== false;
               return (
-                <button
+                <div
                   key={p.id ?? p.name}
-                  onClick={() => {
-                    setOpen(false);
-                    navigate(`/plugins?selected=${encodeURIComponent(p.id ?? "")}`);
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-primary/5 transition-colors text-left group"
+                  className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-primary/5 transition-colors group"
                 >
                   <PluginStatusIcon status={p.status} />
-                  <div className="flex-1 min-w-0">
+                  <button
+                    className="flex-1 min-w-0 text-left"
+                    onClick={() => {
+                      setOpen(false);
+                      navigate(`/plugins?selected=${encodeURIComponent(p.id ?? "")}`);
+                    }}
+                  >
                     <div className="font-mono text-xs text-primary/80 truncate group-hover:text-primary transition-colors">
                       {p.name ?? p.id ?? "Unknown"}
                     </div>
                     <div className="font-mono text-[10px] text-primary/30">
                       checked {formatLastChecked(p.lastActivity)}
                     </div>
-                  </div>
+                  </button>
                   <div className={`font-mono text-[10px] uppercase tracking-wider shrink-0 ${statusColor}`}>
-                    {p.status === "inactive" || p.enabled === false ? "DISABLED" : (p.status ?? "inactive").toUpperCase()}
+                    {isEnabled ? (p.status ?? "active").toUpperCase() : "DISABLED"}
                   </div>
-                  <ChevronRight className="w-3 h-3 text-primary/20 group-hover:text-primary/60 transition-colors shrink-0" />
-                </button>
+                  <button
+                    title={isEnabled ? "Disable plugin" : "Enable plugin"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      sendEvent({
+                        type: "plugin.toggle.request",
+                        payload: { pluginId: p.id, enabled: !isEnabled },
+                      });
+                    }}
+                    className={`p-1 border transition-all shrink-0 ${isEnabled ? "border-primary/40 text-primary hover:bg-primary/10" : "border-primary/20 text-primary/30 hover:text-primary/60"}`}
+                  >
+                    <Power className="w-3 h-3" />
+                  </button>
+                  <ChevronRight
+                    className="w-3 h-3 text-primary/20 group-hover:text-primary/60 transition-colors shrink-0 cursor-pointer"
+                    onClick={() => {
+                      setOpen(false);
+                      navigate(`/plugins?selected=${encodeURIComponent(p.id ?? "")}`);
+                    }}
+                  />
+                </div>
               );
             })}
           </div>
