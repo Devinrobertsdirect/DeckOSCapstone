@@ -13,6 +13,7 @@ import { db, routinesTable, routineExecutionsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { bus } from "./bus.js";
 import { logger } from "./logger.js";
+import { generateBriefing } from "./briefing-generator.js";
 import type { BusEvent, EventType } from "@workspace/event-bus";
 
 const TICK_MS = 60_000;
@@ -98,17 +99,13 @@ type ActionParams = Record<string, unknown>;
 async function executeAction(actionType: string, params: ActionParams): Promise<string> {
   switch (actionType) {
     case "generate_briefing": {
-      bus.emit({
-        source: "routine-runner",
-        target: null,
-        type: "ai.chat.request",
-        payload: {
-          message: (params["prompt"] as string) || "Generate a daily briefing: summarise active goals, recent events, and any alerts.",
-          channel: "routine",
-          sessionId: "routine-briefing",
-        },
-      });
-      return "Briefing generation requested via AI chat bus";
+      try {
+        const briefing = await generateBriefing();
+        return `Daily briefing generated (id=${briefing.id}, date=${briefing.date}, model=${briefing.modelUsed})`;
+      } catch (err) {
+        logger.warn({ err }, "RoutineRunner: generate_briefing failed");
+        return `Briefing generation failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
     }
 
     case "send_notification": {

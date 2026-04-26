@@ -121,3 +121,14 @@ export const notificationsTable = pgTable("notifications", {
 export type Notification = typeof notificationsTable.$inferSelect;
 export type Routine = typeof routinesTable.$inferSelect;
 export type RoutineExecution = typeof routineExecutionsTable.$inferSelect;
+
+export const briefingsTable = pgTable("briefings", {
+  id:          serial("id").primaryKey(),
+  date:        text("date").notNull(),
+  summary:     text("summary").notNull(),
+  stats:       jsonb("stats").notNull().default({}),
+  modelUsed:   text("model_used").notNull().default("rule-engine-v1"),
+  generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type Briefing = typeof briefingsTable.$inferSelect;

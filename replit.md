@@ -75,6 +75,10 @@ Rule-based command dispatch with AI-assist. Stores full command history in Postg
 
 A persistent loop (10s tick) that emits `system.cognitive_tick` events, generates predictions every 5 minutes, handles autonomous actions, and manages goal decay and prediction pruning.
 
+## Daily AI Briefing
+
+`briefings` table stores AI-generated daily summaries (id, date, summary, stats JSONB, modelUsed, generatedAt). The `briefing-generator.ts` queries the past 24h of goals, autonomy_log, memory_entries, and feedback_signals, composes a structured prompt, and calls the inference pipeline. REST API: `GET /api/briefings` (archive), `GET /api/briefings/latest`, `POST /api/briefings/generate` (manual trigger). The dashboard shows a DAILY.BRIEFING tile with key stats and a "Generate Now" button. A `/briefings` archive page lists all past briefings in reverse-chronological order, expandable. Auto-generated at 06:00 via the Routine Runner (`generate_briefing` action type). Emits `briefing.generated` bus event which triggers a notification in the Notification Inbox.
+
 ## Memory Enricher
 
 Analyzes recent memory entries to update the UCM's `preferences` and `behaviorPatterns` layers.

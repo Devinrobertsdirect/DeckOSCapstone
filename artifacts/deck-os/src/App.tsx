@@ -19,6 +19,7 @@ import DeviceControl from "@/pages/DeviceControl";
 import CommandConsole from "@/pages/CommandConsole";
 import MapView from "@/pages/MapView";
 import RoutinesPage from "@/pages/RoutinesPage";
+import BriefingsPage from "@/pages/BriefingsPage";
 
 applyColor(getStoredColor());
 
@@ -44,6 +45,7 @@ function Router() {
         <Route path="/commands" component={CommandConsole} />
         <Route path="/map" component={MapView} />
         <Route path="/routines" component={RoutinesPage} />
+        <Route path="/briefings" component={BriefingsPage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

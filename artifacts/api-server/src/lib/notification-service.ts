@@ -156,6 +156,20 @@ class NotificationService {
       });
     }));
 
+    // briefing.generated → info
+    this.subIds.push(bus.subscribe("briefing.generated", async (e: BusEvent) => {
+      if (e.type !== "briefing.generated") return;
+      const p = e.payload as Record<string, unknown>;
+      const date = String(p["date"] ?? new Date().toISOString().slice(0, 10));
+      await this.createNotification({
+        type:     "briefing.generated",
+        severity: "info",
+        title:    "Daily Briefing Ready",
+        message:  `JARVIS daily briefing for ${date} is now available.`,
+        metadata: p,
+      });
+    }));
+
     // system.error → critical
     this.subIds.push(bus.subscribe("system.error", async (e: BusEvent) => {
       if (e.type !== "system.error") return;

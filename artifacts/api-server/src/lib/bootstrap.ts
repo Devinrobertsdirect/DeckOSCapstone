@@ -134,6 +134,29 @@ function registerQueryHandlers(deviceManager: DeviceManager): void {
   });
 }
 
+async function seedBriefingRoutine(): Promise<void> {
+  try {
+    const existing = await db
+      .select({ id: routinesTable.id })
+      .from(routinesTable)
+      .where(eq(routinesTable.actionType, "generate_briefing"))
+      .limit(1);
+    if (existing.length > 0) return;
+
+    await db.insert(routinesTable).values({
+      name:         "Daily AI Briefing at 06:00",
+      enabled:      true,
+      triggerType:  "cron",
+      triggerValue: "0 6 * * *",
+      actionType:   "generate_briefing",
+      actionParams: {},
+    });
+    logger.info("Bootstrap: daily briefing routine seeded");
+  } catch (err) {
+    logger.warn({ err }, "Bootstrap: briefing routine seed failed");
+  }
+}
+
 async function seedStarterRoutines(): Promise<void> {
   try {
     const existing = await db.select({ id: routinesTable.id }).from(routinesTable).limit(1);
@@ -393,6 +416,7 @@ export async function bootstrap(): Promise<void> {
 
   // ── Routine Runner (scheduled & event-based automations) ─────────────────
   await seedStarterRoutines();
+  await seedBriefingRoutine();
   routineRunner.start();
 
   logger.info("EventBus, PluginRegistry, DeviceManager, and transports bootstrapped");

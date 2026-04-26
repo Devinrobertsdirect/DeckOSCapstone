@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { Terminal, Cpu, MemoryStick, Activity, Network, Circle, Radio, Zap, Send, MapPin, Battery, Wifi, Eye, CheckCircle2, AlertTriangle, Power, ChevronRight, X } from "lucide-react";
+import { Terminal, Cpu, MemoryStick, Activity, Network, Circle, Radio, Zap, Send, MapPin, Battery, Wifi, Eye, CheckCircle2, AlertTriangle, Power, ChevronRight, X, Newspaper, RefreshCw, Loader2 } from "lucide-react";
 import { VoiceMicButton } from "@/components/VoiceMicButton";
 import { type LucideIcon } from "lucide-react";
 import { Link, useLocation } from "wouter";
@@ -99,6 +99,23 @@ function saveHistory(lines: ConsoleLine[]) {
   }
 }
 
+type BriefingStats = {
+  goalsActive: number;
+  goalsCompleted: number;
+  autonomyActionsTotal: number;
+  memoriesStored: number;
+  feedbackSignals: number;
+};
+
+type BriefingData = {
+  id: number;
+  date: string;
+  summary: string;
+  stats: BriefingStats;
+  modelUsed: string;
+  generatedAt: string;
+};
+
 export default function Dashboard() {
   const { sendEvent } = useWebSocket();
 
@@ -106,6 +123,10 @@ export default function Dashboard() {
   const aiInferred = useLatestPayload<AiPayload>("ai.router.status");
   const pluginList = useLatestPayload<PluginPayload>("plugin.list.response");
   const { mobile: mobileSnap, vision: cameraSnap } = useFieldSensors();
+
+  const [briefing, setBriefing] = useState<BriefingData | null>(null);
+  const [briefingLoading, setBriefingLoading] = useState(false);
+  const [generatingBriefing, setGeneratingBriefing] = useState(false);
 
   const [lines, setLines] = useState<ConsoleLine[]>(loadHistory);
   const [cmdInput, setCmdInput] = useState("");
@@ -116,6 +137,34 @@ export default function Dashboard() {
     lineIdRef.current = lines.length;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const fetchLatestBriefing = useCallback(async () => {
+    setBriefingLoading(true);
+    try {
+      const r = await fetch("/api/briefings/latest");
+      if (r.ok) {
+        const d = await r.json() as { briefing: BriefingData | null };
+        setBriefing(d.briefing ?? null);
+      }
+    } catch { /* silent */ }
+    finally { setBriefingLoading(false); }
+  }, []);
+
+  const generateNow = useCallback(async () => {
+    setGeneratingBriefing(true);
+    try {
+      const r = await fetch("/api/briefings/generate", { method: "POST" });
+      if (r.ok) {
+        const d = await r.json() as { briefing: BriefingData };
+        setBriefing(d.briefing);
+      }
+    } catch { /* silent */ }
+    finally { setGeneratingBriefing(false); }
+  }, []);
+
+  useEffect(() => {
+    void fetchLatestBriefing();
+  }, [fetchLatestBriefing]);
 
   useEffect(() => {
     sendEvent({ type: "system.monitor.request", payload: {} });
@@ -222,6 +271,13 @@ export default function Dashboard() {
           live={!!pluginList}
         />
       </div>
+
+      <BriefingCard
+        briefing={briefing}
+        loading={briefingLoading}
+        generating={generatingBriefing}
+        onGenerate={generateNow}
+      />
 
       <PresenceStrip />
 
@@ -600,6 +656,98 @@ function MetricCard({
             <span className="font-mono text-xs text-primary/20">ON-DEMAND</span>
           ) : null}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function BriefingCard({
+  briefing, loading, generating, onGenerate,
+}: {
+  briefing: BriefingData | null;
+  loading: boolean;
+  generating: boolean;
+  onGenerate: () => void;
+}) {
+  const stats = briefing?.stats;
+  const generatedDate = briefing
+    ? new Date(briefing.generatedAt).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+    : null;
+
+  return (
+    <div className="border border-primary/20 bg-card/40 relative overflow-hidden">
+      <HudCorners />
+      <div className="border-b border-primary/20 bg-primary/5 px-4 py-2.5 flex items-center justify-between">
+        <div className="flex items-center gap-2 font-mono text-xs text-primary">
+          <Newspaper className="w-3.5 h-3.5" />
+          DAILY.BRIEFING
+          {generatedDate && (
+            <span className="text-primary/30 ml-1">— {generatedDate}</span>
+          )}
+          {briefing && (
+            <span className="text-primary/20 text-[10px] border border-primary/15 px-1.5 py-0.5">
+              {briefing.modelUsed.toUpperCase()}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Link href="/briefings" className="font-mono text-[10px] text-primary/30 hover:text-primary transition-colors uppercase tracking-wider">
+            ARCHIVE →
+          </Link>
+          <button
+            onClick={onGenerate}
+            disabled={generating || loading}
+            className="flex items-center gap-1.5 border border-primary/20 bg-primary/5 hover:bg-primary/15 hover:border-primary/40 px-2.5 py-1 font-mono text-[10px] text-primary/60 hover:text-primary transition-all disabled:opacity-30"
+          >
+            {generating ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <RefreshCw className="w-3 h-3" />
+            )}
+            GENERATE NOW
+          </button>
+        </div>
+      </div>
+
+      <div className="p-4">
+        {loading && (
+          <div className="flex items-center gap-2 font-mono text-xs text-primary/30">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            LOADING BRIEFING…
+          </div>
+        )}
+        {generating && (
+          <div className="flex items-center gap-2 font-mono text-xs text-primary/40 animate-pulse">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            JARVIS IS GENERATING YOUR BRIEFING…
+          </div>
+        )}
+        {!loading && !generating && !briefing && (
+          <div className="font-mono text-xs text-primary/20">
+            No briefings generated yet. Click GENERATE NOW to create the first one, or wait for 06:00.
+          </div>
+        )}
+        {!loading && !generating && briefing && (
+          <div className="space-y-3">
+            <p className="font-mono text-xs text-primary/70 leading-relaxed">{briefing.summary}</p>
+            {stats && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                {[
+                  { label: "GOALS ACTIVE", value: stats.goalsActive },
+                  { label: "COMPLETED", value: stats.goalsCompleted },
+                  { label: "ACTIONS", value: stats.autonomyActionsTotal },
+                  { label: "MEMORIES", value: stats.memoriesStored },
+                  { label: "FEEDBACK", value: stats.feedbackSignals },
+                ].map(({ label, value }) => (
+                  <div key={label} className="border border-primary/15 bg-primary/5 px-2 py-1 font-mono text-[10px] flex items-center gap-1.5">
+                    <span className="text-primary/35 uppercase tracking-wider">{label}</span>
+                    <span className="text-primary/80 font-bold">{value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
