@@ -301,7 +301,7 @@ function RecalibrateTab() {
       audioRef.current?.pause();
       const audio = new Audio(url);
       audioRef.current = audio;
-      const { attachAmplitudeAnalyser } = await import("@/components/AIFace");
+      const { attachAmplitudeAnalyser } = await import("@/lib/audioAnalyser");
       attachAmplitudeAnalyser(audio);
       audio.onended = () => setPlaying(null);
       audio.onerror = () => setPlaying(null);

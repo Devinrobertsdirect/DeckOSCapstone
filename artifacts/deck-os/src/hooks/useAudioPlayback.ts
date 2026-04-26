@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from "react";
-import { attachAmplitudeAnalyser } from "@/components/AIFace";
+import { attachAmplitudeAnalyser } from "@/lib/audioAnalyser";
 
 export type PlaybackState = "idle" | "speaking";
 

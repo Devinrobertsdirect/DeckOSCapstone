@@ -105,7 +105,7 @@ async function apiTts(text: string): Promise<void> {
     if (!res.ok) return;
     const { audio, format } = (await res.json()) as { audio: string; format: string };
     const el = new Audio(`data:audio/${format};base64,${audio}`);
-    const { attachAmplitudeAnalyser } = await import("@/components/AIFace");
+    const { attachAmplitudeAnalyser } = await import("@/lib/audioAnalyser");
     attachAmplitudeAnalyser(el);
     await new Promise<void>((resolve) => {
       el.onended = () => resolve();

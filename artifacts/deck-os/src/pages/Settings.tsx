@@ -145,7 +145,7 @@ export default function Settings() {
       if (!r.ok) throw new Error("TTS failed");
       const { audio, format } = await r.json() as { audio: string; format: string };
       const el = new Audio(`data:audio/${format};base64,${audio}`);
-      const { attachAmplitudeAnalyser } = await import("@/components/AIFace");
+      const { attachAmplitudeAnalyser } = await import("@/lib/audioAnalyser");
       attachAmplitudeAnalyser(el);
       el.play().catch(() => {});
       setElTestOk(true);

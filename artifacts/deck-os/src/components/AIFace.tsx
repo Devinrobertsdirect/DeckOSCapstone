@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { attachAmplitudeAnalyser, readAmplitude } from "@/lib/audioAnalyser";
 
 export type FaceStyle = "vocoder" | "oscilloscope" | "iris" | "spectrum";
+export { attachAmplitudeAnalyser };
 
 interface Props {
   style: FaceStyle;
@@ -15,50 +17,6 @@ const AMPLITUDE_THRESHOLD = 0.015;
 
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
-}
-
-// Module-level Web Audio analyzer singleton
-let _audioCtx: AudioContext | null = null;
-let _analyser: AnalyserNode | null = null;
-let _dataArr: Uint8Array | null = null;
-const _attached = new WeakSet<HTMLAudioElement>();
-
-function ensureAnalyser(): boolean {
-  try {
-    if (_audioCtx) return true;
-    _audioCtx = new AudioContext();
-    _analyser = _audioCtx.createAnalyser();
-    _analyser.fftSize = 256;
-    _analyser.smoothingTimeConstant = 0.82;
-    _analyser.connect(_audioCtx.destination);
-    _dataArr = new Uint8Array(_analyser.frequencyBinCount);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function attachAmplitudeAnalyser(audio: HTMLAudioElement): void {
-  try {
-    if (_attached.has(audio)) {
-      if (_audioCtx?.state === "suspended") void _audioCtx.resume();
-      return;
-    }
-    if (!ensureAnalyser()) return;
-    if (_audioCtx!.state === "suspended") void _audioCtx!.resume();
-    const src = _audioCtx!.createMediaElementSource(audio);
-    src.connect(_analyser!);
-    _attached.add(audio);
-  } catch {
-  }
-}
-
-function readAmplitude(): number {
-  if (!_analyser || !_dataArr) return 0;
-  _analyser.getByteFrequencyData(_dataArr);
-  let sum = 0;
-  for (let i = 0; i < _dataArr.length; i++) sum += _dataArr[i]!;
-  return sum / (_dataArr.length * 255);
 }
 
 function useAnimLoop(cb: (t: number) => void, active = true) {
