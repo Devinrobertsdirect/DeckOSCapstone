@@ -1,7 +1,9 @@
 import { bus } from "./bus.js";
 import { PluginRegistry } from "./plugin-registry.js";
 import { memoryService } from "./memory-service.js";
-import { runInference, refreshOllamaDetection, getInferenceState } from "./inference.js";
+import { runInference, runInferenceStreaming, refreshOllamaDetection, getInferenceState, type InferenceMode } from "./inference.js";
+import { broadcast } from "./ws-server.js";
+import { buildPersonalizedPrompt } from "./system-prompt.js";
 import { logger } from "./logger.js";
 import { presenceManager } from "./presence-manager.js";
 import { initiativeEngine } from "./initiative-engine.js";
@@ -131,6 +133,91 @@ function registerQueryHandlers(deviceManager: DeviceManager): void {
     const enabled = Boolean(p?.["enabled"] ?? false);
     if (!pluginId) return;
     registry.setEnabled(pluginId, enabled);
+  });
+
+  // ── WS Chat Handler: ai.chat.request → streaming inference ────────────────
+  // The Command Console sends ai.chat.request via WebSocket. This handler picks
+  // it up on the bus, runs real streaming inference, and broadcasts tokens back.
+  bus.subscribe("ai.chat.request", async (event: BusEvent) => {
+    if (event.type !== "ai.chat.request") return;
+    const p = event.payload as Record<string, unknown>;
+    const prompt    = typeof p["prompt"]    === "string" ? p["prompt"]    : "";
+    const requestId = typeof p["requestId"] === "string" ? p["requestId"] : null;
+    const modeStr   = typeof p["mode"]      === "string" ? p["mode"]      : "DEEP_REASONING";
+    if (!prompt || !requestId) return;
+
+    // Map UI mode label → inference mode
+    const inferenceMode: InferenceMode =
+      modeStr === "DIRECT_EXECUTION"  ? "none" :
+      modeStr === "LIGHT_REASONING"   ? "fast" : "deep";
+
+    // Tell the UI we received the request and are routing
+    broadcast({
+      type: "ai.inference_started",
+      source: "ai-router",
+      payload: { requestId, mode: modeStr },
+      timestamp: new Date().toISOString(),
+    });
+
+    const systemPrompt = await buildPersonalizedPrompt([], "console").catch(
+      () => "You are JARVIS, a precise and capable AI command center assistant.",
+    );
+
+    try {
+      const result = await runInferenceStreaming(
+        {
+          prompt,
+          mode: inferenceMode,
+          task: "chat",
+          context: [{ role: "system", content: systemPrompt }],
+          onTierResolved: (tier, model) => {
+            broadcast({
+              type: "ai.inference_started",
+              source: "ai-router",
+              payload: { requestId, tier, model },
+              timestamp: new Date().toISOString(),
+            });
+          },
+        },
+        (token) => {
+          broadcast({
+            type: "ai.chat.token",
+            source: "ai-router",
+            payload: { requestId, token },
+            timestamp: new Date().toISOString(),
+          });
+        },
+      );
+
+      broadcast({
+        type: "ai.chat.response",
+        source: "ai-router",
+        payload: {
+          requestId,
+          response:   result.response,
+          modelUsed:  result.modelUsed,
+          latencyMs:  result.latencyMs,
+          fromCache:  result.fromCache,
+          mode:       modeStr,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      logger.error({ err, requestId }, "WS chat handler: inference failed");
+      broadcast({
+        type: "ai.chat.response",
+        source: "ai-router",
+        payload: {
+          requestId,
+          response: "Inference error — rule engine fallback active.",
+          modelUsed: "rule-engine-v1",
+          latencyMs: 0,
+          fromCache: false,
+          mode: modeStr,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    }
   });
 }
 

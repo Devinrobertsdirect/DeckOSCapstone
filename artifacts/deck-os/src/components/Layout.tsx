@@ -10,7 +10,7 @@ import {
 import { useCamera } from "@/hooks/useCamera";
 import { useHealthCheck, getHealthCheckQueryKey } from "@workspace/api-client-react";
 import { useVisualMode, type VisualMode } from "@/contexts/VisualMode";
-import { useWebSocket } from "@/contexts/WebSocketContext";
+import { useWebSocket, useLatestPayload } from "@/contexts/WebSocketContext";
 import { EventLogPanel } from "@/components/EventLogPanel";
 import { ParticleOverlay } from "@/components/ParticleOverlay";
 import { useQuery } from "@tanstack/react-query";
@@ -68,6 +68,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [activeColor, setActiveColor] = useState<ColorScheme>(getStoredColor());
   const [now, setNow] = useState(() => new Date());
   const { status: wsStatus, events } = useWebSocket();
+  const routerStatus = useLatestPayload<{ ollamaAvailable?: boolean; mode?: string }>("ai.router.status");
+  const ollamaOnline  = routerStatus === null ? null : (routerStatus?.ollamaAvailable ?? false);
+  const [ollamaBannerDismissed, setOllamaBannerDismissed] = useState(false);
+  const showOllamaBanner = ollamaOnline === false && !ollamaBannerDismissed;
   const camera = useCamera();
   const [autonomyConfig, setAutonomyConfig] = useState<AutonomyConfig | null>(null);
   const [recentActions, setRecentActions] = useState<ActionFlash[]>([]);
@@ -320,6 +324,25 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
+
+      {/* ── Ollama offline banner ─────────────────────────────────────────── */}
+      {showOllamaBanner && (
+        <div className="relative z-40 flex items-center gap-3 px-4 py-2 bg-[#ffc820]/10 border-b border-[#ffc820]/40 font-mono text-xs text-[#ffc820]">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 animate-pulse" />
+          <span>
+            <span className="font-bold uppercase tracking-wider">OLLAMA OFFLINE</span>
+            {" — "}AI running in rule-engine fallback. Start Ollama locally to enable LLM responses.
+            <span className="ml-2 text-[#ffc820]/60">Run: <code className="text-[#ffc820]">ollama serve</code></span>
+          </span>
+          <button
+            onClick={() => setOllamaBannerDismissed(true)}
+            className="ml-auto text-[#ffc820]/50 hover:text-[#ffc820] transition-colors px-1"
+            title="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {/* SIDEBAR */}

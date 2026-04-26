@@ -258,7 +258,8 @@ export async function callOllamaStreaming(
     { role: "user", content: prompt },
   ];
 
-  const res = await fetch("http://localhost:11434/api/chat", {
+  const base = await getOllamaBaseUrl();
+  const res = await fetch(`${base}/api/chat`, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ model, messages, stream: true }),

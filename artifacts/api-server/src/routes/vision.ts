@@ -31,7 +31,7 @@ router.post("/analyze", async (req, res) => {
     "Look at this image carefully. Notice something genuine, specific, and personal. Respond warmly in 2–3 sentences as JARVIS — a perceptive AI meeting someone for the very first time. Be sincere, not flattering.";
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-5.4",
+    model: "gpt-4o",
     max_completion_tokens: 300,
     messages: [
       {
