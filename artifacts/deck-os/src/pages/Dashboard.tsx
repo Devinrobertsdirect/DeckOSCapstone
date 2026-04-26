@@ -118,8 +118,8 @@ export default function Dashboard() {
           <div className="p-4 font-mono text-xs space-y-3">
             <SummaryRow label="STATUS" value="OPTIMAL" valueClass="text-[#00ff88]" />
             <SummaryRow label="UPTIME" value="ACTIVE" valueClass="text-primary" />
-            <SummaryRow label="PLUGINS" value={`${activePlugins} / ${totalPlugins}`} valueClass="text-[#00d4ff]" />
-            <SummaryRow label="AI CACHE" value={aiInferred ? `${((aiInferred.cacheHitRate ?? 0) * 100).toFixed(0)}% HIT` : "---"} valueClass="text-[#aa88ff]" />
+            <SummaryRow label="PLUGINS" value={`${activePlugins} / ${totalPlugins}`} valueClass="text-primary/80" />
+            <SummaryRow label="AI CACHE" value={aiInferred ? `${((aiInferred.cacheHitRate ?? 0) * 100).toFixed(0)}% HIT` : "---"} valueClass="text-primary/70" />
             <SummaryRow label="REQUESTS" value={String(aiInferred?.totalRequests ?? 0)} valueClass="text-primary/70" />
           </div>
           <div className="mt-auto p-4 border-t border-primary/10 space-y-1.5">
@@ -187,24 +187,40 @@ function MetricCard({
   live?: boolean;
   compact?: boolean;
 }) {
-  const str = String(value);
+  const str   = String(value);
   const isLong = str.length > 10;
   const textSize = isLong ? "text-lg leading-tight" : "text-3xl";
+  const pct   = (() => {
+    const m = str.match(/^([\d.]+)%/);
+    return m ? Math.min(100, parseFloat(m[1])) : null;
+  })();
 
   return (
-    <div className={`relative border overflow-hidden metric-card-glow ${highlight ? "border-[#ffcc00]/40 bg-[#ffcc00]/5" : "border-primary/20 bg-primary/5"}`}>
+    <div className={`relative border overflow-hidden metric-card-glow ${highlight ? "border-yellow-400/40 bg-yellow-400/5" : "border-primary/20 bg-primary/5"}`}>
       <HudCorners />
       <div className="p-4 flex flex-col gap-2 h-full min-h-[100px]">
         <div className="flex justify-between items-start">
           <span className="text-xs font-mono text-muted-foreground tracking-wider">{title}</span>
-          <Icon className={`w-4 h-4 shrink-0 ${highlight ? "text-[#ffcc00]" : "text-primary/60"}`} />
+          <Icon className={`w-4 h-4 shrink-0 ${highlight ? "text-yellow-400" : "text-primary/60"}`} />
         </div>
-        <div className={`font-mono font-bold truncate metric-value ${textSize} ${highlight ? "text-[#ffcc00]" : "text-primary"}`} title={str}>
+        <div className={`font-mono font-bold truncate metric-value ${textSize} ${highlight ? "text-yellow-400" : "text-primary"}`} title={str}>
           {str}
         </div>
+        {pct !== null && (
+          <div className="w-full h-0.5 bg-primary/10 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-700"
+              style={{
+                width: `${pct}%`,
+                background: pct > 85 ? "rgba(240,80,50,0.8)" : pct > 65 ? "rgba(255,200,32,0.8)" : "rgba(var(--primary-rgb),0.75)",
+                boxShadow: `0 0 6px rgba(var(--primary-rgb),0.5)`,
+              }}
+            />
+          </div>
+        )}
         <div className="mt-auto flex items-center gap-1.5">
           {live ? (
-            <Circle className="w-1.5 h-1.5 fill-[#00ff88] text-[#00ff88]" />
+            <Circle className="w-1.5 h-1.5 fill-[#00ff88] text-[#00ff88] animate-pulse" />
           ) : compact ? (
             <span className="font-mono text-xs text-primary/20">ON-DEMAND</span>
           ) : null}
@@ -222,13 +238,13 @@ function formatUptime(seconds: number): string {
   return `${h}h ${m}m`;
 }
 
-const AVAIL_COLOR: Record<string, string> = { active: "#00ff88", idle: "#ffcc00", passive: "#00c8ff55" };
+const AVAIL_COLOR: Record<string, string> = { active: "#00ff88", idle: "#ffcc00", passive: "rgba(var(--primary-rgb),0.33)" };
 
 function PresenceStrip() {
   const presenceEvent = useLatestPayload<{ presence?: { availability?: string; activeChannel?: string; minutesSinceLastInteraction?: number } }>( "system.heartbeat");
 
   const presence = presenceEvent?.presence;
-  const avColor = presence ? (AVAIL_COLOR[presence.availability ?? ""] ?? "#00c8ff55") : "#00c8ff22";
+  const avColor = presence ? (AVAIL_COLOR[presence.availability ?? ""] ?? "rgba(var(--primary-rgb),0.33)") : "rgba(var(--primary-rgb),0.2)";
 
   return (
     <div className="border border-primary/15 bg-card/30 px-4 py-2.5 flex items-center gap-4 font-mono text-xs">

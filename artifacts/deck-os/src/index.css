@@ -334,6 +334,22 @@ html[data-visual-mode="cinematic"] .cinematic-ambient {
 }
 
 /* ───────────────────────────────────────────
+   VOICE / SPEAKING ANIMATIONS
+─────────────────────────────────────────── */
+@keyframes speaking-bar {
+  from { height: 2px;  opacity: 0.5; }
+  to   { height: 14px; opacity: 1;   }
+}
+@keyframes rec-wave {
+  from { height: 3px;  opacity: 0.6; }
+  to   { height: 20px; opacity: 1;   }
+}
+@keyframes ob-panel-pulse {
+  0%,100% { box-shadow: 0 0 0   0   rgba(var(--primary-rgb),0);   }
+  50%     { box-shadow: 0 0 24px 2px rgba(var(--primary-rgb),0.12); }
+}
+
+/* ───────────────────────────────────────────
    START SCREEN ANIMATIONS
 ─────────────────────────────────────────── */
 @keyframes ff-drift {

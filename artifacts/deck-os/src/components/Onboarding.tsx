@@ -181,6 +181,24 @@ function useVoiceRecorder() {
 }
 
 // ─────────────────────────────────────────────
+// TTS hook — tracks speaking state
+// ─────────────────────────────────────────────
+function useTts() {
+  const [speaking, setSpeaking] = useState(false);
+  const busy = useRef(false);
+
+  const speak = useCallback(async (text: string) => {
+    if (busy.current) return;
+    busy.current = true;
+    setSpeaking(true);
+    try { await apiTts(text); }
+    finally { busy.current = false; setSpeaking(false); }
+  }, []);
+
+  return { speak, speaking };
+}
+
+// ─────────────────────────────────────────────
 // HUD shared pieces
 // ─────────────────────────────────────────────
 function HudCorners() {
@@ -198,13 +216,35 @@ function Scanline() {
   return <div className="scanline" />;
 }
 
-function ObPanel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function ObPanel({ children, className = "", speaking = false }: {
+  children: React.ReactNode; className?: string; speaking?: boolean;
+}) {
   return (
-    <div className={`relative border border-primary/20 bg-background/80 backdrop-blur-sm p-8 font-mono
-      bg-[image:linear-gradient(rgba(var(--primary-rgb),0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(var(--primary-rgb),0.04)_1px,transparent_1px)]
-      bg-[size:28px_28px] ${className}`}>
+    <div
+      className={`relative border bg-background/80 backdrop-blur-sm p-8 font-mono
+        bg-[image:linear-gradient(rgba(var(--primary-rgb),0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(var(--primary-rgb),0.04)_1px,transparent_1px)]
+        bg-[size:28px_28px] transition-all duration-300 ${className}`}
+      style={{
+        borderColor: speaking ? "rgba(var(--primary-rgb),0.55)" : "rgba(var(--primary-rgb),0.2)",
+        animation: speaking ? "ob-panel-pulse 1.8s ease-in-out infinite" : "none",
+      }}
+    >
       {children}
     </div>
+  );
+}
+
+function SpeakingWave() {
+  return (
+    <span className="inline-flex items-end gap-px h-3.5 ml-1" aria-hidden>
+      {[1, 3, 0, 4, 2, 3, 1].map((d, i) => (
+        <span
+          key={i}
+          className="inline-block w-[2px] bg-primary rounded-full"
+          style={{ animation: `speaking-bar 0.55s ${d * 0.07}s ease-in-out infinite alternate` }}
+        />
+      ))}
+    </span>
   );
 }
 
@@ -273,7 +313,15 @@ function MicButton({
           <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="60" strokeDashoffset="15" />
         </svg>
       ) : recording ? (
-        <span className="w-4 h-4 rounded-sm bg-red-400" />
+        <span className="flex items-end gap-[2px] h-5">
+          {[2, 4, 1, 3, 5, 2, 4].map((d, i) => (
+            <span
+              key={i}
+              className="inline-block w-[2px] bg-red-400 rounded-full"
+              style={{ animation: `rec-wave ${0.3 + (i % 3) * 0.12}s ${d * 0.06}s ease-in-out infinite alternate` }}
+            />
+          ))}
+        </span>
       ) : (
         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
@@ -440,22 +488,28 @@ function AiNamePhase({ voiceMode, onNext }: { voiceMode: boolean; onNext: (name:
   const [name, setName] = useState("JARVIS");
   const prompt = "I am your AI command layer. I manage memory, goals, and context across every device you use.\n\nBefore we go any further — what shall you call me?";
   const { out, done } = useTypewriter(prompt, 22, 200);
+  const { speak, speaking } = useTts();
 
   useEffect(() => {
-    if (done && voiceMode) {
-      apiTts("I am your AI command layer. Before we go any further — what shall you call me?");
-    }
-  }, [done, voiceMode]);
+    if (!voiceMode) return;
+    const t = setTimeout(() => speak("I am your AI command layer. Before we go any further — what shall you call me?"), 350);
+    return () => clearTimeout(t);
+  }, [voiceMode, speak]);
 
   return (
     <div className="fixed inset-0 flex flex-col items-center justify-center bg-background z-50 p-6">
       <HudCorners />
       <Scanline />
       <div className="w-full max-w-xl space-y-8 animate-[ob-fade-in_0.5s_ease_both]">
-        <ObPanel>
-          <div className="font-mono text-primary/80 text-sm leading-relaxed whitespace-pre-line min-h-[72px]">
-            {out}
-            {!done && <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1 align-middle" />}
+        <ObPanel speaking={speaking}>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 font-mono text-xs text-primary/30 tracking-widest uppercase">
+              SYSTEM {speaking && <SpeakingWave />}
+            </div>
+            <div className="font-mono text-primary/80 text-sm leading-relaxed whitespace-pre-line min-h-[72px]">
+              {out}
+              {!done && <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1 align-middle" />}
+            </div>
           </div>
         </ObPanel>
 
@@ -567,18 +621,17 @@ function UserNamePhase({
   voiceMode, aiName, onNext,
 }: { voiceMode: boolean; aiName: string; onNext: (name: string) => void }) {
   const [name, setName]             = useState("");
-  const [spokenOnce, setSpokenOnce] = useState(false);
   const { recording, start, stop }  = useVoiceRecorder();
   const [transcribing, setTranscribing] = useState(false);
   const question = `What shall I call you, Commander?`;
   const { out, done } = useTypewriter(question, 28, 300);
+  const { speak, speaking } = useTts();
 
   useEffect(() => {
-    if (done && voiceMode && !spokenOnce) {
-      setSpokenOnce(true);
-      apiTts(question);
-    }
-  }, [done, voiceMode, spokenOnce, question]);
+    if (!voiceMode) return;
+    const t = setTimeout(() => speak(question), 350);
+    return () => clearTimeout(t);
+  }, [voiceMode, speak, question]);
 
   async function handleVoice() {
     if (recording) {
@@ -596,10 +649,15 @@ function UserNamePhase({
       <HudCorners />
       <Scanline />
       <div className="w-full max-w-xl space-y-8 animate-[ob-fade-in_0.5s_ease_both]">
-        <ObPanel>
-          <div className="font-mono text-primary/80 text-sm leading-relaxed min-h-[24px]">
-            {aiName}: {out}
-            {!done && <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1 align-middle" />}
+        <ObPanel speaking={speaking}>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 font-mono text-xs text-primary/30 tracking-widest uppercase">
+              {aiName} {speaking && <SpeakingWave />}
+            </div>
+            <div className="font-mono text-primary/80 text-sm leading-relaxed min-h-[24px]">
+              {out}
+              {!done && <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1 align-middle" />}
+            </div>
           </div>
         </ObPanel>
 
@@ -653,15 +711,14 @@ function PhotoPhase({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileRef   = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const [spokenOnce, setSpokenOnce] = useState(false);
   const { out, done } = useTypewriter(`Let me see you, ${userName}. Share a photo — I'll keep it between us.`, 24, 300);
+  const { speak, speaking } = useTts();
 
   useEffect(() => {
-    if (done && voiceMode && !spokenOnce) {
-      setSpokenOnce(true);
-      apiTts(`Let me see you, ${userName}. Share a photo and I'll tell you what I see.`);
-    }
-  }, [done, voiceMode, spokenOnce, userName]);
+    if (!voiceMode) return;
+    const t = setTimeout(() => speak(`Let me see you, ${userName}. Share a photo and I'll tell you what I see.`), 350);
+    return () => clearTimeout(t);
+  }, [voiceMode, speak, userName]);
 
   useEffect(() => () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -729,10 +786,15 @@ function PhotoPhase({
       <div className="w-full max-w-xl space-y-6 animate-[ob-fade-in_0.5s_ease_both]">
         {mode === "choose" && (
           <>
-            <ObPanel>
-              <div className="font-mono text-primary/80 text-sm leading-relaxed min-h-[24px]">
-                {aiName}: {out}
-                {!done && <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1 align-middle" />}
+            <ObPanel speaking={speaking}>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 font-mono text-xs text-primary/30 tracking-widest uppercase">
+                  {aiName} {speaking && <SpeakingWave />}
+                </div>
+                <div className="font-mono text-primary/80 text-sm leading-relaxed min-h-[24px]">
+                  {out}
+                  {!done && <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1 align-middle" />}
+                </div>
               </div>
             </ObPanel>
             {done && (
@@ -864,23 +926,19 @@ function QuestionsPhase({
   const [idx, setIdx]       = useState(0);
   const [answers, setAnswers] = useState<{ q: string; a: string }[]>([]);
   const [current, setCurrent] = useState("");
-  const [spokenThis, setSpokenThis] = useState(-1);
   const { recording, start, stop } = useVoiceRecorder();
   const [transcribing, setTranscribing] = useState(false);
   const q = QUESTIONS[idx];
   const { out, done } = useTypewriter(q ?? "", 24, 300);
+  const { speak, speaking } = useTts();
+
+  useEffect(() => { setCurrent(""); }, [idx]);
 
   useEffect(() => {
-    setCurrent("");
-    setSpokenThis(-1);
-  }, [idx]);
-
-  useEffect(() => {
-    if (done && voiceMode && spokenThis !== idx) {
-      setSpokenThis(idx);
-      apiTts(q ?? "");
-    }
-  }, [done, voiceMode, spokenThis, idx, q]);
+    if (!voiceMode) return;
+    const t = setTimeout(() => speak(q ?? ""), 350);
+    return () => clearTimeout(t);
+  }, [idx, voiceMode, speak, q]);
 
   async function handleVoice() {
     if (recording) {
@@ -919,11 +977,15 @@ function QuestionsPhase({
           {userName}, {idx + 1} / {QUESTIONS.length}
         </div>
 
-        <ObPanel>
-          <div className="font-mono text-primary/80 text-sm leading-relaxed min-h-[48px]">
-            <span className="text-primary/40">{aiName}: </span>
-            {out}
-            {!done && <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1 align-middle" />}
+        <ObPanel speaking={speaking}>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 font-mono text-xs text-primary/30 tracking-widest uppercase">
+              {aiName} {speaking && <SpeakingWave />}
+            </div>
+            <div className="font-mono text-primary/80 text-sm leading-relaxed min-h-[48px]">
+              {out}
+              {!done && <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1 align-middle" />}
+            </div>
           </div>
         </ObPanel>
 
