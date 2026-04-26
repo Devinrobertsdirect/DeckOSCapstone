@@ -20,6 +20,32 @@ import { useQuery } from "@tanstack/react-query";
 import { DeviceDiscovery } from "@/components/DeviceDiscovery";
 import { NotificationBell, NotificationDrawer, fetchNotifications } from "@/components/NotificationDrawer";
 
+interface ParticlePreset {
+  name: string;
+  density: number;
+  speed: number;
+}
+
+const BUILT_IN_PRESETS: ParticlePreset[] = [
+  { name: "LIGHT",  density: 35,  speed: 60  },
+  { name: "DRIFT",  density: 70,  speed: 25  },
+  { name: "STORM",  density: 220, speed: 180 },
+];
+
+const CUSTOM_PRESETS_KEY = "deckos_particle_presets_custom";
+
+function loadCustomPresets(): ParticlePreset[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_PRESETS_KEY);
+    if (raw) return JSON.parse(raw) as ParticlePreset[];
+  } catch {}
+  return [];
+}
+
+function saveCustomPresets(presets: ParticlePreset[]): void {
+  try { localStorage.setItem(CUSTOM_PRESETS_KEY, JSON.stringify(presets)); } catch {}
+}
+
 interface AutonomyConfig {
   enabled: boolean;
   safetyLevel: string;
@@ -84,6 +110,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [autonomyConfig, setAutonomyConfig] = useState<AutonomyConfig | null>(null);
   const [recentActions, setRecentActions] = useState<ActionFlash[]>([]);
   const lastEventCount = useRef(0);
+  const [customPresets, setCustomPresets] = useState<ParticlePreset[]>(loadCustomPresets);
+  const [savingPreset, setSavingPreset] = useState(false);
+  const [presetName, setPresetName] = useState("");
 
   useEffect(() => {
     document.documentElement.classList.add("dark");
@@ -183,6 +212,25 @@ export function Layout({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ safetyLevel: next.safetyLevel }),
       });
     } catch {}
+  }
+
+  function applyPreset(preset: ParticlePreset) {
+    setParticlePrefs({ density: preset.density, speed: preset.speed });
+  }
+
+  function commitSavePreset() {
+    const name = presetName.trim().toUpperCase() || `CUSTOM ${customPresets.length + 1}`;
+    const next = [...customPresets, { name, density: particlePrefs.density, speed: particlePrefs.speed }];
+    setCustomPresets(next);
+    saveCustomPresets(next);
+    setPresetName("");
+    setSavingPreset(false);
+  }
+
+  function deleteCustomPreset(idx: number) {
+    const next = customPresets.filter((_, i) => i !== idx);
+    setCustomPresets(next);
+    saveCustomPresets(next);
   }
 
   function changeColor(c: ColorScheme) {
@@ -590,6 +638,100 @@ export function Layout({ children }: { children: React.ReactNode }) {
                             </button>
                           </div>
                         )}
+
+                        {/* ── Particle Presets ── */}
+                        <div className="mt-3 pt-2 border-t border-primary/10">
+                          <div className="text-[9px] text-primary/30 uppercase tracking-widest mb-1.5">Presets</div>
+                          <div className="flex flex-wrap gap-1 mb-1.5">
+                            {BUILT_IN_PRESETS.map((p) => {
+                              const active =
+                                particlePrefs.density === p.density && particlePrefs.speed === p.speed;
+                              return (
+                                <button
+                                  key={p.name}
+                                  onClick={() => applyPreset(p)}
+                                  title={`Density ${p.density}% · Speed ${p.speed}%`}
+                                  className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border transition-all ${
+                                    active
+                                      ? "border-primary/60 bg-primary/15 text-primary"
+                                      : "border-primary/20 text-primary/40 hover:border-primary/40 hover:text-primary/70"
+                                  }`}
+                                >
+                                  {p.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Custom presets */}
+                          {customPresets.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mb-1.5">
+                              {customPresets.map((p, idx) => {
+                                const active =
+                                  particlePrefs.density === p.density && particlePrefs.speed === p.speed;
+                                return (
+                                  <div key={idx} className="flex items-center gap-0.5">
+                                    <button
+                                      onClick={() => applyPreset(p)}
+                                      title={`Density ${p.density}% · Speed ${p.speed}%`}
+                                      className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border transition-all ${
+                                        active
+                                          ? "border-primary/60 bg-primary/15 text-primary"
+                                          : "border-primary/20 text-primary/40 hover:border-primary/40 hover:text-primary/70"
+                                      }`}
+                                    >
+                                      {p.name}
+                                    </button>
+                                    <button
+                                      onClick={() => deleteCustomPreset(idx)}
+                                      title="Delete preset"
+                                      className="text-[9px] text-primary/20 hover:text-[#ff3333] transition-colors leading-none"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Save current */}
+                          {savingPreset ? (
+                            <div className="flex items-center gap-1 mt-1">
+                              <input
+                                autoFocus
+                                value={presetName}
+                                onChange={(e) => setPresetName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") commitSavePreset();
+                                  if (e.key === "Escape") { setSavingPreset(false); setPresetName(""); }
+                                }}
+                                placeholder="name…"
+                                maxLength={12}
+                                className="flex-1 bg-transparent border border-primary/30 text-primary text-[9px] uppercase tracking-wider px-1.5 py-0.5 outline-none placeholder:text-primary/20 focus:border-primary/60"
+                              />
+                              <button
+                                onClick={commitSavePreset}
+                                className="text-[9px] uppercase tracking-wider text-primary/60 hover:text-primary border border-primary/30 hover:border-primary/60 px-1.5 py-0.5 transition-all"
+                              >
+                                OK
+                              </button>
+                              <button
+                                onClick={() => { setSavingPreset(false); setPresetName(""); }}
+                                className="text-[9px] text-primary/30 hover:text-primary/70 transition-colors"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setSavingPreset(true)}
+                              className="text-[9px] uppercase tracking-wider text-primary/30 hover:text-primary/70 transition-colors"
+                            >
+                              + Save current
+                            </button>
+                          )}
+                        </div>
                       </>
                     )}
                   </div>
