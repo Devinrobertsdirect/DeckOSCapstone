@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Settings as SettingsIcon, Wifi, Key, Cpu, CheckCircle2,
   XCircle, Loader2, Eye, EyeOff, Save, AlertTriangle, RotateCcw, Zap,
-  Volume2, Mic, Globe, HardDrive,
+  Volume2, Mic, Globe, HardDrive, ShieldCheck, RefreshCw, Database, Server,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -15,7 +15,21 @@ type FeatureMap = {
   store: FeatureInfo;
 };
 
-type Tab = "connection" | "apikeys" | "models";
+type Tab = "connection" | "apikeys" | "models" | "system";
+
+type HealthStatus = {
+  ok: boolean | null;
+  label: string;
+  checkedAt: string | null;
+  hint: string;
+};
+
+type SystemHealth = {
+  api: HealthStatus;
+  db: HealthStatus;
+  ollama: HealthStatus;
+  openwebui: HealthStatus;
+};
 
 type ConfigState = {
   OLLAMA_HOST:          string;
@@ -83,6 +97,104 @@ export default function Settings() {
   const [elTestOk, setElTestOk]           = useState<boolean | null>(null);
   const [localTesting, setLocalTesting]   = useState(false);
   const [localTestOk, setLocalTestOk]     = useState<boolean | null>(null);
+
+  const [health, setHealth] = useState<SystemHealth | null>(null);
+  const [healthChecking, setHealthChecking] = useState(false);
+
+  const fetchHealth = useCallback(async () => {
+    setHealthChecking(true);
+    const now = new Date().toISOString();
+
+    let apiOk = false;
+    let dbOk = false;
+    let apiCheckedAt = now;
+
+    try {
+      const r = await fetch("/api/healthz");
+      if (r.ok) {
+        const data = await r.json() as { status: string; db?: boolean; timestamp?: string };
+        apiOk = data.status === "ok";
+        dbOk = data.db ?? false;
+        apiCheckedAt = data.timestamp ?? now;
+      }
+    } catch {
+      apiOk = false;
+      dbOk = false;
+    }
+
+    let ollamaOk = false;
+    let openwebuiOk = false;
+    let aiCheckedAt = now;
+
+    try {
+      const r = await fetch("/api/ai-router/status");
+      if (r.ok) {
+        const data = await r.json() as { ollamaAvailable: boolean; cloudAvailable: boolean; lastDetectedAt?: string };
+        ollamaOk = data.ollamaAvailable;
+        aiCheckedAt = data.lastDetectedAt ?? now;
+      }
+    } catch {
+      ollamaOk = false;
+    }
+
+    const storedConfig = await fetch("/api/config").then((r) => r.json()).catch(() => ({ config: {} })) as { config: Record<string, string> };
+    const owHost = storedConfig.config?.["OPENWEBUI_HOST"] ?? "";
+
+    if (owHost.trim()) {
+      try {
+        const r = await fetch("/api/config/test-connection", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: owHost, type: "openwebui" }),
+        });
+        if (r.ok) {
+          const data = await r.json() as { ok: boolean };
+          openwebuiOk = data.ok;
+        }
+      } catch {
+        openwebuiOk = false;
+      }
+    }
+
+    setHealth({
+      api: {
+        ok: apiOk,
+        label: "API SERVER",
+        checkedAt: apiCheckedAt,
+        hint: apiOk ? "" : "API server is not responding. Check that the Docker container is running: docker-compose ps",
+      },
+      db: {
+        ok: dbOk,
+        label: "DATABASE",
+        checkedAt: apiCheckedAt,
+        hint: dbOk ? "" : "Database is unreachable. Run: docker-compose logs db — and check migration status.",
+      },
+      ollama: {
+        ok: ollamaOk,
+        label: "OLLAMA",
+        checkedAt: aiCheckedAt,
+        hint: ollamaOk ? "" : "Ollama is offline. Start it with: ollama serve — and pull a model: ollama pull gemma3:9b",
+      },
+      openwebui: {
+        ok: owHost.trim() ? openwebuiOk : null,
+        label: "OPEN WEBUI",
+        checkedAt: aiCheckedAt,
+        hint: !owHost.trim()
+          ? "No Open WebUI host configured — set it in the Connection tab to enable this check."
+          : openwebuiOk
+          ? ""
+          : "Open WebUI is unreachable. Check it's running at the configured host and the API key is correct.",
+      },
+    });
+
+    setHealthChecking(false);
+  }, []);
+
+  useEffect(() => {
+    if (tab === "system" && !health && !healthChecking) {
+      fetchHealth();
+    }
+  }, [tab, health, healthChecking, fetchHealth]);
 
   useEffect(() => {
     fetch("/api/features")
@@ -248,6 +360,7 @@ export default function Settings() {
     { id: "connection", label: "CONNECTION",  icon: <Wifi className="w-3 h-3" /> },
     { id: "apikeys",    label: "API KEYS",     icon: <Key className="w-3 h-3" /> },
     { id: "models",     label: "MODELS",       icon: <Cpu className="w-3 h-3" /> },
+    { id: "system",     label: "SYSTEM HEALTH", icon: <ShieldCheck className="w-3 h-3" /> },
   ];
 
   return (
@@ -686,6 +799,96 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* SYSTEM HEALTH tab */}
+      {tab === "system" && (
+        <div className="grid gap-6 max-w-2xl">
+          <Card className="bg-card/40 border-primary/20 rounded-none">
+            <CardHeader className="border-b border-primary/20 p-4">
+              <CardTitle className="font-mono text-xs text-primary flex items-center gap-2 justify-between">
+                <span className="flex items-center gap-2">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  SYSTEM.HEALTH // DOCKER SETUP STATUS
+                </span>
+                <button
+                  onClick={fetchHealth}
+                  disabled={healthChecking}
+                  className="flex items-center gap-1.5 px-3 py-1 border border-primary/40 font-mono text-xs text-primary hover:bg-primary/10 transition-all disabled:opacity-50"
+                >
+                  {healthChecking
+                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                    : <RefreshCw className="w-3 h-3" />
+                  }
+                  RE-CHECK
+                </button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {!health && healthChecking && (
+                <div className="flex items-center gap-2 p-6 font-mono text-xs text-primary/40">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  RUNNING HEALTH CHECKS...
+                </div>
+              )}
+              {health && (
+                <div className="divide-y divide-primary/10">
+                  {(
+                    [
+                      { key: "api",      icon: <Server className="w-3.5 h-3.5" />,   s: health.api },
+                      { key: "db",       icon: <Database className="w-3.5 h-3.5" />,  s: health.db },
+                      { key: "ollama",   icon: <HardDrive className="w-3.5 h-3.5" />, s: health.ollama },
+                      { key: "openwebui",icon: <Globe className="w-3.5 h-3.5" />,     s: health.openwebui },
+                    ] as const
+                  ).map(({ key, icon, s }) => (
+                    <div key={key} className="p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 font-mono text-xs text-primary/60">
+                          {icon}
+                          <span className="uppercase tracking-widest">{s.label}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {s.checkedAt && (
+                            <span className="font-mono text-[10px] text-primary/25">
+                              {new Date(s.checkedAt).toLocaleTimeString()}
+                            </span>
+                          )}
+                          {s.ok === null ? (
+                            <span className="flex items-center gap-1 font-mono text-xs text-primary/30">
+                              <XCircle className="w-3 h-3" />NOT CONFIGURED
+                            </span>
+                          ) : s.ok ? (
+                            <span className="flex items-center gap-1 font-mono text-xs text-[#11d97a]">
+                              <CheckCircle2 className="w-3 h-3" />OK
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 font-mono text-xs text-[#f03248]">
+                              <XCircle className="w-3 h-3" />FAIL
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {s.hint && (
+                        <div className={`font-mono text-[11px] leading-relaxed pl-5 ${s.ok === null ? "text-primary/30" : "text-[#ffc820]/80"}`}>
+                          {s.hint}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <div className="p-3 border border-primary/10 bg-primary/5 font-mono text-xs text-primary/40 space-y-1.5">
+            <div className="text-primary/60 mb-1">DOCKER QUICK REFERENCE</div>
+            <div>• Check all containers: <span className="text-primary">docker-compose ps</span></div>
+            <div>• View API logs: <span className="text-primary">docker-compose logs api --tail=50</span></div>
+            <div>• View DB logs: <span className="text-primary">docker-compose logs db --tail=50</span></div>
+            <div>• Restart a service: <span className="text-primary">docker-compose restart api</span></div>
+            <div>• Run migrations: <span className="text-primary">docker-compose run --rm api pnpm db:migrate</span></div>
+          </div>
         </div>
       )}
 
