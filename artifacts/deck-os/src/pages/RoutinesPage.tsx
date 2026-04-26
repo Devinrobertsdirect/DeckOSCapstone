@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Clock, Plus, Trash2, Play, ToggleLeft, ToggleRight,
   ChevronDown, ChevronRight, Loader2, AlertTriangle,
-  CheckCircle2, XCircle, RefreshCw, Calendar, Zap, ListOrdered
+  CheckCircle2, XCircle, RefreshCw, Calendar, Zap, ListOrdered,
+  History
 } from "lucide-react";
 
 const API = "/api";
@@ -28,6 +29,11 @@ type Routine = {
 type Execution = {
   id: number; routineId: number; triggeredAt: string;
   outcome: string; result: string | null;
+};
+
+type HistoryExecution = Execution & {
+  routineName: string;
+  actionType: ActionType | null;
 };
 
 const ACTION_LABELS: Record<ActionType, string> = {
@@ -351,10 +357,167 @@ function RoutineRow({ routine, onToggle, onDelete, onTrigger, onEdit }: {
   );
 }
 
+// ── Unified History View ─────────────────────────────────────────────────────
+function HistoryView({ routines }: { routines: Routine[] }) {
+  const [filterRoutineId, setFilterRoutineId] = useState<string>("");
+  const [filterOutcome,   setFilterOutcome]   = useState<string>("");
+  const [filterFrom,      setFilterFrom]      = useState<string>("");
+  const [filterTo,        setFilterTo]        = useState<string>("");
+
+  const params = new URLSearchParams();
+  if (filterRoutineId) params.set("routineId", filterRoutineId);
+  if (filterOutcome)   params.set("outcome",   filterOutcome);
+  if (filterFrom)      params.set("from",      filterFrom);
+  if (filterTo)        params.set("to",        filterTo);
+  const qs = params.toString() ? `?${params.toString()}` : "";
+
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ["history-executions", filterRoutineId, filterOutcome, filterFrom, filterTo],
+    queryFn: () => apiFetch(`/routines/executions/all${qs}`) as Promise<{ executions: HistoryExecution[]; total: number }>,
+    refetchInterval: 15_000,
+  });
+
+  const selectCls = "bg-background/50 border border-primary/20 px-2 py-1.5 font-mono text-xs text-primary focus:outline-none focus:border-primary/50 transition-colors";
+  const inputCls  = "bg-background/50 border border-primary/20 px-2 py-1.5 font-mono text-xs text-primary focus:outline-none focus:border-primary/50 transition-colors";
+
+  return (
+    <div className="space-y-4">
+      {/* Filters */}
+      <div className="border border-primary/15 bg-card/30 p-3 flex flex-wrap items-end gap-3">
+        <div className="flex flex-col gap-1">
+          <span className="font-mono text-[10px] text-primary/30 uppercase tracking-wider">Routine</span>
+          <select className={selectCls} value={filterRoutineId} onChange={e => setFilterRoutineId(e.target.value)}>
+            <option value="">All routines</option>
+            {routines.map(r => <option key={r.id} value={String(r.id)}>{r.name}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="font-mono text-[10px] text-primary/30 uppercase tracking-wider">Outcome</span>
+          <select className={selectCls} value={filterOutcome} onChange={e => setFilterOutcome(e.target.value)}>
+            <option value="">All outcomes</option>
+            <option value="success">Success</option>
+            <option value="error">Error</option>
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="font-mono text-[10px] text-primary/30 uppercase tracking-wider">From</span>
+          <input type="date" className={inputCls} value={filterFrom} onChange={e => setFilterFrom(e.target.value)} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="font-mono text-[10px] text-primary/30 uppercase tracking-wider">To</span>
+          <input type="date" className={inputCls} value={filterTo} onChange={e => setFilterTo(e.target.value)} />
+        </div>
+        {(filterRoutineId || filterOutcome || filterFrom || filterTo) && (
+          <button
+            onClick={() => { setFilterRoutineId(""); setFilterOutcome(""); setFilterFrom(""); setFilterTo(""); }}
+            className="font-mono text-xs text-primary/30 hover:text-primary transition-colors self-end pb-1.5"
+          >
+            [clear]
+          </button>
+        )}
+        <button
+          onClick={() => void refetch()}
+          className="ml-auto self-end border border-primary/20 p-1.5 text-primary/30 hover:text-primary hover:border-primary/50 transition-all"
+          title="Refresh"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Results count */}
+      {data && (
+        <div className="font-mono text-xs text-primary/25 px-0.5">
+          {data.total} execution{data.total !== 1 ? "s" : ""} found
+          {data.total === 200 ? " (showing latest 200)" : ""}
+        </div>
+      )}
+
+      {/* Loading / Error */}
+      {isLoading && (
+        <div className="flex items-center gap-2 font-mono text-xs text-primary/30 p-4">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading history…
+        </div>
+      )}
+      {error && (
+        <div className="border border-[#f03248]/30 bg-[#f03248]/5 p-3 flex items-center gap-2 font-mono text-xs text-[#f03248]">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          Failed to load history — {error instanceof Error ? error.message : "unknown error"}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!isLoading && data?.executions.length === 0 && (
+        <div className="border border-primary/10 p-8 text-center">
+          <History className="w-8 h-8 text-primary/10 mx-auto mb-3" />
+          <div className="font-mono text-sm text-primary/25">No executions found.</div>
+          <div className="font-mono text-xs text-primary/15 mt-1">Trigger a routine or adjust filters.</div>
+        </div>
+      )}
+
+      {/* Timeline */}
+      {data && data.executions.length > 0 && (
+        <div className="space-y-1">
+          {/* Header row */}
+          <div className="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center px-3 py-1.5 font-mono text-[10px] text-primary/25 uppercase tracking-wider border-b border-primary/10">
+            <span className="w-5" />
+            <span>Routine · Action</span>
+            <span className="w-20 text-right">Outcome</span>
+            <span className="w-24 text-right">When</span>
+          </div>
+          {data.executions.map(e => (
+            <div
+              key={e.id}
+              className={`grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-start px-3 py-2 border-l-2 transition-colors hover:bg-primary/5 ${
+                e.outcome === "success" ? "border-[#11d97a]/40" : "border-[#f03248]/40"
+              }`}
+            >
+              {/* Icon */}
+              <div className="w-5 pt-0.5">
+                {e.outcome === "success"
+                  ? <CheckCircle2 className="w-3.5 h-3.5 text-[#11d97a]" />
+                  : <XCircle      className="w-3.5 h-3.5 text-[#f03248]" />
+                }
+              </div>
+
+              {/* Name + result */}
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-mono text-xs text-primary font-semibold truncate">{e.routineName}</span>
+                  {e.actionType && (
+                    <span className="font-mono text-[10px] text-primary/35 shrink-0">
+                      {ACTION_LABELS[e.actionType] ?? e.actionType}
+                    </span>
+                  )}
+                </div>
+                {e.result && (
+                  <div className="font-mono text-[11px] text-primary/35 mt-0.5 break-all line-clamp-2">{e.result}</div>
+                )}
+              </div>
+
+              {/* Outcome badge */}
+              <div className={`w-20 text-right font-mono text-[10px] font-semibold uppercase tracking-wider pt-0.5 ${
+                e.outcome === "success" ? "text-[#11d97a]" : "text-[#f03248]"
+              }`}>
+                {e.outcome}
+              </div>
+
+              {/* Timestamp */}
+              <div className="w-24 text-right font-mono text-[10px] text-primary/30 pt-0.5" title={e.triggeredAt}>
+                {timeAgo(e.triggeredAt)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ───────────────────────────────────────────────────────────────
 export default function RoutinesPage() {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
+  const [activeTab, setActiveTab] = useState<"routines" | "history">("routines");
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["routines"],
@@ -410,109 +573,143 @@ export default function RoutinesPage() {
           <div className="border border-primary/20 px-3 py-1.5 font-mono text-xs text-primary/40">
             <span className="text-[#11d97a] font-bold">{enabled}</span> / {routines.length} active
           </div>
-          <button
-            onClick={() => setShowCreate(s => !s)}
-            className={`flex items-center gap-2 border px-3 py-2 font-mono text-xs transition-all ${
-              showCreate ? "border-primary bg-primary/10 text-primary" : "border-primary/30 text-primary/60 hover:border-primary/60 hover:text-primary"
-            }`}
-          >
-            <Plus className="w-3.5 h-3.5" /> NEW ROUTINE
-          </button>
+          {activeTab === "routines" && (
+            <button
+              onClick={() => setShowCreate(s => !s)}
+              className={`flex items-center gap-2 border px-3 py-2 font-mono text-xs transition-all ${
+                showCreate ? "border-primary bg-primary/10 text-primary" : "border-primary/30 text-primary/60 hover:border-primary/60 hover:text-primary"
+              }`}
+            >
+              <Plus className="w-3.5 h-3.5" /> NEW ROUTINE
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Status bar */}
-      <div className="border border-primary/15 bg-card/30 p-3 flex flex-wrap items-center gap-4 font-mono text-xs text-primary/30">
-        <div className="flex items-center gap-1.5">
-          <Zap className="w-3 h-3 text-[#ffc820]" />
-          <span>Runner: <span className="text-[#11d97a]">ONLINE</span></span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <Calendar className="w-3 h-3" />
-          <span>Cron tick: 60s</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <RefreshCw className="w-3 h-3" />
-          <span>Events: live bus subscriptions</span>
-        </div>
+      {/* Tab switcher */}
+      <div className="flex gap-0 border-b border-primary/15">
+        <button
+          onClick={() => setActiveTab("routines")}
+          className={`flex items-center gap-1.5 px-4 py-2 font-mono text-xs uppercase tracking-wider transition-all border-b-2 -mb-px ${
+            activeTab === "routines"
+              ? "border-primary text-primary"
+              : "border-transparent text-primary/35 hover:text-primary/60"
+          }`}
+        >
+          <Clock className="w-3 h-3" /> Routines
+        </button>
+        <button
+          onClick={() => setActiveTab("history")}
+          className={`flex items-center gap-1.5 px-4 py-2 font-mono text-xs uppercase tracking-wider transition-all border-b-2 -mb-px ${
+            activeTab === "history"
+              ? "border-primary text-primary"
+              : "border-transparent text-primary/35 hover:text-primary/60"
+          }`}
+        >
+          <History className="w-3 h-3" /> History
+        </button>
       </div>
 
-      {/* Create form */}
-      {showCreate && (
-        <RoutineForm
-          onSave={(data) => createMut.mutate(data)}
-          onCancel={() => setShowCreate(false)}
-        />
-      )}
+      {/* History tab content */}
+      {activeTab === "history" && <HistoryView routines={routines} />}
 
-      {/* Error */}
-      {error && (
-        <div className="border border-[#f03248]/30 bg-[#f03248]/5 p-3 flex items-center gap-2 font-mono text-xs text-[#f03248]">
-          <AlertTriangle className="w-4 h-4 shrink-0" />
-          Failed to load routines — {error instanceof Error ? error.message : "unknown error"}
-        </div>
-      )}
+      {/* Routines tab content */}
+      {activeTab === "routines" && (
+        <>
+          {/* Status bar */}
+          <div className="border border-primary/15 bg-card/30 p-3 flex flex-wrap items-center gap-4 font-mono text-xs text-primary/30">
+            <div className="flex items-center gap-1.5">
+              <Zap className="w-3 h-3 text-[#ffc820]" />
+              <span>Runner: <span className="text-[#11d97a]">ONLINE</span></span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Calendar className="w-3 h-3" />
+              <span>Cron tick: 60s</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <RefreshCw className="w-3 h-3" />
+              <span>Events: live bus subscriptions</span>
+            </div>
+          </div>
 
-      {/* Loading */}
-      {isLoading && (
-        <div className="flex items-center gap-2 font-mono text-xs text-primary/30 p-4">
-          <Loader2 className="w-4 h-4 animate-spin" /> Loading routines…
-        </div>
-      )}
+          {/* Create form */}
+          {showCreate && (
+            <RoutineForm
+              onSave={(data) => createMut.mutate(data)}
+              onCancel={() => setShowCreate(false)}
+            />
+          )}
 
-      {/* Routine list */}
-      {!isLoading && routines.length === 0 && (
-        <div className="border border-primary/10 p-8 text-center">
-          <Clock className="w-8 h-8 text-primary/10 mx-auto mb-3" />
-          <div className="font-mono text-sm text-primary/25">No routines configured.</div>
-          <div className="font-mono text-xs text-primary/15 mt-1">Create your first routine above.</div>
-        </div>
-      )}
-
-      {routines.length > 0 && (
-        <div className="space-y-2">
-          {/* Enabled section */}
-          {routines.filter(r => r.enabled).length > 0 && (
-            <div>
-              <div className="font-mono text-[10px] text-primary/25 uppercase tracking-widest px-1 mb-2 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#11d97a] inline-block animate-pulse" />
-                Active
-              </div>
-              <div className="space-y-1.5">
-                {routines.filter(r => r.enabled).map(r => (
-                  <RoutineRow
-                    key={r.id} routine={r}
-                    onToggle={handleToggle}
-                    onDelete={(id) => deleteMut.mutate(id)}
-                    onTrigger={(id) => triggerMut.mutate(id)}
-                    onEdit={handleEdit}
-                  />
-                ))}
-              </div>
+          {/* Error */}
+          {error && (
+            <div className="border border-[#f03248]/30 bg-[#f03248]/5 p-3 flex items-center gap-2 font-mono text-xs text-[#f03248]">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              Failed to load routines — {error instanceof Error ? error.message : "unknown error"}
             </div>
           )}
 
-          {/* Disabled section */}
-          {routines.filter(r => !r.enabled).length > 0 && (
-            <div className="mt-4">
-              <div className="font-mono text-[10px] text-primary/20 uppercase tracking-widest px-1 mb-2 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary/20 inline-block" />
-                Disabled
-              </div>
-              <div className="space-y-1.5">
-                {routines.filter(r => !r.enabled).map(r => (
-                  <RoutineRow
-                    key={r.id} routine={r}
-                    onToggle={handleToggle}
-                    onDelete={(id) => deleteMut.mutate(id)}
-                    onTrigger={(id) => triggerMut.mutate(id)}
-                    onEdit={handleEdit}
-                  />
-                ))}
-              </div>
+          {/* Loading */}
+          {isLoading && (
+            <div className="flex items-center gap-2 font-mono text-xs text-primary/30 p-4">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading routines…
             </div>
           )}
-        </div>
+
+          {/* Routine list */}
+          {!isLoading && routines.length === 0 && (
+            <div className="border border-primary/10 p-8 text-center">
+              <Clock className="w-8 h-8 text-primary/10 mx-auto mb-3" />
+              <div className="font-mono text-sm text-primary/25">No routines configured.</div>
+              <div className="font-mono text-xs text-primary/15 mt-1">Create your first routine above.</div>
+            </div>
+          )}
+
+          {routines.length > 0 && (
+            <div className="space-y-2">
+              {/* Enabled section */}
+              {routines.filter(r => r.enabled).length > 0 && (
+                <div>
+                  <div className="font-mono text-[10px] text-primary/25 uppercase tracking-widest px-1 mb-2 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#11d97a] inline-block animate-pulse" />
+                    Active
+                  </div>
+                  <div className="space-y-1.5">
+                    {routines.filter(r => r.enabled).map(r => (
+                      <RoutineRow
+                        key={r.id} routine={r}
+                        onToggle={handleToggle}
+                        onDelete={(id) => deleteMut.mutate(id)}
+                        onTrigger={(id) => triggerMut.mutate(id)}
+                        onEdit={handleEdit}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Disabled section */}
+              {routines.filter(r => !r.enabled).length > 0 && (
+                <div className="mt-4">
+                  <div className="font-mono text-[10px] text-primary/20 uppercase tracking-widest px-1 mb-2 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary/20 inline-block" />
+                    Disabled
+                  </div>
+                  <div className="space-y-1.5">
+                    {routines.filter(r => !r.enabled).map(r => (
+                      <RoutineRow
+                        key={r.id} routine={r}
+                        onToggle={handleToggle}
+                        onDelete={(id) => deleteMut.mutate(id)}
+                        onTrigger={(id) => triggerMut.mutate(id)}
+                        onEdit={handleEdit}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

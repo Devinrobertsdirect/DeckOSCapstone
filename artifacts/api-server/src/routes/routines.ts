@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { db, routinesTable, routineExecutionsTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, gte, lte } from "drizzle-orm";
 import { routineRunner, nextCronDate } from "../lib/routine-runner.js";
 
 const router = Router();
@@ -67,6 +67,62 @@ function formatExecution(e: typeof routineExecutionsTable.$inferSelect) {
 router.get("/routines", async (_req, res) => {
   const rows = await db.select().from(routinesTable).orderBy(desc(routinesTable.createdAt));
   res.json({ routines: rows.map(formatRoutine), total: rows.length });
+});
+
+// ── All executions (unified history) ────────────────────────────────────────
+router.get("/routines/executions/all", async (req, res) => {
+  const { routineId, outcome, from, to } = req.query;
+
+  const conditions: ReturnType<typeof eq>[] = [];
+
+  if (routineId) {
+    const rid = parseInt(routineId as string);
+    if (!isNaN(rid)) conditions.push(eq(routineExecutionsTable.routineId, rid));
+  }
+  if (outcome === "success" || outcome === "error") {
+    conditions.push(eq(routineExecutionsTable.outcome, outcome as string));
+  }
+  if (from) {
+    const fromDate = new Date(from as string);
+    if (!isNaN(fromDate.getTime())) conditions.push(gte(routineExecutionsTable.triggeredAt, fromDate));
+  }
+  if (to) {
+    const toDate = new Date(to as string);
+    if (!isNaN(toDate.getTime())) {
+      // Set to end-of-day so the full selected date is included
+      toDate.setUTCHours(23, 59, 59, 999);
+      conditions.push(lte(routineExecutionsTable.triggeredAt, toDate));
+    }
+  }
+
+  const rows = await db
+    .select({
+      id:          routineExecutionsTable.id,
+      routineId:   routineExecutionsTable.routineId,
+      routineName: routinesTable.name,
+      actionType:  routinesTable.actionType,
+      triggeredAt: routineExecutionsTable.triggeredAt,
+      outcome:     routineExecutionsTable.outcome,
+      result:      routineExecutionsTable.result,
+    })
+    .from(routineExecutionsTable)
+    .leftJoin(routinesTable, eq(routineExecutionsTable.routineId, routinesTable.id))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(routineExecutionsTable.triggeredAt))
+    .limit(200);
+
+  res.json({
+    executions: rows.map(r => ({
+      id:          r.id,
+      routineId:   r.routineId,
+      routineName: r.routineName ?? "(deleted routine)",
+      actionType:  r.actionType ?? null,
+      triggeredAt: r.triggeredAt.toISOString(),
+      outcome:     r.outcome,
+      result:      r.result ?? null,
+    })),
+    total: rows.length,
+  });
 });
 
 // ── Get single routine ───────────────────────────────────────────────────────
