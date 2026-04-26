@@ -144,8 +144,25 @@ async function elevenLabsTts(text: string, voiceId: string, apiKey: string): Pro
   return Buffer.from(buf);
 }
 
+/** Resolve the persona gender from the DB (cached once per request). */
+async function getPersonaGender(): Promise<string | null> {
+  try {
+    const [persona] = await db
+      .select({ gender: aiPersonaTable.gender, voice: aiPersonaTable.voice })
+      .from(aiPersonaTable)
+      .limit(1);
+    return persona?.gender ?? null;
+  } catch {
+    return null;
+  }
+}
+
 router.post("/tts", async (req, res) => {
-  const { text, voice } = req.body as { text?: string; voice?: string };
+  const { text, voice, gender: bodyGender } = req.body as {
+    text?: string;
+    voice?: string;
+    gender?: string;
+  };
 
   if (!text || typeof text !== "string") {
     res.status(400).json({ error: "text required" });
@@ -157,6 +174,36 @@ router.post("/tts", async (req, res) => {
   const oaiKey   = (await getConfig("OPENAI_API_KEY").catch(() => null)) ?? process.env["OPENAI_API_KEY"];
   const localOk  = isLocalTtsAvailable();
 
+  // Resolve effective voice — "local-male" / "local-female" are special IDs
+  // that force local TTS with an explicit gender override.
+  const localVoiceMatch = voice?.match(/^local-(male|female|nonbinary|neutral)$/);
+  const forcedLocalGender = localVoiceMatch ? localVoiceMatch[1] : null;
+
+  // Helper: run local TTS resolving gender from (1) forced local prefix,
+  //         (2) request body, (3) persona DB row.
+  async function runLocalTts(): Promise<Buffer> {
+    const gender =
+      forcedLocalGender ??
+      bodyGender ??
+      (await getPersonaGender());
+    return localTts(text, gender);
+  }
+
+  // ── Forced local voice (voice="local-male" / "local-female" / …) ────────
+  if (forcedLocalGender) {
+    if (!localOk) {
+      res.status(503).json({ available: false, reason: "local-tts-unavailable" });
+      return;
+    }
+    try {
+      const wav = await runLocalTts();
+      res.json({ audio: wav.toString("base64"), format: "wav", provider: "local" });
+    } catch (err) {
+      res.status(500).json({ error: "Local TTS failed", detail: String(err) });
+    }
+    return;
+  }
+
   // ── Local-only mode ─────────────────────────────────────────────────────
   if (provider === "local") {
     if (!localOk) {
@@ -164,7 +211,7 @@ router.post("/tts", async (req, res) => {
       return;
     }
     try {
-      const wav = await localTts(text);
+      const wav = await runLocalTts();
       res.json({ audio: wav.toString("base64"), format: "wav", provider: "local" });
     } catch (err) {
       res.status(500).json({ error: "Local TTS failed", detail: String(err) });
@@ -176,7 +223,7 @@ router.post("/tts", async (req, res) => {
   if (!elKey && !oaiKey) {
     if (localOk && provider === "auto") {
       try {
-        const wav = await localTts(text);
+        const wav = await runLocalTts();
         res.json({ audio: wav.toString("base64"), format: "wav", provider: "local" });
         return;
       } catch (err) {
@@ -224,7 +271,7 @@ router.post("/tts", async (req, res) => {
   // ── Final fallback: local TTS ────────────────────────────────────────────
   if (localOk) {
     try {
-      const wav = await localTts(text);
+      const wav = await runLocalTts();
       res.json({ audio: wav.toString("base64"), format: "wav", provider: "local" });
       return;
     } catch (err) {

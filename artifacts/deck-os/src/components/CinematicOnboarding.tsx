@@ -505,6 +505,32 @@ function useElevenLabsVoices() {
   return { voices, loading };
 }
 
+function useLocalTtsAvailable() {
+  const [available, setAvailable] = useState(false);
+  useEffect(() => {
+    fetch(`${API_BASE}/config/features`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.tts?.local) setAvailable(true); })
+      .catch(() => {});
+  }, []);
+  return available;
+}
+
+const LOCAL_VOICE_OPTIONS = [
+  {
+    id: "local-male",
+    label: "ARGUS — MALE",
+    description: "Deep, authoritative offline voice — no cloud required",
+    sample: "All systems nominal. I am online and ready to assist.",
+  },
+  {
+    id: "local-female",
+    label: "ARIA — FEMALE",
+    description: "Clear, energetic offline voice — no cloud required",
+    sample: "I am ready. Awaiting your first directive.",
+  },
+];
+
 const SAMPLE_TEXT = "Systems online. Voice synthesis module calibrated and ready for command.";
 
 function VoiceStep({ aiName, onComplete }: { aiName: string; onComplete: (voice: string) => void }) {
@@ -514,6 +540,7 @@ function VoiceStep({ aiName, onComplete }: { aiName: string; onComplete: (voice:
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const { voices: elVoices, loading: elLoading } = useElevenLabsVoices();
   const hasElevenLabs = elVoices.length > 0;
+  const hasLocal = useLocalTtsAvailable();
 
   async function playSample(voiceId: string, sampleText: string) {
     if (playing === voiceId) {
@@ -661,6 +688,20 @@ function VoiceStep({ aiName, onComplete }: { aiName: string; onComplete: (voice:
             ))}
           </div>
         </div>
+
+        {hasLocal && (
+          <div className="mt-4">
+            <div className="font-mono text-[9px] tracking-widest uppercase mb-2 flex items-center gap-2" style={{ color: "rgba(var(--primary-rgb),0.4)" }}>
+              <span className="px-1.5 py-0.5 border text-[8px]" style={{ borderColor: "#11d97a50", color: "#11d97a" }}>OFFLINE</span>
+              Local voices — no API key required
+            </div>
+            <div className="space-y-2">
+              {LOCAL_VOICE_OPTIONS.map((v) => (
+                <VoiceRow key={v.id} id={v.id} label={v.label} description={v.description} sample={v.sample} />
+              ))}
+            </div>
+          </div>
+        )}
 
         <button
           onClick={() => onComplete(selected)}
@@ -961,10 +1002,19 @@ function FirstContactStep({
   );
 }
 
+/** Map a local-* voice ID to OpenAI voice + gender for DB persistence. */
+function resolveLocalVoice(voiceId: string): { voice: string; gender: string } | null {
+  if (voiceId === "local-male")     return { voice: "onyx",  gender: "male" };
+  if (voiceId === "local-female")   return { voice: "nova",  gender: "female" };
+  if (voiceId === "local-nonbinary") return { voice: "alloy", gender: "nonbinary" };
+  return null;
+}
+
 export function CinematicOnboarding({ onComplete }: Props) {
   const [step, setStep] = useState<Step>("boot");
   const [aiName, setAiName] = useState("JARVIS");
   const [voice, setVoice] = useState("onyx");
+  const [gender, setGender] = useState<string | null>(null);
   const [faceStyle, setFaceStyle] = useState<FaceStyle>("vocoder");
   const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
   const [fadeOut, setFadeOut] = useState(false);
@@ -1024,8 +1074,22 @@ export function CinematicOnboarding({ onComplete }: Props) {
   }
 
   function handleVoiceComplete(voiceId: string) {
-    setVoice(voiceId);
-    localStorage.setItem(VOICE_KEY, voiceId);
+    const local = resolveLocalVoice(voiceId);
+    if (local) {
+      // Local voice selected — map to cloud-compatible ID and persist gender
+      setVoice(local.voice);
+      setGender(local.gender);
+      localStorage.setItem(VOICE_KEY, local.voice);
+      // Eagerly save gender to persona so local TTS uses it immediately
+      fetch(`${API_BASE}/persona`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gender: local.gender }),
+      }).catch(() => {});
+    } else {
+      setVoice(voiceId);
+      localStorage.setItem(VOICE_KEY, voiceId);
+    }
     setStep("face");
   }
 

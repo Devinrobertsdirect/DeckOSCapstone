@@ -233,9 +233,93 @@ function PersonaPreview({ persona }: { persona: Partial<AiPersona> }) {
   );
 }
 
-// ── Recalibrate Tab ───────────────────────────────────────────────────────
+// ── Local Voice Preview ───────────────────────────────────────────────────
 
 const API_BASE = `${import.meta.env.BASE_URL}api`;
+
+const LOCAL_VOICE_MAP: Record<string, { label: string; name: string; desc: string }> = {
+  male:      { label: "MALE",      name: "ARGUS",  desc: "Deep, authoritative — en-us pitch 28" },
+  neutral:   { label: "NEUTRAL",   name: "ARGUS",  desc: "Deep, authoritative — en-us pitch 28" },
+  female:    { label: "FEMALE",    name: "ARIA",   desc: "Clear, energetic — en-us+f3 pitch 48" },
+  nonbinary: { label: "NON-BINARY", name: "AXIOM", desc: "Mid-range — en-us pitch 42" },
+};
+
+function LocalVoicePreview({ gender }: { gender: string }) {
+  const [available, setAvailable] = useState(false);
+  const [playing, setPlaying]     = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/config/features`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.tts?.local) setAvailable(true); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => { return () => { audioRef.current?.pause(); }; }, []);
+
+  const info = LOCAL_VOICE_MAP[gender] ?? LOCAL_VOICE_MAP["neutral"]!;
+  const voiceId = `local-${gender === "neutral" ? "male" : gender}`;
+
+  async function previewLocal() {
+    if (playing) { audioRef.current?.pause(); setPlaying(false); return; }
+    setPlaying(true);
+    try {
+      const res = await fetch(`${API_BASE}/vision/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Systems online. Local voice synthesis active and ready for your command.", voice: voiceId }),
+      });
+      if (!res.ok) { setPlaying(false); return; }
+      const data = await res.json() as { audio?: string; format?: string };
+      if (!data.audio) { setPlaying(false); return; }
+      const url = `data:audio/${data.format ?? "wav"};base64,${data.audio}`;
+      if (audioRef.current) audioRef.current.pause();
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => setPlaying(false);
+      audio.onerror = () => setPlaying(false);
+      await audio.play();
+    } catch { setPlaying(false); }
+  }
+
+  if (!available) return null;
+
+  return (
+    <div
+      className="mt-3 flex items-center justify-between gap-3 px-3 py-2.5 border"
+      style={{ borderColor: "rgba(17,217,122,0.2)", background: "rgba(17,217,122,0.03)" }}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span
+            className="font-mono text-[8px] tracking-widest px-1.5 py-0.5 border"
+            style={{ borderColor: "rgba(17,217,122,0.4)", color: "#11d97a" }}
+          >
+            OFFLINE
+          </span>
+          <span className="font-mono text-xs font-bold" style={{ color: "#11d97a" }}>
+            {info.name} — {info.label}
+          </span>
+        </div>
+        <div className="font-mono text-[9px] text-primary/30 mt-0.5">{info.desc}</div>
+      </div>
+      <button
+        onClick={previewLocal}
+        className="shrink-0 font-mono text-[10px] tracking-widest px-3 py-1.5 border transition-all"
+        style={{
+          borderColor: playing ? "#11d97a" : "rgba(17,217,122,0.3)",
+          color:       playing ? "#11d97a" : "rgba(17,217,122,0.5)",
+          background:  playing ? "rgba(17,217,122,0.08)" : "transparent",
+        }}
+      >
+        {playing ? "■ STOP" : "▶ TEST"}
+      </button>
+    </div>
+  );
+}
+
+// ── Recalibrate Tab ───────────────────────────────────────────────────────
 
 function RecalibrateTab() {
   const currentFace  = useFaceStyle();
@@ -1034,6 +1118,7 @@ export default function AiPersonality() {
                 );
               })}
             </div>
+            <LocalVoicePreview gender={form.gender ?? "neutral"} />
           </div>
 
           {/* Attitude */}
