@@ -67,16 +67,18 @@ const inferenceState: {
   autopilotRequests: number;
   cache: Map<string, { response: string; model: string; tier: string; timestamp: number }>;
   ollamaAvailable: boolean | null;
+  openWebUIAvailable: boolean | null;
   lastDetected: Date;
 } = {
-  totalRequests:     0,
-  cacheHits:         0,
-  cortexRequests:    0,
-  reflexRequests:    0,
-  autopilotRequests: 0,
-  cache:             new Map(),
-  ollamaAvailable:   null,
-  lastDetected:      new Date(),
+  totalRequests:      0,
+  cacheHits:          0,
+  cortexRequests:     0,
+  reflexRequests:     0,
+  autopilotRequests:  0,
+  cache:              new Map(),
+  ollamaAvailable:    null,
+  openWebUIAvailable: null,
+  lastDetected:       new Date(),
 };
 
 export function getInferenceState() {
@@ -125,8 +127,129 @@ export async function detectOllama(): Promise<boolean> {
 }
 
 export async function refreshOllamaDetection(): Promise<void> {
-  inferenceState.ollamaAvailable = await detectOllama();
+  [inferenceState.ollamaAvailable, inferenceState.openWebUIAvailable] = await Promise.all([
+    detectOllama(),
+    detectOpenWebUI(),
+  ]);
   inferenceState.lastDetected = new Date();
+}
+
+// ── Open WebUI helpers ──────────────────────────────────────────────────────
+// Open WebUI ("Openclaw") exposes an OpenAI-compatible API at {host}/v1/
+// Set OPENWEBUI_HOST in Settings → Connection to enable it.
+
+export async function getOpenWebUIBaseUrl(): Promise<string> {
+  try {
+    const fromDb = await getConfig("OPENWEBUI_HOST");
+    return ((fromDb ?? process.env["OPENWEBUI_HOST"]) ?? "").trim();
+  } catch {
+    return (process.env["OPENWEBUI_HOST"] ?? "").trim();
+  }
+}
+
+async function getOpenWebUIApiKey(): Promise<string> {
+  try {
+    return (await getConfig("OPENWEBUI_API_KEY")) ?? process.env["OPENWEBUI_API_KEY"] ?? "";
+  } catch {
+    return process.env["OPENWEBUI_API_KEY"] ?? "";
+  }
+}
+
+export async function detectOpenWebUI(): Promise<boolean> {
+  const base = await getOpenWebUIBaseUrl();
+  if (!base) return false;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(`${base}/health`, { signal: controller.signal });
+    clearTimeout(timeout);
+    return res.ok;
+  } catch {
+    try {
+      // Fallback: try the models endpoint if /health is not available
+      const controller2 = new AbortController();
+      const timeout2 = setTimeout(() => controller2.abort(), 2000);
+      const res2 = await fetch(`${base}/v1/models`, { signal: controller2.signal });
+      clearTimeout(timeout2);
+      return res2.ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
+async function callOpenWebUI(
+  messages: Array<{ role: string; content: string }>,
+  model: string,
+): Promise<string> {
+  const base = await getOpenWebUIBaseUrl();
+  const apiKey = await getOpenWebUIApiKey();
+  const res = await fetch(`${base}/v1/chat/completions`, {
+    method:  "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}),
+    },
+    body:   JSON.stringify({ model, messages, stream: false }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) throw new Error(`Open WebUI ${res.status}: ${res.statusText}`);
+  const data = (await res.json()) as { choices: [{ message: { content: string } }] };
+  return data.choices[0]?.message?.content ?? "[No response from Open WebUI]";
+}
+
+async function callOpenWebUIStreaming(
+  messages: Array<{ role: string; content: string }>,
+  model: string,
+  onToken: (token: string) => void,
+): Promise<string> {
+  const base = await getOpenWebUIBaseUrl();
+  const apiKey = await getOpenWebUIApiKey();
+  const res = await fetch(`${base}/v1/chat/completions`, {
+    method:  "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}),
+    },
+    body:   JSON.stringify({ model, messages, stream: true }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) throw new Error(`Open WebUI ${res.status}`);
+  if (!res.body) throw new Error("No body from Open WebUI");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    for (const line of chunk.split("\n")) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (data === "[DONE]") break;
+      try {
+        const parsed = JSON.parse(data) as { choices: [{ delta: { content?: string } }] };
+        const token = parsed.choices[0]?.delta?.content ?? "";
+        if (token) { fullText += token; onToken(token); }
+      } catch { /* skip malformed */ }
+    }
+  }
+  return fullText || "[No response from Open WebUI]";
+}
+
+// Build an OpenAI-style messages array (compatible with Ollama + Open WebUI)
+function buildMessages(
+  prompt: string,
+  context: Array<{ role: string; content: string }>,
+): Array<{ role: string; content: string }> {
+  const hasSystem = context.some((m) => m.role === "system");
+  return [
+    ...(!hasSystem ? [{ role: "system", content: "You are an advanced AI assistant integrated into DeckOS. Be concise and precise." }] : []),
+    ...context,
+    { role: "user", content: prompt },
+  ];
 }
 
 // ── MODEL ROUTING GATEWAY ───────────────────────────────────────────────────
@@ -142,8 +265,9 @@ export async function refreshOllamaDetection(): Promise<void> {
 type Tier = "cortex" | "reflex" | "autopilot";
 
 function resolveGateway(task: TaskType | undefined, mode: InferenceMode, latencyBudgetMs?: number): Tier {
-  // Explicit "none" mode or no Ollama → autopilot (rule engine)
-  if (mode === "none" || !inferenceState.ollamaAvailable) return "autopilot";
+  // No local AI available (Ollama or Open WebUI) → autopilot (rule engine)
+  const hasLocalAI = inferenceState.ollamaAvailable || inferenceState.openWebUIAvailable;
+  if (mode === "none" || !hasLocalAI) return "autopilot";
 
   // Strict latency budget under 200ms → reflex
   if (latencyBudgetMs !== undefined && latencyBudgetMs < 200) return "reflex";
@@ -330,37 +454,81 @@ export async function runInferenceStreaming(
   let modelUsed = MODEL_CONFIG.RULE_ENGINE;
   let usedTier: Tier = "autopilot";
 
+  const useOpenWebUI = !inferenceState.ollamaAvailable && !!inferenceState.openWebUIAvailable;
+  const msgs = buildMessages(prompt, context);
+
   try {
-    if (tier === "autopilot" || !inferenceState.ollamaAvailable) {
+    if (tier === "autopilot" || (!inferenceState.ollamaAvailable && !inferenceState.openWebUIAvailable)) {
       response  = await streamRuleBasedResponse(prompt, onToken);
       modelUsed = MODEL_CONFIG.RULE_ENGINE;
       usedTier  = "autopilot";
       inferenceState.autopilotRequests++;
+    } else if (useOpenWebUI) {
+      response  = await callOpenWebUIStreaming(msgs, model, onToken);
+      modelUsed = `openwebui:${model}`;
+      usedTier  = tier;
+      if (tier === "cortex") inferenceState.cortexRequests++;
+      if (tier === "reflex") inferenceState.reflexRequests++;
     } else {
       response  = await callOllamaStreaming(prompt, model, context, onToken);
       modelUsed = model;
       usedTier  = tier;
-      if (tier === "cortex")  inferenceState.cortexRequests++;
-      if (tier === "reflex")  inferenceState.reflexRequests++;
+      if (tier === "cortex") inferenceState.cortexRequests++;
+      if (tier === "reflex") inferenceState.reflexRequests++;
     }
   } catch {
+    // Graceful degradation: if primary local source fails, try alternate then rule engine
     if (tier === "cortex") {
       try {
-        response  = await callOllamaStreaming(prompt, MODEL_CONFIG.FAST, context, onToken);
-        modelUsed = MODEL_CONFIG.FAST;
+        if (useOpenWebUI) {
+          response  = await callOpenWebUIStreaming(buildMessages(prompt, context), MODEL_CONFIG.FAST, onToken);
+          modelUsed = `openwebui:${MODEL_CONFIG.FAST}`;
+        } else {
+          response  = await callOllamaStreaming(prompt, MODEL_CONFIG.FAST, context, onToken);
+          modelUsed = MODEL_CONFIG.FAST;
+        }
         usedTier  = "reflex";
         inferenceState.reflexRequests++;
       } catch {
+        // Last resort: Open WebUI if Ollama was tried and failed
+        if (!useOpenWebUI && inferenceState.openWebUIAvailable) {
+          try {
+            response  = await callOpenWebUIStreaming(msgs, model, onToken);
+            modelUsed = `openwebui:${model}`;
+            usedTier  = tier;
+            if (tier === "cortex") inferenceState.cortexRequests++;
+          } catch {
+            response  = await streamRuleBasedResponse(prompt, onToken);
+            modelUsed = MODEL_CONFIG.RULE_ENGINE;
+            usedTier  = "autopilot";
+            inferenceState.autopilotRequests++;
+          }
+        } else {
+          response  = await streamRuleBasedResponse(prompt, onToken);
+          modelUsed = MODEL_CONFIG.RULE_ENGINE;
+          usedTier  = "autopilot";
+          inferenceState.autopilotRequests++;
+        }
+      }
+    } else {
+      if (!useOpenWebUI && inferenceState.openWebUIAvailable) {
+        try {
+          response  = await callOpenWebUIStreaming(msgs, model, onToken);
+          modelUsed = `openwebui:${model}`;
+          usedTier  = tier;
+          if (tier === "reflex") inferenceState.reflexRequests++;
+        } catch {
+          response  = await streamRuleBasedResponse(prompt, onToken);
+          modelUsed = MODEL_CONFIG.RULE_ENGINE;
+          usedTier  = "autopilot";
+          inferenceState.autopilotRequests++;
+        }
+      } else {
         response  = await streamRuleBasedResponse(prompt, onToken);
         modelUsed = MODEL_CONFIG.RULE_ENGINE;
         usedTier  = "autopilot";
         inferenceState.autopilotRequests++;
       }
-    } else {
-      response  = await streamRuleBasedResponse(prompt, onToken);
-      modelUsed = MODEL_CONFIG.RULE_ENGINE;
-      usedTier  = "autopilot";
-      inferenceState.autopilotRequests++;
     }
   }
 
@@ -403,38 +571,80 @@ export async function runInference(opts: InferenceOptions): Promise<InferenceRes
   let modelUsed = MODEL_CONFIG.RULE_ENGINE;
   let usedTier: Tier = "autopilot";
 
+  const useOpenWebUI = !inferenceState.ollamaAvailable && !!inferenceState.openWebUIAvailable;
+  const msgs = buildMessages(prompt, context);
+
   try {
-    if (tier === "autopilot" || !inferenceState.ollamaAvailable) {
+    if (tier === "autopilot" || (!inferenceState.ollamaAvailable && !inferenceState.openWebUIAvailable)) {
       response  = generateRuleBasedResponse(prompt);
       modelUsed = MODEL_CONFIG.RULE_ENGINE;
       usedTier  = "autopilot";
       inferenceState.autopilotRequests++;
+    } else if (useOpenWebUI) {
+      response  = await callOpenWebUI(msgs, model);
+      modelUsed = `openwebui:${model}`;
+      usedTier  = tier;
+      if (tier === "cortex") inferenceState.cortexRequests++;
+      if (tier === "reflex") inferenceState.reflexRequests++;
     } else {
       response  = await callOllama(prompt, model, context);
       modelUsed = model;
       usedTier  = tier;
-      if (tier === "cortex")  inferenceState.cortexRequests++;
-      if (tier === "reflex")  inferenceState.reflexRequests++;
+      if (tier === "cortex") inferenceState.cortexRequests++;
+      if (tier === "reflex") inferenceState.reflexRequests++;
     }
   } catch {
-    // Graceful degradation: cortex fails → try reflex, reflex fails → autopilot
+    // Graceful degradation: cortex fails → try reflex → try Open WebUI → rule engine
     if (tier === "cortex") {
       try {
-        response  = await callOllama(prompt, dynModels.fast, context);
-        modelUsed = dynModels.fast;
+        if (useOpenWebUI) {
+          response  = await callOpenWebUI(buildMessages(prompt, context), dynModels.fast);
+          modelUsed = `openwebui:${dynModels.fast}`;
+        } else {
+          response  = await callOllama(prompt, dynModels.fast, context);
+          modelUsed = dynModels.fast;
+        }
         usedTier  = "reflex";
         inferenceState.reflexRequests++;
       } catch {
+        if (!useOpenWebUI && inferenceState.openWebUIAvailable) {
+          try {
+            response  = await callOpenWebUI(msgs, model);
+            modelUsed = `openwebui:${model}`;
+            usedTier  = tier;
+            if (tier === "cortex") inferenceState.cortexRequests++;
+          } catch {
+            response  = generateRuleBasedResponse(prompt);
+            modelUsed = MODEL_CONFIG.RULE_ENGINE;
+            usedTier  = "autopilot";
+            inferenceState.autopilotRequests++;
+          }
+        } else {
+          response  = generateRuleBasedResponse(prompt);
+          modelUsed = MODEL_CONFIG.RULE_ENGINE;
+          usedTier  = "autopilot";
+          inferenceState.autopilotRequests++;
+        }
+      }
+    } else {
+      if (!useOpenWebUI && inferenceState.openWebUIAvailable) {
+        try {
+          response  = await callOpenWebUI(msgs, model);
+          modelUsed = `openwebui:${model}`;
+          usedTier  = tier;
+          if (tier === "reflex") inferenceState.reflexRequests++;
+        } catch {
+          response  = generateRuleBasedResponse(prompt);
+          modelUsed = MODEL_CONFIG.RULE_ENGINE;
+          usedTier  = "autopilot";
+          inferenceState.autopilotRequests++;
+        }
+      } else {
         response  = generateRuleBasedResponse(prompt);
         modelUsed = MODEL_CONFIG.RULE_ENGINE;
         usedTier  = "autopilot";
         inferenceState.autopilotRequests++;
       }
-    } else {
-      response  = generateRuleBasedResponse(prompt);
-      modelUsed = MODEL_CONFIG.RULE_ENGINE;
-      usedTier  = "autopilot";
-      inferenceState.autopilotRequests++;
     }
   }
 

@@ -60,7 +60,10 @@ router.delete("/config/:key", async (req, res) => {
 });
 
 // ── POST /api/config/test-connection ─────────────────────────────────────────
-const TestSchema = z.object({ url: z.string().url() });
+const TestSchema = z.object({
+  url:  z.string().url(),
+  type: z.enum(["ollama", "openwebui"]).optional().default("ollama"),
+});
 
 router.post("/config/test-connection", async (req, res) => {
   const parsed = TestSchema.safeParse(req.body);
@@ -69,23 +72,36 @@ router.post("/config/test-connection", async (req, res) => {
     return;
   }
 
-  const { url } = parsed.data;
+  const { url, type } = parsed.data;
   const base = url.replace(/\/$/, "");
 
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4000);
-    const r = await fetch(`${base}/api/tags`, { signal: controller.signal });
-    clearTimeout(timeout);
 
-    if (!r.ok) {
-      res.json({ ok: false, error: `Ollama responded with HTTP ${r.status}` });
-      return;
+    if (type === "openwebui") {
+      // Open WebUI has an OpenAI-compatible /v1/models endpoint
+      const r = await fetch(`${base}/v1/models`, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!r.ok) {
+        res.json({ ok: false, error: `Open WebUI responded with HTTP ${r.status}` });
+        return;
+      }
+      const data = await r.json() as { data?: Array<{ id: string }> };
+      const models = (data.data ?? []).map((m) => m.id);
+      res.json({ ok: true, models, count: models.length });
+    } else {
+      // Ollama native API
+      const r = await fetch(`${base}/api/tags`, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!r.ok) {
+        res.json({ ok: false, error: `Ollama responded with HTTP ${r.status}` });
+        return;
+      }
+      const data = await r.json() as { models?: Array<{ name: string }> };
+      const models = (data.models ?? []).map((m: { name: string }) => m.name);
+      res.json({ ok: true, models, count: models.length });
     }
-
-    const data = await r.json() as { models?: Array<{ name: string }> };
-    const models = (data.models ?? []).map((m: { name: string }) => m.name);
-    res.json({ ok: true, models, count: models.length });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     res.json({ ok: false, error: msg });

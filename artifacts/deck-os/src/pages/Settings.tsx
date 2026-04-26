@@ -10,6 +10,8 @@ type Tab = "connection" | "apikeys" | "models";
 
 type ConfigState = {
   OLLAMA_HOST:          string;
+  OPENWEBUI_HOST:       string;
+  OPENWEBUI_API_KEY:    string;
   REASONING_MODEL:      string;
   FAST_MODEL:           string;
   OPENAI_API_KEY:       string;
@@ -32,6 +34,8 @@ const EL_PRESET_VOICES = [
 
 const DEFAULTS: ConfigState = {
   OLLAMA_HOST:         "http://localhost:11434",
+  OPENWEBUI_HOST:      "",
+  OPENWEBUI_API_KEY:   "",
   REASONING_MODEL:     "gemma3:9b",
   FAST_MODEL:          "phi3",
   OPENAI_API_KEY:      "",
@@ -58,6 +62,10 @@ export default function Settings() {
   const [testing, setTesting]       = useState(false);
   const [testResult, setTestResult] = useState<TestResult>(null);
 
+  const [owTesting, setOwTesting]       = useState(false);
+  const [owTestResult, setOwTestResult] = useState<TestResult>(null);
+  const [showOwKey, setShowOwKey]       = useState(false);
+
   const [showOai, setShowOai]     = useState(false);
   const [showAnt, setShowAnt]     = useState(false);
   const [showEl, setShowEl]       = useState(false);
@@ -71,6 +79,8 @@ export default function Settings() {
         const c = data.config ?? {};
         setCfg({
           OLLAMA_HOST:         c["OLLAMA_HOST"]         ?? DEFAULTS.OLLAMA_HOST,
+          OPENWEBUI_HOST:      c["OPENWEBUI_HOST"]      ?? "",
+          OPENWEBUI_API_KEY:   c["OPENWEBUI_API_KEY"]   ?? "",
           REASONING_MODEL:     c["REASONING_MODEL"]     ?? DEFAULTS.REASONING_MODEL,
           FAST_MODEL:          c["FAST_MODEL"]           ?? DEFAULTS.FAST_MODEL,
           OPENAI_API_KEY:      c["OPENAI_API_KEY"]      ?? "",
@@ -161,6 +171,25 @@ export default function Settings() {
       setTestResult({ ok: false, error: "Network error — is the API server running?" });
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function testOpenWebUI() {
+    if (!cfg.OPENWEBUI_HOST.trim()) return;
+    setOwTesting(true);
+    setOwTestResult(null);
+    try {
+      const r = await fetch("/api/config/test-connection", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ url: cfg.OPENWEBUI_HOST, type: "openwebui" }),
+      });
+      const data = await r.json() as TestResult;
+      setOwTestResult(data);
+    } catch {
+      setOwTestResult({ ok: false, error: "Network error — is the API server running?" });
+    } finally {
+      setOwTesting(false);
     }
   }
 
@@ -277,6 +306,86 @@ export default function Settings() {
                 <div>1. Install Ollama: <span className="text-primary">ollama.com/download</span></div>
                 <div>2. Pull models: <span className="text-primary">ollama pull gemma3:9b &amp;&amp; ollama pull phi3</span></div>
                 <div>3. Test connection above, then Save</div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Open WebUI card */}
+          <Card className="bg-card/40 border-primary/20 rounded-none">
+            <CardHeader className="border-b border-primary/20 p-4">
+              <CardTitle className="font-mono text-xs text-primary flex items-center gap-2">
+                <Wifi className="w-3.5 h-3.5" />
+                OPEN WEBUI (OPENCLAW) — OPTIONAL
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-4">
+              <p className="font-mono text-xs text-primary/50 leading-relaxed">
+                Open WebUI ("Openclaw") runs at <span className="text-primary">localhost:3000</span> by default and exposes
+                an OpenAI-compatible API. When set, Deck OS uses it as a fallback when direct Ollama is unavailable,
+                or as the primary engine when Ollama is offline. Leave blank to use Ollama directly.
+              </p>
+
+              <div className="space-y-2">
+                <label className="font-mono text-xs text-primary/60 uppercase">Open WebUI Host URL</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={cfg.OPENWEBUI_HOST}
+                    onChange={(e) => { change("OPENWEBUI_HOST", e.target.value); setOwTestResult(null); }}
+                    placeholder="http://localhost:3000"
+                    className="flex-1 bg-background border border-primary/30 px-3 py-2 font-mono text-xs text-primary focus:border-primary focus:outline-none"
+                  />
+                  <button
+                    onClick={testOpenWebUI}
+                    disabled={owTesting || !cfg.OPENWEBUI_HOST.trim()}
+                    className="px-4 py-2 border border-primary/40 font-mono text-xs text-primary hover:bg-primary/10 transition-all disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {owTesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+                    TEST
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="font-mono text-xs text-primary/60 uppercase">Open WebUI API Key (optional)</label>
+                <div className="relative">
+                  <input
+                    type={showOwKey ? "text" : "password"}
+                    value={cfg.OPENWEBUI_API_KEY}
+                    onChange={(e) => change("OPENWEBUI_API_KEY", e.target.value)}
+                    placeholder="Leave blank if auth is disabled"
+                    className="w-full bg-background border border-primary/30 px-3 py-2 pr-10 font-mono text-xs text-primary focus:border-primary focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowOwKey((s) => !s)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-primary/40 hover:text-primary/70"
+                  >
+                    {showOwKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              {owTestResult && (
+                <div className={`p-3 border font-mono text-xs space-y-1 ${owTestResult.ok ? "border-[#11d97a]/30 bg-[#11d97a]/5" : "border-[#f03248]/30 bg-[#f03248]/5"}`}>
+                  <Badge ok={owTestResult.ok} />
+                  {owTestResult.ok && owTestResult.models && owTestResult.models.length > 0 && (
+                    <div className="text-primary/50 pt-1">
+                      <span className="text-primary/30">AVAILABLE MODELS: </span>
+                      {owTestResult.models.join(", ")}
+                    </div>
+                  )}
+                  {!owTestResult.ok && (
+                    <div className="text-[#f03248]/80">{owTestResult.error}</div>
+                  )}
+                </div>
+              )}
+
+              <div className="p-3 border border-primary/10 bg-primary/5 font-mono text-xs text-primary/40 space-y-1">
+                <div className="text-primary/60 mb-1">ROUTING BEHAVIOR</div>
+                <div>• Ollama host set + Open WebUI host set → <span className="text-primary">Ollama primary, Open WebUI fallback</span></div>
+                <div>• Only Open WebUI set → <span className="text-primary">Open WebUI primary (model names must match)</span></div>
+                <div>• Neither reachable → <span className="text-primary">Rule engine (autopilot) mode</span></div>
               </div>
             </CardContent>
           </Card>

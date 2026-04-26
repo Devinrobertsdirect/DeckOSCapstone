@@ -161,15 +161,16 @@ export function StartScreen({ onStart }: Props) {
         </div>
 
         {/* Logo */}
-        <h1
-          className="font-sans font-black text-6xl sm:text-7xl tracking-[0.08em] uppercase select-none"
+        <img
+          src="/logo.png"
+          alt="Deck OS"
+          className="select-none"
           style={{
-            color: "hsl(var(--primary))",
+            width: "clamp(180px, 55vw, 280px)",
+            filter: "drop-shadow(0 0 18px hsl(var(--primary) / 0.55))",
             animation: "ss-logo-pulse 3s ease-in-out infinite",
           }}
-        >
-          DECK&nbsp;OS
-        </h1>
+        />
 
         {/* Divider */}
         <div className="flex items-center gap-3 w-full">
