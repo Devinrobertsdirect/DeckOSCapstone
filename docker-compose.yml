@@ -41,6 +41,22 @@ services:
       timeout: 3s
       retries: 10
 
+  # ── DB Migrations ────────────────────────────────────────────────────────────
+  # Runs drizzle-kit push once on startup, then exits. API waits for it.
+  migrate:
+    build:
+      context: .
+      dockerfile: artifacts/api-server/Dockerfile
+    command: ["sh", "-c", "cd /app && pnpm --filter @workspace/db run push"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://deckos:deckos@postgres:5432/deckos
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   # ── API Server ──────────────────────────────────────────────────────────────
   api:
     build:
@@ -50,6 +66,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
     environment:
@@ -69,6 +87,10 @@ services:
       # Cloud AI (optional)
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # OpenAI integration adapter — required by the internal AI client when
+      # OPENAI_API_KEY is set. Defaults to the standard OpenAI endpoint.
+      AI_INTEGRATIONS_OPENAI_API_KEY: ${AI_INTEGRATIONS_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}
+      AI_INTEGRATIONS_OPENAI_BASE_URL: ${AI_INTEGRATIONS_OPENAI_BASE_URL:-https://api.openai.com/v1}
       # Voice
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
       ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID:-pNInz6obpgDQGcFmaJgB}

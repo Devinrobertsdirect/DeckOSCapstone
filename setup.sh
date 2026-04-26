@@ -62,6 +62,11 @@ log "Checking PostgreSQL..."
 if command -v pg_isready &>/dev/null; then
   if pg_isready -q 2>/dev/null; then
     ok "PostgreSQL is running"
+    # Try to provision DB/user (no-ops silently if they already exist)
+    if command -v psql &>/dev/null; then
+      psql -U postgres -c "CREATE ROLE deckos WITH LOGIN PASSWORD 'deckos';" 2>/dev/null && ok "Created DB user 'deckos'" || true
+      psql -U postgres -c "CREATE DATABASE deckos OWNER deckos;" 2>/dev/null && ok "Created database 'deckos'" || true
+    fi
   else
     warn "PostgreSQL found but not responding. Make sure it is started:"
     warn "  macOS (Homebrew):   brew services start postgresql@16"
@@ -70,6 +75,8 @@ if command -v pg_isready &>/dev/null; then
   fi
 elif command -v psql &>/dev/null; then
   warn "psql found but pg_isready not in PATH. Assuming Postgres is available."
+  psql -U postgres -c "CREATE ROLE deckos WITH LOGIN PASSWORD 'deckos';" 2>/dev/null && ok "Created DB user 'deckos'" || true
+  psql -U postgres -c "CREATE DATABASE deckos OWNER deckos;" 2>/dev/null && ok "Created database 'deckos'" || true
 else
   warn "PostgreSQL client tools not found."
   warn "Install:  brew install postgresql@16  (macOS)"
