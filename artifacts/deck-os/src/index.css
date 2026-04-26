@@ -49,29 +49,29 @@
 
 :root, .dark {
   --background: 220 50% 4%;
-  --foreground: 190 90% 80%;
-  --border: 190 90% 30%;
+  --foreground: 217 70% 80%;
+  --border: 217 60% 28%;
 
   --card: 220 50% 6%;
-  --card-foreground: 190 90% 80%;
-  --card-border: 190 90% 30%;
+  --card-foreground: 217 70% 80%;
+  --card-border: 217 60% 28%;
 
   --popover: 220 50% 6%;
-  --popover-foreground: 190 90% 80%;
-  --popover-border: 190 90% 30%;
+  --popover-foreground: 217 70% 80%;
+  --popover-border: 217 60% 28%;
 
-  --primary: 190 90% 50%;
+  --primary: 217 88% 60%;
   --primary-foreground: 220 50% 4%;
-  --primary-rgb: 0, 200, 255;
+  --primary-rgb: 63, 132, 243;
 
   --secondary: 220 60% 15%;
-  --secondary-foreground: 190 90% 80%;
+  --secondary-foreground: 217 70% 80%;
 
   --muted: 220 40% 12%;
-  --muted-foreground: 190 40% 60%;
+  --muted-foreground: 217 40% 58%;
 
-  --accent: 190 90% 20%;
-  --accent-foreground: 190 90% 90%;
+  --accent: 217 80% 18%;
+  --accent-foreground: 217 80% 90%;
 
   --destructive: 0 90% 60%;
   --destructive-foreground: 0 0% 100%;
@@ -79,8 +79,8 @@
   --warning: 45 100% 50%;
   --success: 120 100% 40%;
 
-  --input: 190 90% 30%;
-  --ring: 190 90% 50%;
+  --input: 217 60% 28%;
+  --ring: 217 88% 60%;
 
   --radius: 0.25rem;
 
@@ -95,12 +95,12 @@
 
 /* ── COLOR THEMES ────────────────────────────────────── */
 [data-color="blue"] {
-  --primary: 190 90% 50%; --primary-rgb: 0, 200, 255;
-  --foreground: 190 90% 80%; --border: 190 90% 28%;
-  --card-foreground: 190 90% 80%; --card-border: 190 90% 28%;
-  --popover-foreground: 190 90% 80%; --popover-border: 190 90% 28%;
-  --muted-foreground: 190 40% 55%; --accent: 190 80% 18%;
-  --accent-foreground: 190 90% 90%; --ring: 190 90% 50%; --input: 190 80% 28%;
+  --primary: 217 88% 60%; --primary-rgb: 63, 132, 243;
+  --foreground: 217 70% 80%; --border: 217 60% 28%;
+  --card-foreground: 217 70% 80%; --card-border: 217 60% 28%;
+  --popover-foreground: 217 70% 80%; --popover-border: 217 60% 28%;
+  --muted-foreground: 217 40% 58%; --accent: 217 80% 18%;
+  --accent-foreground: 217 80% 90%; --ring: 217 88% 60%; --input: 217 60% 28%;
 }
 [data-color="green"] {
   --primary: 145 80% 45%; --primary-rgb: 17, 214, 120;
@@ -331,6 +331,30 @@ html[data-visual-mode="cinematic"] .cinematic-ambient {
   0%   { width: 0%; opacity: 0.5; }
   60%  { width: 100%; opacity: 1; }
   100% { width: 100%; opacity: 0; }
+}
+
+/* ───────────────────────────────────────────
+   START SCREEN ANIMATIONS
+─────────────────────────────────────────── */
+@keyframes ff-drift {
+  0%,100% { transform: translate(0,0) scale(1);   opacity: 0.15; }
+  33%      { transform: translate(var(--dx1,40px), var(--dy1,-30px)) scale(1.3); opacity: 0.75; }
+  66%      { transform: translate(var(--dx2,-25px), var(--dy2,45px)) scale(0.8); opacity: 0.45; }
+}
+
+@keyframes ss-logo-pulse {
+  0%,100% { text-shadow: 0 0 30px rgba(var(--primary-rgb),0.7), 0 0 80px rgba(var(--primary-rgb),0.3); }
+  50%      { text-shadow: 0 0 60px rgba(var(--primary-rgb),1),   0 0 140px rgba(var(--primary-rgb),0.6); }
+}
+
+@keyframes ss-start-blink {
+  0%,49% { box-shadow: 0 0 18px rgba(var(--primary-rgb),0.8), inset 0 0 20px rgba(var(--primary-rgb),0.1); border-color: rgba(var(--primary-rgb),0.9); }
+  50%,100%{ box-shadow: 0 0 6px  rgba(var(--primary-rgb),0.3), inset 0 0 0   transparent;                  border-color: rgba(var(--primary-rgb),0.3); }
+}
+
+@keyframes ss-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .pipeline-bar {

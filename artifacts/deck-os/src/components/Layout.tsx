@@ -18,10 +18,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const aiName   = cfg?.aiName ?? cfg?.systemName ?? "JARVIS";
   const userName = cfg?.userName ?? null;
   const [activeColor, setActiveColor] = useState<ColorScheme>(getStoredColor());
+  const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
     document.documentElement.classList.add("dark");
     applyColor(getStoredColor());
+  }, []);
+
+  useEffect(() => {
+    const iv = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(iv);
   }, []);
 
   function changeColor(c: ColorScheme) {
@@ -102,7 +108,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           {/* Color switcher */}
           <div className="hidden sm:flex items-center gap-1.5">
             {(["blue", "green", "yellow", "red"] as ColorScheme[]).map((c) => {
-              const HEX: Record<ColorScheme, string> = { blue: "#00c8ff", green: "#11d97a", yellow: "#ffc820", red: "#f03248" };
+              const HEX: Record<ColorScheme, string> = { blue: "#3f84f3", green: "#11d97a", yellow: "#ffc820", red: "#f03248" };
               return (
                 <button
                   key={c}
@@ -116,7 +122,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             })}
           </div>
           <div className="text-primary tabular-nums">
-            {new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            {now.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           </div>
         </div>
       </header>
@@ -182,7 +188,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               {userName && (
                 <div className="flex justify-between mb-0.5">
                   <span className="text-primary/40">CMDR:</span>
-                  <span className="text-[#00c8ff] uppercase tracking-wider truncate max-w-[80px]">{userName}</span>
+                  <span className="text-primary uppercase tracking-wider truncate max-w-[80px]">{userName}</span>
                 </div>
               )}
               <div className="flex justify-between">

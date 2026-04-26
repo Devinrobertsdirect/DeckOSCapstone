@@ -43,19 +43,19 @@ export function isInitialized(): boolean {
 // Color system
 // ─────────────────────────────────────────────
 const COLOR_LABEL: Record<ColorScheme, string> = {
-  blue:   "CYAN",
+  blue:   "COBALT",
   green:  "EMERALD",
   yellow: "AMBER",
   red:    "CRIMSON",
 };
 const COLOR_HEX: Record<ColorScheme, string> = {
-  blue:   "#00c8ff",
+  blue:   "#3f84f3",
   green:  "#11d97a",
   yellow: "#ffc820",
   red:    "#f03248",
 };
 const COLOR_DESC: Record<ColorScheme, string> = {
-  blue:   "clinical precision",
+  blue:   "deep focus",
   green:  "growth & clarity",
   yellow: "energy & focus",
   red:    "decisive authority",

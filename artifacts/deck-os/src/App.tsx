@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Layout } from "@/components/Layout";
 import { VisualModeProvider } from "@/contexts/VisualMode";
 import { Onboarding, isInitialized, applyColor, getStoredColor } from "@/components/Onboarding";
+import { StartScreen } from "@/components/StartScreen";
 import NotFound from "@/pages/not-found";
 
 import Dashboard from "@/pages/Dashboard";
@@ -54,13 +55,21 @@ function Router() {
 }
 
 function App() {
+  const [started,     setStarted]     = useState(() => sessionStorage.getItem("deckos_session") === "1");
   const [initialized, setInitialized] = useState(() => isInitialized());
+
+  function handleStart() {
+    sessionStorage.setItem("deckos_session", "1");
+    setStarted(true);
+  }
 
   return (
     <VisualModeProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          {!initialized ? (
+          {!started ? (
+            <StartScreen onStart={handleStart} />
+          ) : !initialized ? (
             <Onboarding onComplete={() => setInitialized(true)} />
           ) : (
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
