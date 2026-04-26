@@ -18,6 +18,7 @@ import MemorySystem from "@/pages/MemorySystem";
 import DeviceControl from "@/pages/DeviceControl";
 import CommandConsole from "@/pages/CommandConsole";
 import MapView from "@/pages/MapView";
+import RoutinesPage from "@/pages/RoutinesPage";
 
 applyColor(getStoredColor());
 
@@ -42,6 +43,7 @@ function Router() {
         <Route path="/devices" component={DeviceControl} />
         <Route path="/commands" component={CommandConsole} />
         <Route path="/map" component={MapView} />
+        <Route path="/routines" component={RoutinesPage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

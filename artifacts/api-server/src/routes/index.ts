@@ -20,6 +20,7 @@ import whatsappRouter from "./whatsapp";
 import locationRouter from "./location";
 import discoveryRouter from "./discovery";
 import personaRouter from "./persona";
+import routinesRouter from "./routines";
 
 const router: IRouter = Router();
 
@@ -44,5 +45,6 @@ router.use("/presence", presenceRouter);
 router.use("/vision", visionRouter);
 router.use(whatsappRouter);
 router.use(locationRouter);
+router.use(routinesRouter);
 
 export default router;

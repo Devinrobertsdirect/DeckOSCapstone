@@ -78,6 +78,28 @@ export const autonomyLogTable = pgTable("autonomy_log", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const routinesTable = pgTable("routines", {
+  id:           serial("id").primaryKey(),
+  name:         text("name").notNull(),
+  enabled:      boolean("enabled").notNull().default(true),
+  triggerType:  text("trigger_type").notNull().default("cron"),
+  triggerValue: text("trigger_value").notNull(),
+  actionType:   text("action_type").notNull(),
+  actionParams: jsonb("action_params").notNull().default({}),
+  lastRunAt:    timestamp("last_run_at", { withTimezone: true }),
+  nextRunAt:    timestamp("next_run_at", { withTimezone: true }),
+  createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:    timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+export const routineExecutionsTable = pgTable("routine_executions", {
+  id:          serial("id").primaryKey(),
+  routineId:   integer("routine_id").notNull(),
+  triggeredAt: timestamp("triggered_at", { withTimezone: true }).notNull().defaultNow(),
+  outcome:     text("outcome").notNull().default("success"),
+  result:      text("result"),
+});
+
 export type Goal = typeof goalsTable.$inferSelect;
 export type GoalPlan = typeof goalPlansTable.$inferSelect;
 export type FeedbackSignal = typeof feedbackSignalsTable.$inferSelect;
@@ -85,3 +107,5 @@ export type BehaviorProfile = typeof behaviorProfileTable.$inferSelect;
 export type Prediction = typeof predictionsTable.$inferSelect;
 export type AutonomyConfig = typeof autonomyConfigTable.$inferSelect;
 export type AutonomyLog = typeof autonomyLogTable.$inferSelect;
+export type Routine = typeof routinesTable.$inferSelect;
+export type RoutineExecution = typeof routineExecutionsTable.$inferSelect;

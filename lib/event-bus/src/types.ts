@@ -85,6 +85,8 @@ export const AutonomyEventTypeSchema = z.enum([
   "goal.created",
   "goal.completed",
   "goal.stale",
+  "routine.triggered",
+  "routine.completed",
 ]);
 
 export const ClientEventTypeSchema = z.enum([

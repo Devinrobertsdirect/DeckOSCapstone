@@ -11,10 +11,11 @@ import { MqttTransport } from "./mqtt-transport.js";
 import { WsDeviceTransport } from "./ws-device-transport.js";
 import { startSimulatedDevices } from "./simulated-devices.js";
 import type { BusEvent } from "@workspace/event-bus";
-import { db, deviceLocationsTable, deviceProfilesTable, autonomyConfigTable, autonomyLogTable } from "@workspace/db";
+import { db, deviceLocationsTable, deviceProfilesTable, autonomyConfigTable, autonomyLogTable, routinesTable } from "@workspace/db";
 import { generateDeviceProfile } from "./profile-generator.js";
 import { cognitiveLoop } from "./cognitive-loop.js";
 import { memoryEnricher } from "./memory-enricher.js";
+import { routineRunner } from "./routine-runner.js";
 import { eq } from "drizzle-orm";
 
 export let registry: PluginRegistry;
@@ -130,6 +131,37 @@ function registerQueryHandlers(deviceManager: DeviceManager): void {
     if (!pluginId) return;
     registry.setEnabled(pluginId, enabled);
   });
+}
+
+async function seedStarterRoutines(): Promise<void> {
+  try {
+    const existing = await db.select({ id: routinesTable.id }).from(routinesTable).limit(1);
+    if (existing.length > 0) return;
+
+    const starters: (typeof routinesTable.$inferInsert)[] = [
+      {
+        name:         "Daily health check at 07:00",
+        enabled:      false,
+        triggerType:  "cron",
+        triggerValue: "0 7 * * *",
+        actionType:   "run_health_check",
+        actionParams: {},
+      },
+      {
+        name:         "Alert on device disconnect",
+        enabled:      false,
+        triggerType:  "event",
+        triggerValue: "device.disconnected",
+        actionType:   "send_notification",
+        actionParams: { title: "Device Disconnected", message: "A device left the network." },
+      },
+    ];
+
+    await db.insert(routinesTable).values(starters);
+    logger.info({ count: starters.length }, "RoutineRunner: starter routines seeded");
+  } catch (err) {
+    logger.warn({ err }, "RoutineRunner: starter routine seed failed");
+  }
 }
 
 export async function bootstrap(): Promise<void> {
@@ -355,6 +387,10 @@ export async function bootstrap(): Promise<void> {
   // ── Memory Enricher (background UCM auto-enrichment) ─────────────────────
   memoryEnricher.start();
 
+  // ── Routine Runner (scheduled & event-based automations) ─────────────────
+  await seedStarterRoutines();
+  routineRunner.start();
+
   logger.info("EventBus, PluginRegistry, DeviceManager, and transports bootstrapped");
 }
 
@@ -371,6 +407,7 @@ export async function teardown(): Promise<void> {
   initiativeEngine.stop();
   cognitiveLoop.stop();
   memoryEnricher.stop();
+  routineRunner.stop();
 
   if (stopSimDevices) {
     stopSimDevices();
