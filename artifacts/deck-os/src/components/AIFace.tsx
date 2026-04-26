@@ -327,11 +327,28 @@ export function AIFace({ style, speaking = false, size = 120, color = "#3f84f3",
   );
 }
 
+const VALID_FACE_STYLES: FaceStyle[] = ["vocoder", "oscilloscope", "iris", "spectrum"];
+
+function readFaceStyle(): FaceStyle {
+  const raw = localStorage.getItem("deckos_face_style");
+  return (VALID_FACE_STYLES.includes(raw as FaceStyle) ? raw : "vocoder") as FaceStyle;
+}
+
+export function saveFaceStyle(style: FaceStyle) {
+  localStorage.setItem("deckos_face_style", style);
+  window.dispatchEvent(new CustomEvent("deckos:faceChanged", { detail: style }));
+}
+
 export function useFaceStyle(): FaceStyle {
-  const [style] = useState<FaceStyle>(() => {
-    const raw = localStorage.getItem("deckos_face_style");
-    const valid: FaceStyle[] = ["vocoder", "oscilloscope", "iris", "spectrum"];
-    return (valid.includes(raw as FaceStyle) ? raw : "vocoder") as FaceStyle;
-  });
+  const [style, setStyle] = useState<FaceStyle>(readFaceStyle);
+
+  useEffect(() => {
+    function onFaceChanged(e: Event) {
+      setStyle((e as CustomEvent<FaceStyle>).detail ?? readFaceStyle());
+    }
+    window.addEventListener("deckos:faceChanged", onFaceChanged);
+    return () => window.removeEventListener("deckos:faceChanged", onFaceChanged);
+  }, []);
+
   return style;
 }

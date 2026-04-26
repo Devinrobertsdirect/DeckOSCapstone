@@ -1,10 +1,16 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Bot, Mic2, Palette, Brain, MessageSquare, User2,
   ChevronRight, Check, Volume2, RefreshCw, Sparkles, SlidersHorizontal,
+  Play, Square, Wand2, MonitorPlay,
 } from "lucide-react";
 import { HudCorners } from "@/components/HudCorners";
+import { AIFace, saveFaceStyle, useFaceStyle } from "@/components/AIFace";
+import {
+  FACE_OPTIONS, QUIZ_QUESTIONS, VOICE_OPTIONS, VOICE_KEY,
+} from "@/components/CinematicOnboarding";
+import type { FaceStyle } from "@/components/AIFace";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -223,10 +229,338 @@ function PersonaPreview({ persona }: { persona: Partial<AiPersona> }) {
   );
 }
 
+// ── Recalibrate Tab ───────────────────────────────────────────────────────
+
+const API_BASE = `${import.meta.env.BASE_URL}api`;
+
+function RecalibrateTab() {
+  const currentFace  = useFaceStyle();
+  const [face, setFaceLocal]    = useState<FaceStyle>(currentFace);
+  const [voice, setVoiceLocal]  = useState<string>(() => localStorage.getItem(VOICE_KEY) ?? "onyx");
+  const [playing, setPlaying]   = useState<string | null>(null);
+  const [ttsError, setTtsError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const [quizQ, setQuizQ]       = useState(0);
+  const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
+  const [quizSelected, setQuizSelected] = useState<number | null>(null);
+  const [quizTransition, setQuizTransition] = useState(false);
+  const [quizDone, setQuizDone] = useState(false);
+  const [quizSaved, setQuizSaved] = useState(false);
+
+  const [faceSaved, setFaceSaved]   = useState(false);
+  const [voiceSaved, setVoiceSaved] = useState(false);
+
+  const q = QUIZ_QUESTIONS[quizQ]!;
+
+  useEffect(() => () => { audioRef.current?.pause(); }, []);
+
+  function applyFace(f: FaceStyle) {
+    setFaceLocal(f);
+    saveFaceStyle(f);
+    setFaceSaved(true);
+    setTimeout(() => setFaceSaved(false), 2000);
+  }
+
+  function applyVoice(v: string) {
+    setVoiceLocal(v);
+    localStorage.setItem(VOICE_KEY, v);
+    setVoiceSaved(true);
+    setTimeout(() => setVoiceSaved(false), 2000);
+  }
+
+  async function playSample(voiceId: string, sample: string) {
+    if (playing === voiceId) {
+      audioRef.current?.pause();
+      setPlaying(null);
+      return;
+    }
+    setPlaying(voiceId);
+    setTtsError(null);
+    try {
+      const res = await fetch(`${API_BASE}/vision/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: sample, voice: voiceId }),
+      });
+      if (!res.ok) throw new Error("TTS unavailable");
+      const data = await res.json() as { audio?: string; format?: string };
+      if (!data.audio) throw new Error("No audio in response");
+      const url = `data:audio/${data.format ?? "mp3"};base64,${data.audio}`;
+      audioRef.current?.pause();
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => setPlaying(null);
+      audio.onerror = () => setPlaying(null);
+      await audio.play();
+    } catch {
+      setPlaying(null);
+      setTtsError("TTS not configured — select any voice to continue");
+    }
+  }
+
+  function handleQuizSelect(idx: number) {
+    if (quizTransition) return;
+    setQuizSelected(idx);
+    setTimeout(() => {
+      setQuizTransition(true);
+      const newAnswers = { ...quizAnswers, [q.id]: q.options[idx]!.value };
+      setQuizAnswers(newAnswers);
+      setTimeout(() => {
+        if (quizQ + 1 < QUIZ_QUESTIONS.length) {
+          setQuizQ((c) => c + 1);
+          setQuizSelected(null);
+          setQuizTransition(false);
+        } else {
+          setQuizDone(true);
+        }
+      }, 350);
+    }, 250);
+  }
+
+  function resetQuiz() {
+    setQuizQ(0);
+    setQuizAnswers({});
+    setQuizSelected(null);
+    setQuizTransition(false);
+    setQuizDone(false);
+    setQuizSaved(false);
+  }
+
+  async function saveQuizToUCM() {
+    try {
+      await fetch(`${API_BASE}/ucm/preferences`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: {
+            verbosity:      quizAnswers["verbosity"]      ?? 0.5,
+            formality:      quizAnswers["formality"]      ?? 0.5,
+            humor:          quizAnswers["humor"]          ?? 0.4,
+            autonomy:       quizAnswers["autonomy"]       ?? 0.5,
+            analyticalDepth: quizAnswers["analyticalDepth"] ?? 0.5,
+          },
+          merge: true,
+        }),
+      });
+      setQuizSaved(true);
+    } catch {
+      setQuizSaved(false);
+    }
+  }
+
+  return (
+    <div className="space-y-8">
+
+      {/* ── Face picker ─────────────────────────────────────────────────── */}
+      <div className="relative border border-primary/30 bg-card/40 p-5">
+        <HudCorners />
+        <div className="flex items-center justify-between mb-4">
+          <SectionHeader icon={MonitorPlay} title="AI FACE STYLE" sub="Live preview — changes apply instantly to the sidebar" />
+          {faceSaved && (
+            <span className="font-mono text-[10px] text-emerald-400 flex items-center gap-1">
+              <Check className="w-3 h-3" /> APPLIED
+            </span>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {FACE_OPTIONS.map((f) => {
+            const active = face === f.id;
+            return (
+              <button
+                key={f.id}
+                onClick={() => applyFace(f.id)}
+                className="flex flex-col items-center p-4 border transition-all text-left"
+                style={{
+                  borderColor: active ? "hsl(var(--primary))" : "rgba(var(--primary-rgb),0.15)",
+                  background:  active ? "rgba(var(--primary-rgb),0.08)" : "rgba(var(--primary-rgb),0.02)",
+                  boxShadow:   active ? "0 0 20px rgba(var(--primary-rgb),0.12)" : "none",
+                  transform:   active ? "scale(1.02)" : "scale(1)",
+                  transition:  "all 0.2s ease",
+                }}
+              >
+                <div className="mb-3 flex items-center justify-center h-14">
+                  <AIFace
+                    style={f.id}
+                    speaking={active}
+                    size={f.id === "iris" ? 52 : 90}
+                    color={active ? "hsl(var(--primary))" : "rgba(var(--primary-rgb),0.35)"}
+                  />
+                </div>
+                <div className={`font-mono font-bold text-[10px] tracking-widest mb-0.5 ${active ? "text-primary" : "text-primary/50"}`}>
+                  {f.label}
+                </div>
+                <div className="font-mono text-center text-primary/30" style={{ fontSize: "0.62rem" }}>
+                  {f.description}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Voice picker ────────────────────────────────────────────────── */}
+      <div className="relative border border-primary/30 bg-card/40 p-5">
+        <HudCorners />
+        <div className="flex items-center justify-between mb-4">
+          <SectionHeader icon={Volume2} title="VOICE SYNTHESIS" sub="Click play to hear a sample — select to apply" />
+          {voiceSaved && (
+            <span className="font-mono text-[10px] text-emerald-400 flex items-center gap-1">
+              <Check className="w-3 h-3" /> APPLIED
+            </span>
+          )}
+        </div>
+        {ttsError && (
+          <div className="mb-4 px-3 py-2 font-mono text-[10px] border"
+               style={{ borderColor: "#ffc82050", color: "#ffc820", background: "rgba(255,200,32,0.05)" }}>
+            {ttsError}
+          </div>
+        )}
+        <div className="space-y-2">
+          {VOICE_OPTIONS.map((v) => {
+            const active   = voice === v.id;
+            const isPlaying = playing === v.id;
+            return (
+              <div
+                key={v.id}
+                onClick={() => applyVoice(v.id)}
+                className="flex items-center gap-3 p-3 border cursor-pointer transition-all"
+                style={{
+                  borderColor: active ? "hsl(var(--primary))" : "rgba(var(--primary-rgb),0.15)",
+                  background:  active ? "rgba(var(--primary-rgb),0.07)" : "transparent",
+                }}
+              >
+                <button
+                  onClick={(e) => { e.stopPropagation(); playSample(v.id, v.sample); }}
+                  className="shrink-0 w-7 h-7 border flex items-center justify-center transition-all hover:bg-primary/10"
+                  style={{ borderColor: active ? "hsl(var(--primary))" : "rgba(var(--primary-rgb),0.3)" }}
+                  title={isPlaying ? "Stop" : "Play sample"}
+                >
+                  {isPlaying
+                    ? <Square className="w-2.5 h-2.5 text-primary" />
+                    : <Play  className="w-2.5 h-2.5" style={{ color: active ? "hsl(var(--primary))" : "rgba(var(--primary-rgb),0.5)" }} />
+                  }
+                </button>
+                <div className="flex-1 min-w-0">
+                  <div className={`font-mono font-bold text-[10px] tracking-widest ${active ? "text-primary" : "text-primary/50"}`}>
+                    {v.label}
+                  </div>
+                  <div className="font-mono text-[9px] text-primary/30 truncate">{v.description}</div>
+                </div>
+                {active && <Check className="w-3 h-3 text-primary shrink-0" />}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Personality calibration quiz ─────────────────────────────────── */}
+      <div className="relative border border-primary/30 bg-card/40 p-5">
+        <HudCorners />
+        <div className="flex items-center justify-between mb-4">
+          <SectionHeader icon={Brain} title="PERSONALITY CALIBRATION" sub="Retake the diagnostic quiz to update AI behaviour" />
+          {!quizDone && quizQ > 0 && (
+            <button
+              onClick={resetQuiz}
+              className="flex items-center gap-1 font-mono text-[9px] text-primary/40 hover:text-primary/70 transition-all"
+            >
+              <RefreshCw className="w-3 h-3" /> RESTART
+            </button>
+          )}
+        </div>
+
+        {quizDone ? (
+          <div className="text-center py-6">
+            <div className="text-emerald-400 font-mono text-xs tracking-widest mb-2">
+              ✓ CALIBRATION COMPLETE
+            </div>
+            <div className="text-primary/40 font-mono text-[10px] mb-6">
+              {QUIZ_QUESTIONS.length} diagnostics recorded
+            </div>
+            {quizSaved ? (
+              <div className="flex items-center justify-center gap-2 text-emerald-400 font-mono text-xs">
+                <Check className="w-4 h-4" /> SAVED TO AI PROFILE
+              </div>
+            ) : (
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={saveQuizToUCM}
+                  className="flex items-center gap-2 px-5 py-2.5 border border-primary/60 font-mono text-[10px] text-primary hover:bg-primary/10 transition-all tracking-widest"
+                >
+                  <Check className="w-3 h-3" /> SAVE CALIBRATION
+                </button>
+                <button
+                  onClick={resetQuiz}
+                  className="flex items-center gap-2 px-4 py-2.5 border border-primary/20 font-mono text-[10px] text-primary/40 hover:text-primary/70 transition-all"
+                >
+                  <RefreshCw className="w-3 h-3" /> REDO
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            <div className="flex justify-between items-center mb-3">
+              <div className="font-mono text-[9px] text-primary/40 tracking-widest">
+                DIAGNOSTIC {quizQ + 1} / {QUIZ_QUESTIONS.length}
+              </div>
+              <div className="font-mono text-[9px] text-primary/40">
+                {Math.round((quizQ / QUIZ_QUESTIONS.length) * 100)}%
+              </div>
+            </div>
+            <div className="h-0.5 mb-5 rounded-full bg-primary/10">
+              <div
+                className="h-0.5 rounded-full transition-all"
+                style={{ width: `${(quizQ / QUIZ_QUESTIONS.length) * 100}%`, background: "hsl(var(--primary))" }}
+              />
+            </div>
+            <div
+              style={{
+                opacity:    quizTransition ? 0 : 1,
+                transform:  quizTransition ? "translateX(12px)" : "translateX(0)",
+                transition: "all 0.25s ease",
+              }}
+            >
+              <div className="font-mono text-[9px] text-amber-400 tracking-widest uppercase mb-1">{q.prompt}</div>
+              <div className="font-mono font-bold text-sm mb-4 text-foreground">{q.question}</div>
+              <div className="space-y-2">
+                {q.options.map((opt, i) => (
+                  <button
+                    key={i}
+                    onClick={() => handleQuizSelect(i)}
+                    className="w-full text-left p-3 border font-mono text-[10px] transition-all flex items-center gap-3"
+                    style={{
+                      borderColor: quizSelected === i ? "hsl(var(--primary))" : "rgba(var(--primary-rgb),0.15)",
+                      background:  quizSelected === i ? "rgba(var(--primary-rgb),0.10)" : "transparent",
+                      color:       quizSelected === i ? "hsl(var(--primary))" : undefined,
+                      transform:   quizSelected === i ? "translateX(4px)" : "translateX(0)",
+                      transition:  "all 0.15s ease",
+                    }}
+                  >
+                    <span
+                      className="shrink-0 w-4 h-4 border flex items-center justify-center text-[8px]"
+                      style={{ borderColor: quizSelected === i ? "hsl(var(--primary))" : "rgba(var(--primary-rgb),0.3)" }}
+                    >
+                      {quizSelected === i ? "✓" : ""}
+                    </span>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────
 
 export default function AiPersonality() {
   const qc = useQueryClient();
+  const [tab, setTab] = useState<"persona" | "recalibrate">("persona");
 
   const { data: saved, isLoading } = useQuery<AiPersona>({
     queryKey: ["ai-persona"],
@@ -283,24 +617,48 @@ export default function AiPersonality() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 font-mono text-xs text-primary/60 uppercase tracking-widest">
           <Bot className="w-4 h-4 text-primary" />
-          <span>AI.PERSONALITY // PERSONA CONFIGURATION</span>
+          <span>AI.PERSONALITY // {tab === "recalibrate" ? "RECALIBRATE" : "PERSONA CONFIGURATION"}</span>
         </div>
-        <button
-          onClick={() => save.mutate()}
-          disabled={save.isPending}
-          className="flex items-center gap-2 border border-primary/40 px-4 py-2 font-mono text-xs
-                     text-primary hover:bg-primary/10 transition-all disabled:opacity-40"
-        >
-          {save.isPending ? (
-            <RefreshCw className="w-3 h-3 animate-spin" />
-          ) : saved_ok ? (
-            <Check className="w-3 h-3 text-emerald-400" />
-          ) : (
-            <Check className="w-3 h-3" />
-          )}
-          {saved_ok ? "SAVED" : "SAVE CHANGES"}
-        </button>
+        {tab === "persona" && (
+          <button
+            onClick={() => save.mutate()}
+            disabled={save.isPending}
+            className="flex items-center gap-2 border border-primary/40 px-4 py-2 font-mono text-xs
+                       text-primary hover:bg-primary/10 transition-all disabled:opacity-40"
+          >
+            {save.isPending ? (
+              <RefreshCw className="w-3 h-3 animate-spin" />
+            ) : saved_ok ? (
+              <Check className="w-3 h-3 text-emerald-400" />
+            ) : (
+              <Check className="w-3 h-3" />
+            )}
+            {saved_ok ? "SAVED" : "SAVE CHANGES"}
+          </button>
+        )}
       </div>
+
+      {/* Tab navigation */}
+      <div className="flex gap-1 border-b border-primary/15 pb-0">
+        {(["persona", "recalibrate"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className="flex items-center gap-1.5 px-4 py-2 font-mono text-[10px] tracking-widest uppercase transition-all border-b-2 -mb-px"
+            style={{
+              borderBottomColor: tab === t ? "hsl(var(--primary))" : "transparent",
+              color: tab === t ? "hsl(var(--primary))" : "rgba(var(--primary-rgb),0.35)",
+            }}
+          >
+            {t === "persona" ? <Brain className="w-3 h-3" /> : <Wand2 className="w-3 h-3" />}
+            {t === "persona" ? "PERSONA" : "RECALIBRATE"}
+          </button>
+        ))}
+      </div>
+
+      {tab === "recalibrate" ? (
+        <RecalibrateTab />
+      ) : (
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* ── Left column: identity + dials ─────────────────────────────── */}
@@ -579,6 +937,8 @@ export default function AiPersonality() {
           </div>
         </div>
       </div>
+
+      )}
     </div>
   );
 }

@@ -27,7 +27,7 @@ interface Props {
 
 type Step = "boot" | "name" | "quiz" | "voice" | "face" | "firstcontact";
 
-const QUIZ_QUESTIONS = [
+export const QUIZ_QUESTIONS = [
   {
     id: "verbosity",
     prompt: "DIAGNOSTIC 01 — RESPONSE PROTOCOL",
@@ -80,7 +80,7 @@ const QUIZ_QUESTIONS = [
   },
 ];
 
-const VOICE_OPTIONS = [
+export const VOICE_OPTIONS = [
   {
     id: "onyx",
     label: "ONYX",
@@ -101,7 +101,7 @@ const VOICE_OPTIONS = [
   },
 ];
 
-const FACE_OPTIONS: { id: FaceStyle; label: string; description: string }[] = [
+export const FACE_OPTIONS: { id: FaceStyle; label: string; description: string }[] = [
   {
     id: "vocoder",
     label: "VOCODER",
