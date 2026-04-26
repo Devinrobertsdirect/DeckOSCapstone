@@ -1,220 +1,108 @@
-# Workspace
+# Overview
 
-## Overview
+This project is a pnpm workspace monorepo utilizing TypeScript to build a comprehensive, AI-powered cyberdeck dashboard inspired by JARVIS. It aims to create a central command center for personal AI, focusing on spatial awareness, cognitive modeling, goal management, and autonomous operation. The system integrates various components, including a web-based dashboard (Deck OS), a command-line interface (DeckOS CLI), a mobile chat interface (DeckOS Mobile), and a robust API server. The overarching vision is to provide a highly interactive, intelligent, and customizable interface for managing digital and physical environments.
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+# User Preferences
 
-## Stack
+I prefer clear and concise communication. When explaining concepts, please avoid overly technical jargon where simpler terms suffice. I value an iterative development approach, so small, frequent updates are preferred over large, infrequent ones. Before implementing any major architectural changes or introducing new external dependencies, please ask for my approval. Ensure that any code changes are well-documented and follow best practices for maintainability and readability. I do not want any changes to be made to the `artifacts` folder unless explicitly requested, as this folder contains the deployable applications.
 
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+# System Architecture
 
-## Key Commands
+## Core Technologies
 
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
+- **Monorepo**: pnpm workspaces
+- **Backend**: Node.js 24, Express 5, PostgreSQL, Drizzle ORM, Zod
+- **Frontend**: React, Vite, TailwindCSS, Leaflet (for spatial mapping)
+- **API Codegen**: Orval (from OpenAPI spec)
+- **Build**: esbuild
 
-See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+## Workspace Structure
 
-## Artifacts
+The project is organized into `artifacts` and `lib` packages:
+- `artifacts/deck-os`: Web-based JARVIS-style dashboard (React, Vite, TailwindCSS). Features a Dashboard HUD, AI Router, Plugins, Memory Bank, Cognitive Model, Goal Manager, Feedback Loop, Autonomous Layer, Devices, Command Console, and a Spatial Map (`/map`) with live device tracking, geofencing, and interactive elements. Supports multiple visual modes (minimal, standard, cinematic).
+- `artifacts/deck-cli`: Node.js CLI with an interactive REPL, connecting to the API via WebSocket. Provides commands for system status, AI inference, device management, memory search, and monitoring. Supports a daemon mode for structured event streaming.
+- `artifacts/deck-mobile`: Mobile-first PWA chat interface (React, PWA) for interacting with the DeckOS AI via WebSocket.
+- `artifacts/api-server`: Express 5 backend serving all Deck OS routes. Features a WebSocket endpoint (`/api/ws`) for real-time event broadcasting and command ingestion, and a REST API for chat, voice identity, spatial data, UCM, goals, feedback, predictions, and autonomy.
 
-### Deck OS — JARVIS Command Center (`artifacts/deck-os`)
-- **Port**: 5173
-- **Preview Path**: `/`
-- Full Iron Man JARVIS-style cyberdeck dashboard
-- React + Vite + TailwindCSS, dark-only, JetBrains Mono font
-- Pages: Dashboard HUD, AI Router, Plugins, Memory Bank, Cognitive Model, Goal Manager, Feedback Loop, Autonomous Layer, Devices, Command Console, **Spatial Map** (`/map`)
-- Nav sections: SYSTEM (6 pages) | SPATIAL (1 page — Map) | AI PERSONALITY page | Visual Mode selector (sidebar footer)
-- **Spatial Awareness Layer**: Leaflet + OpenStreetMap map at `/map` — live device markers (colored per device), movement trails (polyline), geofence circles, geofence CRUD panel, device info popups, pending-zone placement mode (click-to-place)
-- Dashboard SPATIAL.TRACKER widget: `MiniMap` component shows tracker positions; click opens full `/map` page
-- Header: active tracker count badge (`N TRACKERS`) appears when devices reported GPS in last 5 min
-- Visual Mode system: minimal / standard / cinematic — persisted to localStorage, applied via `data-visual-mode` HTML attribute
-- Dashboard: fixed AI.MODE tile overflow, added LIVE badges + timestamps per tile, live console lines, richer SYS.SUMMARY panel
-- HUD corners (hud-corner-tl/tr/bl/br): visible only in cinematic mode via CSS
-- Cinematic mode: breathing card glow (card-breathe), value flicker, enhanced scanline, nav active glow
-- Minimal mode: no scanline, no grid, no glow animations, desaturated palette
+## Event Bus (`lib/event-bus`)
 
-### DeckOS CLI (`artifacts/deck-cli`)
-- **Binary**: `node artifacts/deck-cli/dist/index.mjs`
-- Standalone Node.js CLI tool connecting to the API server via WebSocket (`/api/ws`)
-- **Interactive REPL**: readline-based prompt (`deck>`) with color-coded event display using chalk
-- **Commands**: `status`, `infer <prompt>`, `mode <mode>`, `devices list`, `memory search <query>`, `plugins list`, `monitor`, `help`, `exit`
-- **Daemon mode** (`--daemon`): streams all events as NDJSON to stdout; stderr for connection status
-- **Auto-reconnect**: 3s reconnect on disconnect
-- **Config**: `WS_URL` env var (default `ws://localhost:PORT/api/ws`)
-- **Color scheme**: system=blue, ai=cyan, device=yellow, plugin=green, memory=magenta, ws=gray
+The central communication mechanism. All components interact exclusively through this async, non-blocking EventBus. Events are enveloped with `id`, `source`, `target`, `type`, `payload`, `timestamp` and categorized (e.g., `system.*`, `plugin.*`, `device.*`, `ai.*`). Events are persisted to a `system_events` DB table. A plugin interface allows for extensible functionality.
 
-### DeckOS Mobile — JARVIS Chat (`artifacts/deck-mobile`)
-- **Port**: 26138
-- **Preview Path**: `/mobile/`
-- Mobile-first PWA chat interface connecting to DeckOS AI
-- WebSocket client auto-reconnects to `wss://{host}/api/ws`
-- Sends messages via `POST /api/chat` with `channel: "mobile"`
-- Shows Voice Identity profile (GET /api/voice-identity)
-- PWA-installable (manifest.json, apple-mobile-web-app meta tags)
-- JARVIS dark theme matching deck-os aesthetic
+## API Server Bootstrap
 
-### API Server (`artifacts/api-server`)
-- **Port**: 8080
-- **Preview Path**: `/api`
-- Express 5 backend with all Deck OS routes
-- **WebSocket**: `ws` package attached at `/api/ws` — broadcasts all EventBus events to connected clients
-- **History replay**: On new WebSocket connection, immediately replays last 50 events from `system_events` DB as a `history.replay` batch
-- **Command ingestion**: Clients can send `{ type, payload }` JSON over WebSocket; server validates and emits onto the bus. Malformed messages get a `ws.error` response
-- **Lifecycle events**: `client.connected` and `client.disconnected` emitted on the bus for each connection
-- **Daemon mode**: `--daemon` flag suppresses interactive output and enables JSON-only stdout logging (systemd-compatible)
-- **POST /api/chat** — routes through AI inference, writes to memory, emits ai.chat.request/response events, returns `{response, channel, sessionId, latencyMs, modelUsed, fromCache}`
-- **GET /api/chat/history** — returns session chat history
-- **GET/PUT /api/voice-identity** — manages the Voice Identity profile (tone, pacing, formality, verbosity, emotionRange)
-- DB tables added: `chat_messages`, `voice_identity`
-- **Spatial API** (`artifacts/api-server/src/routes/location.ts`): `POST /api/location/ingest` (store GPS + trigger geofence check), `GET /api/location/latest` (latest position per device), `GET /api/location/:id/trail` (history), `GET/POST/PUT/DELETE /api/geofences`, `GET /api/geofences/:id/events`
-- **GPS auto-persistence**: bootstrap.ts subscribes to `device.reading` events — any that include GPS values are auto-persisted to `device_locations` table and emit `device.location.updated`
-- **Geofence engine**: haversine-based enter/exit detection; transitions stored in `geofence_events` table and emitted as `device.geofence.triggered` bus events
-- DB tables added: `device_locations`, `geofences`, `geofence_events`
-- Event types added: `device.location.updated`, `device.geofence.triggered`, `device.status.updated`
+Initializes the EventBus, PluginRegistry (auto-scans `dist/plugins/`), MemoryService, and Inference module. It handles graceful shutdown and exposes a paginated event history endpoint (`GET /api/events/history`).
 
-## Architecture
+## AI Router Layer
 
-### Event Bus (`lib/event-bus`)
-Central nervous system for all inter-component communication. All components communicate exclusively through the event bus — never directly.
+Manages AI inference, supporting Ollama, llama.cpp, and OpenAI-compatible APIs. Includes response caching and intelligent mode switching (DIRECT_EXECUTION, LIGHT_REASONING, DEEP_REASONING, HYBRID_MODE).
 
-- **EventBus class**: async, non-blocking processing loop; `emit`, `subscribe`, `unsubscribe`, `history` methods
-- **Event envelope**: `id`, `source`, `target`, `type`, `payload`, `timestamp`
-- **Event types**: discriminated unions for `system.*`, `plugin.*`, `device.*`, `ai.*`, `memory.*`, `client.*`
-- **Client event types added**: `client.connected`, `client.disconnected`
-- **Persistence**: fire-and-forget writes to `system_events` DB table
-- **Plugin interface**: abstract `Plugin` base class with `init(context)`, `on_event(event)`, `execute(payload)`, `shutdown()`
-- **PluginContext**: sandboxed — `emit`, `subscribe`, optional `memory` (PluginMemory), optional `infer` (AI inference fn) exposed
-- **Types added**: `PluginMemory`, `MemoryStoreOptions`, `MemoryEntry`, `InferOptions`, `InferResult`
+## Plugin System
 
-### API Server Bootstrap
-- **Bootstrap**: `src/lib/bootstrap.ts` — initializes EventBus singleton, PluginRegistry with memory+infer injection, MemoryService, emits `system.boot`
-- **Bus singleton**: `src/lib/bus.ts` — wired to DB persistence via `system_events` table
-- **Plugin registry**: `src/lib/plugin-registry.ts` — auto-scans `dist/plugins/` at startup, injects `memory` and `infer` into PluginContext
-- **MemoryService**: `src/lib/memory-service.ts` — wraps `memory_entries` table; `store`, `search`, `getRecent`, `getById`, `expire` (TTL timer)
-- **Inference module**: `src/lib/inference.ts` — extracted AI inference logic (Ollama, rule-engine, caching) shared by ai-router route and ai_chat plugin
-- **Events endpoint**: `GET /api/events/history` — paginated, filterable event history (`?limit`, `?offset`, `?type`, `?source`)
-- **Graceful shutdown**: `SIGTERM`/`SIGINT` handlers call `registry.shutdownAll()` + `memoryService.stop()` before closing
-- **Plugin build**: `build.mjs` compiles each `src/plugins/*.ts` as a separate esbuild bundle into `dist/plugins/`; `absWorkingDir: artifactDir` required for workspace package resolution
+Dynamically loaded from `dist/plugins/`, each plugin is an esbuild bundle.
+- `system_monitor`: Polls system metrics and logs to memory.
+- `ai_chat`: Subscribes to chat requests, enriches prompts with memory, and uses AI inference.
 
-### AI Router Layer
-- Detects Ollama at localhost:11434 (auto-refresh every 30s)
-- Supports: Ollama local models, llama.cpp, OpenAI-compatible APIs
-- Default local models: mistral:instruct, llama3:8b, phi-3-mini
-- Falls back to rule-engine when no LLM available
-- Response caching (5 min TTL, up to 200 entries)
-- Intelligence modes: DIRECT_EXECUTION, LIGHT_REASONING, DEEP_REASONING, HYBRID_MODE
+## User Cognitive Model (UCM)
 
-### Plugin System
-- Auto-loaded from `dist/plugins/` at startup (each plugin is a separate esbuild bundle)
-- 2 production plugins: `system_monitor` (src/plugins/system_monitor.ts), `ai_chat` (src/plugins/ai_chat.ts)
-- 5 static API plugins in plugins route (file_manager, device_control, automation_scheduler, plus the above two)
-- system_monitor: polls every 5s, emits `system.monitor.metrics`, responds to `system.monitor.request`, writes to long-term memory every 12 polls (60s)
-- ai_chat: subscribes to `ai.chat.request`, enriches prompt with memory context, calls AI inference directly (not HTTP), emits `ai.chat.response`, writes exchange to short-term memory
-- Plugins receive `memory` (PluginMemory) and `infer` (AI fn) via PluginContext injection from PluginRegistry
+A structured identity layer (`/api/ucm`) with 7 editable layers (identity, preferences, context, goals, behaviorPatterns, emotionalModel, domainExpertise). It's a singleton pattern in the database, with API endpoints for CRUD operations and settings. Emits bus events on changes.
 
-### User Cognitive Model (`/api/ucm`)
-Structured identity layer — a continuously-updatable model of the user stored separately from event/memory logs.
+## Goal Manager + Planning Engine
 
-- **7 layers** (each independently editable/clearable): identity, preferences, context, goals, behaviorPatterns, emotionalModel, domainExpertise
-- **Singleton pattern**: one row per database (id=1), JSONB columns per layer
-- **API**: `GET /api/ucm` (read), `PATCH /api/ucm/:layer` (merge or replace), `DELETE /api/ucm/:layer` (clear), `DELETE /api/ucm` (full reset)
-- **Settings**: `GET /api/ucm/settings`, `PUT /api/ucm/settings` — control knobs: proactiveMode, memoryRetentionLevel (low/medium/high), emotionalModelingEnabled, personalizationLevel (off/minimal/full)
-- **Event bus**: emits `memory.stored` on writes, `memory.deleted` on clears, `system.config_changed` on settings changes
-- **Frontend**: COG.MODEL nav page with inline key-value editor per layer, collapsible sections, toggle switches for settings
+Manages user goals (`goals` table) with CRUD API, subgoal support, and auto-generated step-by-step plans (`goal_plans` table).
 
-### Goal Manager + Planning Engine (Level 3 + 4, `/api/goals`)
-- `goals` table: title, description, status, priority, tags, parentGoalId, completion %, deadline
-- `goal_plans` table: step-by-step auto-generated plans with confidence scoring and per-step status tracking
-- API: full CRUD `/api/goals`, subgoal support, `POST /api/goals/:id/plan` for auto-plan generation
-- Frontend: filterable goal list (active/completed/paused/decayed), goal detail panel, plan step completion tracking
-- Route: `/goals` | Nav label: GOALS
+## Feedback Loop
 
-### Feedback Loop (Level 5, `/api/feedback`)
-- `feedback_signals` table: signalType, weight, context JSON
-- `behavior_profile` table: verbosityLevel, proactiveFrequency, toneFormality, confidenceThreshold (0-100 scale), learnedPatterns JSONB
-- Signal types: response.accepted/ignored/rejected, command.repeated, suggestion.acted_on/dismissed, error.occurred, session.long/short
-- Adaptive behavior engine adjusts all 4 profile axes via weighted signal accumulation
-- API: `POST /api/feedback/signal`, `GET /api/feedback/profile`, `GET /api/feedback/signals`, `POST /api/feedback/profile/reset`
-- Frontend: live gauge bars, signal injection panel, signal history feed
-- Route: `/feedback` | Nav label: FEEDBACK
+Records user feedback signals (`feedback_signals` table) to adapt the AI's behavior profile (`behavior_profile` table) across verbosity, proactivity, tone, and confidence.
 
-### Prediction Engine + Autonomy Controller (Level 6 + 7, `/api/predictions`, `/api/autonomy`)
-- `predictions` table: prediction text, confidence %, suggestedAction, triggerWindow, basis JSON, status (pending/executed/rejected/expired)
-- `autonomy_config` table: enabled, safetyLevel (strict/moderate/permissive), confirmationRequired, allowedActions[], blockedActions[]
-- `autonomy_log` table: action, actionType (allowed/blocked/requires_confirmation), parameters, outcome, reason
-- Prediction generation analyzes active goals and feedback signals to emit actionable predictions
-- Safety enforcement: strict blocks all restricted actions; moderate requires confirmation; permissive allows all whitelisted
-- API: `POST /api/predictions/generate`, `GET /api/predictions`, `PATCH /api/predictions/:id`, `GET /api/autonomy/config`, `PUT /api/autonomy/config`, `POST /api/autonomy/execute`, `GET /api/autonomy/log`
-- Frontend: prediction list with accept/reject actions, autonomy controller config panel, test executor, execution log
-- Route: `/autonomous` | Nav label: AUTONOMOUS
+## Prediction Engine + Autonomy Controller
 
-### Memory System
-- Short-term: session memory with 1h TTL by default (PostgreSQL), auto-expired on timer
-- Long-term: persistent memory with keyword search (PostgreSQL)
-- New endpoints: `GET /api/memory/search?q=`, `GET /api/memory/recent`, `POST /api/memory`, `DELETE /api/memory/:id`
+Generates predictions (`predictions` table) based on goals and feedback. The Autonomy Controller (`autonomy_config` table) manages execution based on safety levels (strict, moderate, permissive) and logs all actions (`autonomy_log` table).
 
-### Device Abstraction Layer
-- 6 simulated devices: temperature sensor, humidity sensor, relay array, OLED display, network probe, Pi GPIO
-- Device types: sensor, actuator, display, network, simulated
-- Protocols: simulated (MQTT/WebSocket abstraction ready)
+## Memory System
 
-### Command Router
-- Rule-based command dispatch with AI-assist opt-in
-- Full command history stored in PostgreSQL
-- Commands: status, ping, help, plugins, devices, ls, memory search, infer
+- **Short-term**: PostgreSQL-based session memory with 1-hour TTL.
+- **Long-term**: Persistent PostgreSQL memory with keyword search.
 
-## Database Schema
+## Device Abstraction Layer
 
-- `memory_entries` — short and long-term memory storage
-- `command_history` — full command execution history
-- `system_events` — event bus traffic log (`level`, `message`=event type, `source`, `data`=full event JSON)
-- `user_cognitive_model` — UCM singleton (id=1); JSONB columns for 7 layers
-- `ucm_settings` — UCM control knobs singleton (id=1)
-- `goals` — goal entries with priority, status, completion %, parentGoalId for hierarchy
-- `goal_plans` — auto-generated step plans with confidence scoring
-- `feedback_signals` — weighted behavioral signal log
-- `behavior_profile` — adaptive behavior singleton; 4 axes adjusted by signal accumulation
-- `predictions` — AI-generated predictions tied to goals/signals with confidence %
-- `autonomy_config` — autonomy controller config singleton (safety level, allowed/blocked actions)
-- `autonomy_log` — full log of every attempted autonomous action and its outcome
+Supports simulated devices (sensors, actuators, displays, network) with an MQTT/WebSocket abstraction ready for various protocols.
 
-## Shared Packages
-- `lib/event-bus` — shared event types, EventBus class, Plugin base class; event categories: system, plugin, device, ai, memory, autonomy, client
-- `lib/api-zod` — generated Zod validators from OpenAPI spec
-- `lib/api-client-react` — generated React Query hooks from OpenAPI spec
-- `lib/db` — Drizzle ORM client and schema
+## Command Router
 
-## System Finalization (Completed)
+Rule-based command dispatch with AI-assist. Stores full command history in PostgreSQL.
 
-### Persistent Cognitive Loop (`artifacts/api-server/src/lib/cognitive-loop.ts`)
-- 10s tick emitting `system.cognitive_tick` bus events with system state snapshot
-- Auto-generates predictions every 5 min from active goals + feedback signals
-- Routes `autonomy.action.request` events for permissive-mode goals hourly
-- Stale goal decay: marks goals older than 72h without update as `stale`
-- Daily prediction pruning: deletes executed/rejected predictions > 7 days old
+## Cognitive Loop
 
-### Memory Enricher (`artifacts/api-server/src/lib/memory-enricher.ts`)
-- Runs every 5 min; analyzes recent memory entries for keyword patterns
-- Updates UCM `preferences` layer from recurring memory topics
-- Reads feedback signals to update UCM `behaviorPatterns` layer
+A persistent loop (10s tick) that emits `system.cognitive_tick` events, generates predictions every 5 minutes, handles autonomous actions, and manages goal decay and prediction pruning.
 
-### Autonomy Pipeline Wiring (`bootstrap.ts`)
-- Bus subscriber for `autonomy.action.request` events wired in bootstrap
-- Permissive mode → auto-executes + logs to `autonomy_log`; strict/moderate → emits `autonomy.confirmation.required`
+## Memory Enricher
 
-### Local-First Export
-- `.env.example` — all environment variables documented at repo root
-- `docker-compose.yml` — full local stack (postgres + api + web) at repo root
-- `artifacts/api-server/Dockerfile` and `artifacts/deck-os/Dockerfile` — production images
-- `artifacts/deck-os/nginx.conf` — nginx with `/api/` proxy + SPA fallback
+Analyzes recent memory entries to update the UCM's `preferences` and `behaviorPatterns` layers.
+
+## Local-First Development
+
+Includes `.env.example`, `docker-compose.yml` for a full local stack, and Dockerfiles for production images, along with Nginx configuration for the web application.
+
+# External Dependencies
+
+- **pnpm**: Monorepo package manager.
+- **Node.js**: Runtime environment.
+- **TypeScript**: Programming language.
+- **Express**: Web application framework.
+- **PostgreSQL**: Primary database.
+- **Drizzle ORM**: Object-relational mapper for PostgreSQL.
+- **Zod**: Schema declaration and validation library.
+- **Orval**: OpenAPI spec code generator.
+- **esbuild**: Bundler for JavaScript and TypeScript.
+- **React**: Frontend JavaScript library.
+- **Vite**: Frontend build tool.
+- **TailwindCSS**: CSS framework.
+- **Leaflet**: Open-source JavaScript library for interactive maps.
+- **OpenStreetMap**: Map data provider used with Leaflet.
+- **Ollama**: Local LLM inference engine.
+- **llama.cpp**: High-performance inference for LLaMA models.
+- **OpenAI-compatible APIs**: Integration with OpenAI-like services.
+- **ws**: WebSocket library for Node.js.
+- **chalk**: Terminal string styling.
+- **Docker**: Containerization platform.
+- **Nginx**: Web server and reverse proxy.

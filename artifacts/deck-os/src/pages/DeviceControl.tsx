@@ -1,21 +1,26 @@
-import { useState, useEffect, useMemo } from "react";
-import { Network, Cpu, Thermometer, Wifi, Monitor, Zap, AlertTriangle, CheckCircle2, Moon, Send, Sparkles, BookOpen } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import {
+  Network, Cpu, Thermometer, Wifi, Monitor, Zap, AlertTriangle,
+  CheckCircle2, Moon, Send, Sparkles, BookOpen, RefreshCw, History,
+  Activity, Clock,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useWebSocket, useWsEvents } from "@/contexts/WebSocketContext";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
+import { useWsEvents } from "@/contexts/WebSocketContext";
+import { useListDevices, useGetDevice, useControlDevice } from "@workspace/api-client-react";
 
 interface DeviceProfile {
-  deviceId:     string;
-  displayName:  string;
-  icon:         string;
-  description:  string;
-  protocol:     string;
-  deviceType:   string;
+  deviceId: string;
+  displayName: string;
+  icon: string;
+  description: string;
+  protocol: string;
+  deviceType: string;
   capabilities: string[];
-  eventSchema:  Record<string, unknown>;
+  eventSchema: Record<string, unknown>;
   controlStubs: { action: string; label: string; description: string; params: Record<string, string>; example?: string }[];
-  initialized:  boolean;
+  initialized: boolean;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -23,6 +28,13 @@ const STATUS_COLORS: Record<string, string> = {
   offline: "text-[#ff3333]",
   error: "text-[#ff6600]",
   standby: "text-[#ffaa00]",
+};
+
+const STATUS_BG: Record<string, string> = {
+  online: "border-[#22ff44]/30",
+  offline: "border-[#ff3333]/30",
+  error: "border-[#ff6600]/30",
+  standby: "border-[#ffaa00]/30",
 };
 
 const STATUS_ICONS: Record<string, React.ElementType> = {
@@ -51,143 +63,230 @@ const TYPE_COLORS: Record<string, string> = {
 type DeviceReading = {
   sensor?: string;
   value?: unknown;
-  unit?: string;
+  unit?: string | null;
+  timestamp?: string;
 };
 
-type Device = {
+type DeviceShape = {
   id: string;
   name: string;
   type?: string;
-  category?: string;
   protocol?: string;
   status?: string;
-  lastSeen?: string;
-  location?: string;
+  lastSeen?: string | null;
+  location?: string | null;
   capabilities?: string[];
   readings?: DeviceReading[];
 };
 
-type DeviceListPayload = { devices?: Device[]; count?: number };
-type DeviceReadingPayload = { deviceId?: string; readings?: DeviceReading[]; status?: string; newStatus?: string };
-type DeviceConnPayload = { deviceId?: string; status?: string; newStatus?: string };
+type WsDeviceReadingPayload = { deviceId?: string; readings?: DeviceReading[]; status?: string; newStatus?: string };
+type WsDeviceConnPayload = { deviceId?: string; status?: string; newStatus?: string };
+
+type ReadingSnapshot = DeviceReading[];
+
+function useDeviceHistory(deviceId: string | null) {
+  const [history, setHistory] = useState<ReadingSnapshot[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetch_ = useCallback(async () => {
+    if (!deviceId) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/devices/${deviceId}/history`);
+      if (!res.ok) return;
+      const json = await res.json();
+      setHistory((json.history as ReadingSnapshot[]) ?? []);
+    } catch {
+    } finally {
+      setLoading(false);
+    }
+  }, [deviceId]);
+
+  useEffect(() => {
+    setHistory([]);
+    fetch_();
+  }, [deviceId, fetch_]);
+
+  return { history, loading, refetch: fetch_ };
+}
 
 export default function DeviceControl() {
-  const { sendEvent } = useWebSocket();
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   const [action, setAction] = useState("");
-  const [controlLog, setControlLog] = useState<Array<{ deviceId: string; action: string; timestamp: string }>>([]);
+  const [controlLog, setControlLog] = useState<Array<{ deviceId: string; action: string; status: string; timestamp: string }>>([]);
+  const [activeTab, setActiveTab] = useState<"control" | "history">("control");
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
   const { data: profilesData } = useQuery<{ profiles: DeviceProfile[] }>({
     queryKey: ["device-profiles"],
-    queryFn:  () => fetch(`${import.meta.env.BASE_URL}api/devices/profiles`).then(r => r.json()),
+    queryFn: () => fetch(`${import.meta.env.BASE_URL}api/devices/profiles`).then(r => r.json()),
     refetchInterval: 30_000,
   });
   const profiles = profilesData?.profiles ?? [];
   const profileMap = Object.fromEntries(profiles.map(p => [p.deviceId, p]));
 
-  const deviceListEvents = useWsEvents((e) => e.type === "device.registry.snapshot");
+  const { data: restData, isLoading, dataUpdatedAt, refetch } = useListDevices({
+    query: { refetchInterval: 5_000 },
+  });
+  const restDevices: DeviceShape[] = restData?.devices ?? [];
+
+  const { data: selectedRestDevice } = useGetDevice(selectedDevice ?? "", {
+    query: {
+      enabled: !!selectedDevice,
+      refetchInterval: 3_000,
+    },
+  });
+
+  const controlMutation = useControlDevice();
+
   const readingEvents = useWsEvents((e) => e.type === "device.reading");
   const connEvents = useWsEvents((e) => e.type === "device.connected" || e.type === "device.disconnected");
   const stateChangedEvents = useWsEvents((e) => e.type === "device.state.changed");
   const commandEvents = useWsEvents((e) => e.type === "device.command.send" || e.type === "device.command_sent");
 
   useEffect(() => {
-    sendEvent({ type: "device.list.request", payload: {} });
-  }, [sendEvent]);
+    if (dataUpdatedAt) setLastRefresh(new Date(dataUpdatedAt));
+  }, [dataUpdatedAt]);
 
-  const baseDevices: Device[] = useMemo(() => {
-    const latest = deviceListEvents.at(-1);
-    if (!latest) return [];
-    return ((latest.payload as DeviceListPayload).devices ?? []);
-  }, [deviceListEvents]);
-
-  const devices = useMemo(() => {
-    return baseDevices.map((d) => {
+  const devices = useMemo<DeviceShape[]>(() => {
+    return restDevices.map((d) => {
       const latestReading = readingEvents
-        .filter((e) => (e.payload as DeviceReadingPayload).deviceId === d.id)
+        .filter((e) => (e.payload as WsDeviceReadingPayload).deviceId === d.id)
         .at(-1);
       const latestConn = connEvents
-        .filter((e) => (e.payload as DeviceConnPayload).deviceId === d.id)
+        .filter((e) => (e.payload as WsDeviceConnPayload).deviceId === d.id)
         .at(-1);
       const latestStateChange = stateChangedEvents
-        .filter((e) => (e.payload as DeviceConnPayload).deviceId === d.id)
+        .filter((e) => (e.payload as WsDeviceConnPayload).deviceId === d.id)
         .at(-1);
 
-      const statePayload = latestStateChange?.payload as DeviceReadingPayload | undefined;
-      const status = statePayload?.newStatus ?? statePayload?.status
+      const statePayload = latestStateChange?.payload as WsDeviceReadingPayload | undefined;
+      const wsStatus = statePayload?.newStatus ?? statePayload?.status
         ?? (latestConn
           ? (latestConn.type === "device.connected" ? "online" : "offline")
-          : d.status ?? "offline");
+          : undefined);
+      const status = wsStatus ?? d.status ?? "offline";
 
-      const readings = statePayload?.readings?.length
+      const wsReadings = statePayload?.readings?.length
         ? statePayload.readings
         : latestReading
-          ? ((latestReading.payload as DeviceReadingPayload).readings ?? d.readings ?? [])
-          : d.readings ?? [];
+          ? ((latestReading.payload as WsDeviceReadingPayload).readings ?? undefined)
+          : undefined;
 
+      const readings = wsReadings ?? d.readings ?? [];
       return { ...d, status, readings };
     });
-  }, [baseDevices, readingEvents, connEvents, stateChangedEvents]);
+  }, [restDevices, readingEvents, connEvents, stateChangedEvents]);
 
-  const selected = devices.find((d) => d.id === selectedDevice);
+  const selected = useMemo(
+    () => devices.find((d) => d.id === selectedDevice) ?? null,
+    [devices, selectedDevice],
+  );
+
+  const selectedDetail = selectedRestDevice ?? selected;
 
   const onlineCount = devices.filter((d) => d.status === "online").length;
   const offlineCount = devices.filter((d) => d.status === "offline").length;
   const errorCount = devices.filter((d) => d.status === "error").length;
 
-  const handleControl = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedDevice || !action.trim()) return;
-    const act = action.trim();
-    setAction("");
-    setControlLog((prev) => [{ deviceId: selectedDevice, action: act, timestamp: new Date().toISOString() }, ...prev].slice(0, 30));
-    sendEvent({
-      type: "device.command.send",
-      payload: { deviceId: selectedDevice, action: act, parameters: {} },
-    });
-  };
+  const { history: deviceHistory, loading: historyLoading } = useDeviceHistory(
+    activeTab === "history" ? selectedDevice : null,
+  );
 
   const recentDeviceReadings = useMemo(() => {
     if (!selectedDevice) return [];
     return readingEvents
-      .filter((e) => (e.payload as DeviceReadingPayload).deviceId === selectedDevice)
+      .filter((e) => (e.payload as WsDeviceReadingPayload).deviceId === selectedDevice)
       .slice(-10)
       .reverse();
   }, [readingEvents, selectedDevice]);
 
+  const handleControl = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDevice || !action.trim()) return;
+    const act = action.trim();
+    setAction("");
+
+    try {
+      const result = await controlMutation.mutateAsync({
+        deviceId: selectedDevice,
+        data: { action: act, parameters: {} },
+      });
+      setControlLog((prev) => [
+        {
+          deviceId: selectedDevice,
+          action: act,
+          status: result.success ? "OK" : "FAIL",
+          timestamp: new Date().toISOString(),
+        },
+        ...prev,
+      ].slice(0, 30));
+    } catch {
+      setControlLog((prev) => [
+        { deviceId: selectedDevice, action: act, status: "ERR", timestamp: new Date().toISOString() },
+        ...prev,
+      ].slice(0, 30));
+    }
+  };
+
+  const sendQuickCommand = async (deviceId: string, act: string) => {
+    try {
+      await controlMutation.mutateAsync({ deviceId, data: { action: act, parameters: {} } });
+    } catch {}
+  };
+
   return (
     <div className="flex flex-col gap-6 h-full">
-      <div className="flex items-center gap-2 font-mono text-xs text-primary/60 uppercase tracking-widest">
-        <Network className="w-4 h-4 text-primary" />
-        <span>DEVICE.CONTROL // IOT ABSTRACTION LAYER</span>
+      <div className="flex items-center justify-between font-mono text-xs text-primary/60 uppercase tracking-widest">
+        <div className="flex items-center gap-2">
+          <Network className="w-4 h-4 text-primary" />
+          <span>DEVICE.CONTROL // IOT ABSTRACTION LAYER</span>
+        </div>
+        <div className="flex items-center gap-3">
+          {isLoading && <RefreshCw className="w-3 h-3 animate-spin text-primary/40" />}
+          <span className="flex items-center gap-1 text-primary/30">
+            <Clock className="w-3 h-3" />
+            {lastRefresh.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+          </span>
+          <button
+            onClick={() => refetch()}
+            className="border border-primary/20 px-2 py-1 hover:border-primary/40 hover:bg-primary/5 transition-all flex items-center gap-1"
+          >
+            <RefreshCw className="w-3 h-3" /> SYNC
+          </button>
+        </div>
       </div>
 
-      {devices.length > 0 && (
-        <div className="grid grid-cols-4 gap-4">
-          <div className="border border-primary/20 bg-card/40 p-3 font-mono text-center">
-            <div className="text-2xl text-primary font-bold">{devices.length}</div>
-            <div className="text-xs text-muted-foreground">TOTAL</div>
-          </div>
-          <div className="border border-[#22ff44]/30 bg-card/40 p-3 font-mono text-center">
-            <div className="text-2xl text-[#22ff44] font-bold">{onlineCount}</div>
-            <div className="text-xs text-muted-foreground">ONLINE</div>
-          </div>
-          <div className="border border-[#ff3333]/30 bg-card/40 p-3 font-mono text-center">
-            <div className="text-2xl text-[#ff3333] font-bold">{offlineCount}</div>
-            <div className="text-xs text-muted-foreground">OFFLINE</div>
-          </div>
-          <div className="border border-[#ff6600]/30 bg-card/40 p-3 font-mono text-center">
-            <div className="text-2xl text-[#ff6600] font-bold">{errorCount}</div>
-            <div className="text-xs text-muted-foreground">ERROR</div>
-          </div>
+      <div className="grid grid-cols-4 gap-4">
+        <div className="border border-primary/20 bg-card/40 p-3 font-mono text-center">
+          <div className="text-2xl text-primary font-bold">{devices.length}</div>
+          <div className="text-xs text-muted-foreground">TOTAL</div>
         </div>
-      )}
+        <div className={`border bg-card/40 p-3 font-mono text-center ${onlineCount > 0 ? "border-[#22ff44]/30" : "border-primary/10"}`}>
+          <div className="text-2xl text-[#22ff44] font-bold">{onlineCount}</div>
+          <div className="text-xs text-muted-foreground">ONLINE</div>
+        </div>
+        <div className={`border bg-card/40 p-3 font-mono text-center ${offlineCount > 0 ? "border-[#ff3333]/30" : "border-primary/10"}`}>
+          <div className="text-2xl text-[#ff3333] font-bold">{offlineCount}</div>
+          <div className="text-xs text-muted-foreground">OFFLINE</div>
+        </div>
+        <div className={`border bg-card/40 p-3 font-mono text-center ${errorCount > 0 ? "border-[#ff6600]/30" : "border-primary/10"}`}>
+          <div className="text-2xl text-[#ff6600] font-bold">{errorCount}</div>
+          <div className="text-xs text-muted-foreground">ERROR</div>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
         <div className="col-span-2 overflow-y-auto space-y-3">
-          {devices.length === 0 && (
+          {isLoading && devices.length === 0 && (
+            <div className="font-mono text-xs text-primary/30 p-4 border border-primary/10 text-center flex items-center justify-center gap-2">
+              <RefreshCw className="w-3 h-3 animate-spin" />
+              // Polling /api/devices...
+            </div>
+          )}
+          {!isLoading && devices.length === 0 && (
             <div className="font-mono text-xs text-primary/30 p-4 border border-primary/10 text-center">
-              // Waiting for device.registry.snapshot from EventBus...
+              // No devices registered. Connect a device or check MQTT config.
             </div>
           )}
           {devices.map((device) => {
@@ -195,10 +294,9 @@ export default function DeviceControl() {
             const TypeIcon = TYPE_ICONS[device.type ?? "simulated"] ?? Cpu;
             const isSelected = selectedDevice === device.id;
             const isActuator = device.type === "actuator" || device.capabilities?.includes("toggle");
-            const profile  = profileMap[device.id];
-
+            const profile = profileMap[device.id];
             const recentReadings = readingEvents
-              .filter((e) => (e.payload as DeviceReadingPayload).deviceId === device.id)
+              .filter((e) => (e.payload as WsDeviceReadingPayload).deviceId === device.id)
               .slice(-5);
 
             return (
@@ -207,7 +305,9 @@ export default function DeviceControl() {
                 data-testid={`device-${device.id}`}
                 onClick={() => setSelectedDevice(isSelected ? null : device.id)}
                 className={`border bg-card/40 p-4 cursor-pointer transition-all font-mono
-                  ${isSelected ? "border-primary shadow-[0_0_15px_rgba(0,212,255,0.15)]" : "border-primary/20 hover:border-primary/50"}`}
+                  ${isSelected
+                    ? "border-primary shadow-[0_0_15px_rgba(0,212,255,0.15)]"
+                    : `${STATUS_BG[device.status ?? "offline"] ?? "border-primary/20"} hover:border-primary/50`}`}
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
@@ -222,18 +322,15 @@ export default function DeviceControl() {
                             <Sparkles className="w-2.5 h-2.5" /> PROFILED
                           </span>
                         )}
-                        {!profile && device.protocol !== "simulated" && (
-                          <span className="flex items-center gap-1 text-[9px] bg-amber-500/15 text-amber-400 border border-amber-500/25 rounded px-1.5 py-0.5 uppercase tracking-wider font-bold">
-                            UNINITIALIZED
-                          </span>
-                        )}
                       </div>
                       <div className="text-xs text-muted-foreground">
                         [{(device.type ?? "device").toUpperCase()}] // {(device.protocol ?? "WS").toUpperCase()}
                         {device.location && ` // ${device.location}`}
                       </div>
-                      {profile?.description && (
-                        <div className="text-[10px] text-primary/30 mt-0.5 leading-snug max-w-xs">{profile.description}</div>
+                      {device.lastSeen && (
+                        <div className="text-[10px] text-primary/30 mt-0.5">
+                          LAST SEEN: {new Date(device.lastSeen).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -242,12 +339,10 @@ export default function DeviceControl() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          sendEvent({
-                            type: "device.command.send",
-                            payload: { deviceId: device.id, action: "toggle", parameters: {} },
-                          });
+                          sendQuickCommand(device.id, "toggle");
                         }}
-                        className="border border-[#ffaa00]/40 text-[#ffaa00] px-2 py-1 text-xs hover:bg-[#ffaa00]/10 transition-all"
+                        disabled={controlMutation.isPending}
+                        className="border border-[#ffaa00]/40 text-[#ffaa00] px-2 py-1 text-xs hover:bg-[#ffaa00]/10 transition-all disabled:opacity-40"
                       >
                         TOGGLE
                       </button>
@@ -274,25 +369,21 @@ export default function DeviceControl() {
                 )}
 
                 {recentReadings.length > 1 && (
-                  <div className="flex gap-0.5 h-8 items-end mt-1">
+                  <div className="flex gap-0.5 h-6 items-end mt-1">
                     {recentReadings.map((re, ri) => {
-                      const p = re.payload as DeviceReadingPayload;
+                      const p = re.payload as WsDeviceReadingPayload;
                       const r = p.readings?.[0];
                       const v = typeof r?.value === "number" ? r.value : 0;
                       const pct = Math.min(100, Math.max(5, v));
                       return (
-                        <div
-                          key={ri}
-                          className="flex-1 bg-primary/20 rounded-sm"
-                          style={{ height: `${pct}%` }}
-                        />
+                        <div key={ri} className="flex-1 bg-primary/20 rounded-sm" style={{ height: `${pct}%` }} />
                       );
                     })}
                   </div>
                 )}
 
                 {device.capabilities && device.capabilities.length > 0 && (
-                  <div className="flex gap-1 mt-2">
+                  <div className="flex flex-wrap gap-1 mt-2">
                     {device.capabilities.map((cap) => (
                       <span key={cap} className="text-xs border border-primary/20 px-1.5 py-0.5 text-primary/50">{cap}</span>
                     ))}
@@ -304,96 +395,196 @@ export default function DeviceControl() {
         </div>
 
         <Card className="bg-card/40 border-primary/20 rounded-none flex flex-col min-h-0">
-          <CardHeader className="border-b border-primary/20 p-4">
-            <CardTitle className="font-mono text-sm text-primary">
+          <CardHeader className="border-b border-primary/20 p-4 pb-0">
+            <CardTitle className="font-mono text-sm text-primary mb-3">
               {selected ? `CONTROL // ${selected.id.toUpperCase()}` : "DEVICE.CONTROL"}
             </CardTitle>
+            {selected && (
+              <div className="flex gap-0 font-mono text-[10px]">
+                <button
+                  onClick={() => setActiveTab("control")}
+                  className={`px-3 py-1.5 border-b-2 transition-all ${activeTab === "control" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-primary/60"}`}
+                >
+                  <Activity className="w-3 h-3 inline mr-1" />CONTROL
+                </button>
+                <button
+                  onClick={() => setActiveTab("history")}
+                  className={`px-3 py-1.5 border-b-2 transition-all ${activeTab === "history" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-primary/60"}`}
+                >
+                  <History className="w-3 h-3 inline mr-1" />HISTORY
+                </button>
+              </div>
+            )}
           </CardHeader>
+
           <div className="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs min-h-0">
-            {selected && (() => {
-              const sp = profileMap[selected.id];
-              if (sp?.initialized) return (
-                <div className="mb-3 space-y-3">
-                  <div className="flex items-center gap-2 text-emerald-400/70 text-[10px]">
-                    <Sparkles className="w-3 h-3" />
-                    <span className="uppercase tracking-wider">Profile: {sp.displayName}</span>
+            {activeTab === "control" && (
+              <>
+                {selected && selectedDetail && (
+                  <div className="space-y-3 mb-3">
+                    {(() => {
+                      const sp = profileMap[selected.id];
+                      if (sp?.initialized) return (
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2 text-emerald-400/70 text-[10px]">
+                            <Sparkles className="w-3 h-3" />
+                            <span className="uppercase tracking-wider">Profile: {sp.displayName}</span>
+                          </div>
+                          {sp.description && <div className="text-primary/30 leading-relaxed">{sp.description}</div>}
+                          {sp.controlStubs.length > 0 && (
+                            <div>
+                              <div className="text-primary/40 mb-1.5 flex items-center gap-1.5">
+                                <BookOpen className="w-2.5 h-2.5" /> CONTROL STUBS:
+                              </div>
+                              <div className="space-y-1.5">
+                                {sp.controlStubs.map(stub => (
+                                  <button
+                                    key={stub.action}
+                                    onClick={() => sendQuickCommand(selected.id, stub.action)}
+                                    disabled={controlMutation.isPending}
+                                    className="w-full text-left flex items-start gap-2 border border-primary/15 hover:border-primary/40 bg-primary/5 hover:bg-primary/10 px-2.5 py-2 rounded transition-all disabled:opacity-40"
+                                  >
+                                    <span className="bg-primary/20 text-primary font-bold rounded px-1.5 py-0.5 text-[9px] uppercase shrink-0">{stub.label}</span>
+                                    <span className="text-primary/50 text-[10px]">{stub.description}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                      return (
+                        <div className="text-primary/40 space-y-1">
+                          <div>CAPABILITIES:</div>
+                          {(selected.capabilities ?? []).map((c) => <div key={c} className="pl-2 text-primary/60">// {c}</div>)}
+                          {(selected.capabilities ?? []).length === 0 && <div className="pl-2 text-primary/20">none listed</div>}
+                        </div>
+                      );
+                    })()}
+
+                    {selectedDetail.readings && selectedDetail.readings.length > 0 && (
+                      <div>
+                        <div className="text-primary/40 mb-1.5 flex items-center gap-1.5">
+                          <Activity className="w-2.5 h-2.5" /> LIVE READINGS:
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {(selectedDetail.readings as DeviceReading[]).map((r, i) => (
+                            <div key={i} className="border border-primary/15 bg-background/60 p-1.5 text-center">
+                              <div className="text-[9px] text-muted-foreground uppercase">{(r.sensor ?? "").replace(/_/g, " ")}</div>
+                              <div className="text-primary font-bold">
+                                {typeof r.value === "boolean" ? (r.value ? "ON" : "OFF") : String(r.value ?? "---")}
+                                {r.unit && <span className="text-muted-foreground ml-1">{r.unit}</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {recentDeviceReadings.length > 0 && (
+                      <div>
+                        <div className="text-primary/40 mb-1">RECENT WS READINGS:</div>
+                        {recentDeviceReadings.slice(0, 5).map((re, i) => {
+                          const p = re.payload as WsDeviceReadingPayload;
+                          const readings = p.readings ?? [];
+                          return (
+                            <div key={i} className="text-primary/50 py-0.5 border-b border-primary/10 flex justify-between items-center">
+                              <span>
+                                {readings.map((r, ri) => (
+                                  <span key={ri} className="mr-2">
+                                    {r.sensor}: <span className="text-primary">{String(r.value)}{r.unit ? r.unit : ""}</span>
+                                  </span>
+                                ))}
+                              </span>
+                              <span className="text-primary/30 text-[9px] shrink-0">{new Date(re.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                  {sp.description && (
-                    <div className="text-primary/30 leading-relaxed">{sp.description}</div>
-                  )}
-                  {sp.controlStubs.length > 0 && (
-                    <div>
-                      <div className="text-primary/40 mb-1.5 flex items-center gap-1.5"><BookOpen className="w-2.5 h-2.5" /> CONTROL STUBS:</div>
-                      <div className="space-y-1.5">
-                        {sp.controlStubs.map(stub => (
-                          <button
-                            key={stub.action}
-                            onClick={() => {
-                              sendEvent({ type: "device.command.send", payload: { deviceId: selected.id, action: stub.action, parameters: {} } });
-                            }}
-                            className="w-full text-left flex items-start gap-2 border border-primary/15 hover:border-primary/40 bg-primary/5 hover:bg-primary/10 px-2.5 py-2 rounded transition-all"
-                          >
-                            <span className="bg-primary/20 text-primary font-bold rounded px-1.5 py-0.5 text-[9px] uppercase shrink-0">{stub.label}</span>
-                            <span className="text-primary/50 text-[10px]">{stub.description}</span>
-                          </button>
+                )}
+
+                {controlLog.map((log, i) => (
+                  <div key={i} className="border border-primary/20 p-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-primary/40">&gt; [{log.deviceId.slice(0, 12)}] {log.action}</span>
+                      <span className={`text-[10px] font-bold ${log.status === "OK" ? "text-[#22ff44]" : "text-[#ff3333]"}`}>{log.status}</span>
+                    </div>
+                    <div className="text-primary/30 text-[10px]">{new Date(log.timestamp).toLocaleTimeString()}</div>
+                  </div>
+                ))}
+
+                {commandEvents.slice(-5).reverse().map((e, i) => (
+                  <div key={i} className="border border-[#22ff44]/20 p-2">
+                    <div className="text-[#22ff44]/60">&gt; device.command.send</div>
+                    <div className="text-primary/40 text-xs">{JSON.stringify(e.payload).slice(0, 80)}</div>
+                  </div>
+                ))}
+
+                {!selected && (
+                  <div className="text-primary/30">// Select a device to view details and send commands</div>
+                )}
+              </>
+            )}
+
+            {activeTab === "history" && selected && (
+              <>
+                {historyLoading && (
+                  <div className="flex items-center gap-2 text-primary/30">
+                    <RefreshCw className="w-3 h-3 animate-spin" /> Loading history...
+                  </div>
+                )}
+                {!historyLoading && deviceHistory.length === 0 && (
+                  <div className="text-primary/30">// No history entries found for this device.</div>
+                )}
+                {deviceHistory.slice().reverse().slice(0, 50).map((snapshot, i) => {
+                  const snapshotTime = snapshot[0]?.timestamp;
+                  return (
+                    <div key={i} className="border border-primary/10 bg-background/30 p-2 space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-primary/40 uppercase text-[9px]">READING SNAPSHOT</span>
+                        {snapshotTime && (
+                          <span className="text-primary/30 text-[9px]">
+                            {new Date(snapshotTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                          </span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-1">
+                        {snapshot.map((r, ri) => (
+                          <div key={ri} className="text-[10px]">
+                            <span className="text-primary/40 uppercase">{(r.sensor ?? "").replace(/_/g, " ")}: </span>
+                            <span className="text-primary/70 font-bold">
+                              {typeof r.value === "boolean" ? (r.value ? "ON" : "OFF") : String(r.value ?? "---")}
+                              {r.unit && <span className="text-primary/40 ml-0.5">{r.unit}</span>}
+                            </span>
+                          </div>
                         ))}
                       </div>
                     </div>
-                  )}
-                </div>
-              );
-              return (
-                <div className="mb-3 text-primary/40 space-y-1">
-                  <div>CAPABILITIES:</div>
-                  {(selected.capabilities ?? []).map((c) => <div key={c} className="pl-2 text-primary/60">// {c}</div>)}
-                  {(selected.capabilities ?? []).length === 0 && <div className="pl-2 text-primary/20">none listed</div>}
-                </div>
-              );
-            })()}
-            {selected && recentDeviceReadings.length > 0 && (
-              <div className="mb-3">
-                <div className="text-primary/40 mb-1">RECENT READINGS:</div>
-                {recentDeviceReadings.slice(0, 5).map((re, i) => (
-                  <div key={i} className="text-primary/50 flex justify-between">
-                    <span>reading</span>
-                    <span>{new Date(re.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {controlLog.map((log, i) => (
-              <div key={i} className="border border-primary/20 p-2">
-                <div className="text-primary/40 mb-1">&gt; [{log.deviceId}] {log.action}</div>
-                <div className="text-primary/60 text-xs">{new Date(log.timestamp).toLocaleTimeString()}</div>
-              </div>
-            ))}
-            {commandEvents.slice(-5).reverse().map((e, i) => (
-              <div key={i} className="border border-[#22ff44]/20 p-2">
-                <div className="text-[#22ff44]/60">&gt; device.command.send</div>
-                <div className="text-primary/40 text-xs">{JSON.stringify(e.payload).slice(0, 80)}</div>
-              </div>
-            ))}
-            {controlLog.length === 0 && commandEvents.length === 0 && (
-              <div className="text-primary/30">// Select a device and send a command</div>
+                  );
+                })}
+              </>
             )}
           </div>
+
           <form onSubmit={handleControl} className="border-t border-primary/20 p-4 flex gap-2">
             <span className="text-primary font-mono mt-2 text-sm">&gt;</span>
             <Input
               data-testid="device-action-input"
               value={action}
               onChange={(e) => setAction(e.target.value)}
-              disabled={!selected}
+              disabled={!selected || controlMutation.isPending}
               className="font-mono border-none bg-transparent focus-visible:ring-0 text-primary px-0 disabled:opacity-40"
-              placeholder={selected ? `Action (on, off, read, toggle...)` : "Select a device first"}
+              placeholder={selected ? "Action (on, off, read, toggle...)" : "Select a device first"}
             />
             <button
               type="submit"
               data-testid="device-control-submit"
-              disabled={!selected}
+              disabled={!selected || controlMutation.isPending}
               className="border border-primary/40 px-3 font-mono text-xs text-primary hover:bg-primary/10 transition-all disabled:opacity-40"
             >
-              <Send className="w-3 h-3" />
+              {controlMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
             </button>
           </form>
         </Card>
