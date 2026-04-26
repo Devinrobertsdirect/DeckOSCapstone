@@ -1,0 +1,202 @@
+import { Router } from "express";
+import { z } from "zod/v4";
+import { db, chatMessagesTable, voiceIdentityTable, memoryEntriesTable } from "@workspace/db";
+import { desc, eq } from "drizzle-orm";
+import { runInference } from "../lib/inference.js";
+import { bus } from "../lib/bus.js";
+import { broadcast } from "../lib/ws-server.js";
+
+const router = Router();
+
+const ChatRequestSchema = z.object({
+  message: z.string().min(1).max(4096),
+  channel: z.enum(["web", "mobile", "whatsapp", "voice", "console"]).default("web"),
+  sessionId: z.string().default("default"),
+});
+
+const VoiceIdentityUpdateSchema = z.object({
+  tone: z.string().optional(),
+  pacing: z.string().optional(),
+  formality: z.number().int().min(0).max(100).optional(),
+  verbosity: z.number().int().min(0).max(100).optional(),
+  emotionRange: z.string().optional(),
+});
+
+// ── POST /api/chat ─────────────────────────────────────────────────────────
+router.post("/chat", async (req, res) => {
+  const parsed = ChatRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { message, channel, sessionId } = parsed.data;
+  const startMs = Date.now();
+
+  // emit request event
+  bus.emit({
+    source: `channel.${channel}`,
+    target: "ai-router",
+    type: "ai.chat.request",
+    payload: { message: message.substring(0, 200), channel, sessionId },
+  });
+
+  // store user message
+  await db.insert(chatMessagesTable).values({
+    sessionId, role: "user", content: message, channel,
+  });
+
+  // fetch recent memory for context
+  const recentMemory = await db
+    .select({ content: memoryEntriesTable.content })
+    .from(memoryEntriesTable)
+    .where(eq(memoryEntriesTable.type, "short_term"))
+    .orderBy(desc(memoryEntriesTable.createdAt))
+    .limit(5);
+
+  const recentHistory = await db
+    .select()
+    .from(chatMessagesTable)
+    .where(eq(chatMessagesTable.sessionId, sessionId))
+    .orderBy(desc(chatMessagesTable.createdAt))
+    .limit(10);
+
+  const context = recentHistory.reverse().map((m) => ({
+    role: m.role as "user" | "assistant",
+    content: m.content,
+  }));
+
+  const systemPrompt = buildSystemPrompt(recentMemory.map((m) => m.content));
+
+  let response: string;
+  let modelUsed: string;
+  let fromCache: boolean;
+
+  try {
+    const result = await runInference({
+      prompt: message,
+      mode: "fast",
+      context: [{ role: "system", content: systemPrompt }, ...context.slice(-8)],
+      useCache: true,
+    });
+    response = result.response;
+    modelUsed = result.modelUsed;
+    fromCache = result.fromCache;
+  } catch (err) {
+    req.log.error({ err }, "Chat inference failed");
+    response = "I'm having trouble processing that right now. Rule engine fallback active.";
+    modelUsed = "rule-engine-v1";
+    fromCache = false;
+  }
+
+  const latencyMs = Date.now() - startMs;
+
+  // store AI response
+  await db.insert(chatMessagesTable).values({
+    sessionId, role: "assistant", content: response, channel, modelUsed, latencyMs,
+  });
+
+  // store in memory
+  await db.insert(memoryEntriesTable).values({
+    type: "short_term",
+    content: `[${channel}] USER: ${message.substring(0, 200)} | AI: ${response.substring(0, 200)}`,
+    keywords: ["chat", channel, sessionId],
+    source: `chat.${channel}`,
+    expiresAt: new Date(Date.now() + 3 * 60 * 60 * 1000), // 3h TTL
+  });
+
+  bus.emit({
+    source: "ai-router",
+    target: `channel.${channel}`,
+    type: "ai.chat.response",
+    payload: { response: response.substring(0, 300), channel, sessionId, latencyMs, modelUsed, fromCache },
+  });
+
+  // broadcast raw to WS clients
+  broadcast({
+    type: "chat.message",
+    sessionId,
+    channel,
+    role: "assistant",
+    content: response,
+    modelUsed,
+    latencyMs,
+    fromCache,
+    timestamp: new Date().toISOString(),
+  });
+
+  res.json({ response, channel, sessionId, latencyMs, modelUsed, fromCache });
+});
+
+// ── GET /api/chat/history ──────────────────────────────────────────────────
+router.get("/chat/history", async (req, res) => {
+  const sessionId = (req.query.sessionId as string) || "default";
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+
+  const messages = await db
+    .select()
+    .from(chatMessagesTable)
+    .where(eq(chatMessagesTable.sessionId, sessionId))
+    .orderBy(desc(chatMessagesTable.createdAt))
+    .limit(limit);
+
+  res.json({ messages: messages.reverse(), sessionId });
+});
+
+// ── GET /api/voice-identity ────────────────────────────────────────────────
+router.get("/voice-identity", async (req, res) => {
+  const rows = await db.select().from(voiceIdentityTable).limit(1);
+  if (rows.length === 0) {
+    const defaults = await db
+      .insert(voiceIdentityTable)
+      .values({})
+      .returning();
+    res.json(defaults[0]);
+    return;
+  }
+  res.json(rows[0]);
+});
+
+// ── PUT /api/voice-identity ────────────────────────────────────────────────
+router.put("/voice-identity", async (req, res) => {
+  const parsed = VoiceIdentityUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const rows = await db.select().from(voiceIdentityTable).limit(1);
+  if (rows.length === 0) {
+    const created = await db
+      .insert(voiceIdentityTable)
+      .values({ ...parsed.data })
+      .returning();
+    res.json(created[0]);
+    return;
+  }
+
+  const updated = await db
+    .update(voiceIdentityTable)
+    .set({ ...parsed.data })
+    .where(eq(voiceIdentityTable.id, rows[0].id))
+    .returning();
+
+  bus.emit({
+    source: "system",
+    target: null,
+    type: "system.config_changed",
+    payload: { config: "voice_identity", changes: parsed.data },
+  });
+
+  res.json(updated[0]);
+});
+
+function buildSystemPrompt(memoryContext: string[]): string {
+  const memSection = memoryContext.length > 0
+    ? `\n\nRecent context from memory:\n${memoryContext.slice(0, 3).join("\n")}`
+    : "";
+
+  return `You are JARVIS, an AI assistant integrated into DeckOS — an intelligent command center. You are calm, precise, and slightly witty. Keep responses concise (2-4 sentences unless detail is needed). You have access to system context and memory. You assist the user with tasks, answer questions, and help manage their digital environment.${memSection}`;
+}
+
+export default router;

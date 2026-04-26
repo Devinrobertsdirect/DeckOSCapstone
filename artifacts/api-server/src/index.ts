@@ -1,6 +1,8 @@
+import http from "http";
 import app from "./app.js";
 import { logger } from "./lib/logger.js";
 import { bootstrap, teardown } from "./lib/bootstrap.js";
+import { attachWebSocketServer } from "./lib/ws-server.js";
 
 const rawPort = process.env["PORT"];
 
@@ -19,13 +21,16 @@ if (Number.isNaN(port) || port <= 0) {
 async function main() {
   await bootstrap();
 
-  const server = app.listen(port, (err?: Error) => {
+  const server = http.createServer(app);
+  attachWebSocketServer(server);
+
+  server.listen(port, (err?: Error) => {
     if (err) {
       logger.error({ err }, "Error listening on port");
       process.exit(1);
     }
 
-    logger.info({ port }, "Server listening");
+    logger.info({ port }, "Server listening (HTTP + WebSocket)");
   });
 
   const shutdown = async (signal: string) => {

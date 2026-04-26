@@ -13,9 +13,11 @@ import feedbackRouter from "./feedback";
 import predictionsRouter from "./predictions";
 import autonomyRouter from "./autonomy";
 import traceRouter from "./trace";
+import chatRouter from "./chat";
 
 const router: IRouter = Router();
 
+router.use(chatRouter);
 router.use(healthRouter);
 router.use(aiRouterRouter);
 router.use(pluginsRouter);

@@ -41,10 +41,25 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - Cinematic mode: breathing card glow (card-breathe), value flicker, enhanced scanline, nav active glow
 - Minimal mode: no scanline, no grid, no glow animations, desaturated palette
 
+### DeckOS Mobile — JARVIS Chat (`artifacts/deck-mobile`)
+- **Port**: 26138
+- **Preview Path**: `/mobile/`
+- Mobile-first PWA chat interface connecting to DeckOS AI
+- WebSocket client auto-reconnects to `wss://{host}/api/ws`
+- Sends messages via `POST /api/chat` with `channel: "mobile"`
+- Shows Voice Identity profile (GET /api/voice-identity)
+- PWA-installable (manifest.json, apple-mobile-web-app meta tags)
+- JARVIS dark theme matching deck-os aesthetic
+
 ### API Server (`artifacts/api-server`)
 - **Port**: 8080
 - **Preview Path**: `/api`
 - Express 5 backend with all Deck OS routes
+- **WebSocket**: `ws` package attached at `/api/ws` — broadcasts all EventBus events to connected clients
+- **POST /api/chat** — routes through AI inference, writes to memory, emits ai.chat.request/response events, returns `{response, channel, sessionId, latencyMs, modelUsed, fromCache}`
+- **GET /api/chat/history** — returns session chat history
+- **GET/PUT /api/voice-identity** — manages the Voice Identity profile (tone, pacing, formality, verbosity, emotionRange)
+- DB tables added: `chat_messages`, `voice_identity`
 
 ## Architecture
 
