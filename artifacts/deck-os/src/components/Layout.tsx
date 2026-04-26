@@ -3,22 +3,25 @@ import { getStoredConfig, applyColor, getStoredColor, type ColorScheme } from "@
 import { Link, useLocation } from "wouter";
 import {
   Activity, HardDrive, Cpu as Microchip, Network, Settings,
-  TerminalSquare, AlertTriangle, CheckCircle2, Brain,
-  Target, RefreshCw, Cpu, ChevronRight, Layers, Eye,
-  Minimize2, Maximize2, Film, Radio
+  TerminalSquare, AlertTriangle, CheckCircle2,
+  ChevronRight, Layers, Eye, Minimize2, Film, List,
 } from "lucide-react";
 import { useHealthCheck, getHealthCheckQueryKey } from "@workspace/api-client-react";
 import { useVisualMode, type VisualMode } from "@/contexts/VisualMode";
+import { useWebSocket } from "@/contexts/WebSocketContext";
+import { EventLogPanel } from "@/components/EventLogPanel";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [eventLogOpen, setEventLogOpen] = useState(false);
   const { mode, setMode } = useVisualMode();
   const cfg = useMemo(() => getStoredConfig(), []);
   const aiName   = cfg?.aiName ?? cfg?.systemName ?? "JARVIS";
   const userName = cfg?.userName ?? null;
   const [activeColor, setActiveColor] = useState<ColorScheme>(getStoredColor());
   const [now, setNow] = useState(() => new Date());
+  const { status: wsStatus, events } = useWebSocket();
 
   useEffect(() => {
     document.documentElement.classList.add("dark");
@@ -28,6 +31,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const iv = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(iv);
+  }, []);
+
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName.toLowerCase();
+      if (tag === "input" || tag === "textarea") return;
+      if (e.key === "e" || e.key === "E") {
+        setEventLogOpen((o) => !o);
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
   function changeColor(c: ColorScheme) {
@@ -48,6 +63,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const isOnline = health?.status === "ok" || health?.status === "online" || !!health;
 
+  const wsColor = wsStatus === "connected" ? "text-[#00ff88]" : wsStatus === "connecting" ? "text-[#ffaa00]" : "text-[#ff3333]";
+
   const navSections = [
     {
       label: "SYSTEM",
@@ -58,16 +75,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
         { href: "/memory",  icon: HardDrive,       label: "MEMORY.BANK" },
         { href: "/devices", icon: Network,         label: "DEVICES"   },
         { href: "/commands",icon: TerminalSquare,  label: "CONSOLE"   },
-      ],
-    },
-    {
-      label: "COGNITION",
-      items: [
-        { href: "/cognitive",  icon: Brain,     label: "COG.MODEL"  },
-        { href: "/goals",      icon: Target,    label: "GOALS"      },
-        { href: "/feedback",   icon: RefreshCw, label: "FEEDBACK"   },
-        { href: "/autonomous", icon: Cpu,       label: "AUTONOMOUS" },
-        { href: "/pulse",      icon: Radio,     label: "COG.PULSE"  },
       ],
     },
   ];
@@ -93,15 +100,25 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <span className="uppercase tracking-wider">VISUAL</span>
             <span className="text-primary">{mode.toUpperCase()}</span>
           </div>
+          {/* WS status */}
           <div className="flex items-center gap-1.5">
-            <span className="text-muted-foreground">STATUS</span>
+            <span className="text-muted-foreground">WS</span>
+            <span className={`${wsColor} flex items-center gap-1`}>
+              <span className={`w-1.5 h-1.5 rounded-full inline-block ${wsStatus === "connected" ? "bg-[#00ff88] animate-pulse" : wsStatus === "connecting" ? "bg-[#ffaa00] animate-pulse" : "bg-[#ff3333]"}`} />
+              {wsStatus.toUpperCase()}
+            </span>
+            <span className="text-primary/30">({events.length})</span>
+          </div>
+          {/* API status */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-muted-foreground">API</span>
             {isOnline ? (
               <span className="text-[#00ff88] flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" /> ONLINE
+                <CheckCircle2 className="w-3.5 h-3.5" /> OK
               </span>
             ) : (
               <span className="text-[#ff3333] flex items-center gap-1">
-                <AlertTriangle className="w-3.5 h-3.5" /> OFFLINE
+                <AlertTriangle className="w-3.5 h-3.5" /> DOWN
               </span>
             )}
           </div>
@@ -121,6 +138,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
               );
             })}
           </div>
+          {/* Event log toggle */}
+          <button
+            onClick={() => setEventLogOpen((o) => !o)}
+            title="Event Log (E)"
+            className={`flex items-center gap-1.5 px-2 py-1 border transition-all font-mono text-xs ${
+              eventLogOpen ? "border-primary bg-primary/10 text-primary" : "border-primary/20 text-primary/40 hover:text-primary/70"
+            }`}
+          >
+            <List className="w-3 h-3" />
+            <span className="hidden sm:inline">LOG</span>
+          </button>
           <div className="text-primary tabular-nums">
             {now.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           </div>
@@ -141,6 +169,25 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 ))}
               </div>
             ))}
+
+            {/* Event log sidebar button */}
+            <div className="mt-2">
+              <div className="font-mono text-xs text-primary/25 uppercase tracking-widest px-2 py-1.5 flex items-center gap-1">
+                <ChevronRight className="w-3 h-3" />TOOLS
+              </div>
+              <button
+                onClick={() => setEventLogOpen((o) => !o)}
+                className={`w-full flex items-center gap-2 px-3 py-2 border font-mono text-xs transition-all nav-link ${
+                  eventLogOpen
+                    ? "border-primary/50 bg-primary/10 text-primary nav-active"
+                    : "border-transparent text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                }`}
+              >
+                <List className="w-3.5 h-3.5 shrink-0" />
+                <span className="tracking-wider">EVENT.LOG</span>
+                <span className="ml-auto text-primary/25 text-xs">[E]</span>
+              </button>
+            </div>
           </div>
 
           {/* SETTINGS SECTION */}
@@ -224,6 +271,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </main>
       </div>
+
+      {/* EVENT LOG PANEL */}
+      <EventLogPanel open={eventLogOpen} onClose={() => setEventLogOpen(false)} />
     </div>
   );
 }

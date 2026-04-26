@@ -1,13 +1,8 @@
-import { useState } from "react";
-import {
-  useListDevices, getListDevicesQueryKey,
-  useGetDeviceStats, getGetDeviceStatsQueryKey,
-  useControlDevice,
-} from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useEffect, useMemo } from "react";
+import { Network, Cpu, Thermometer, Wifi, Monitor, Zap, AlertTriangle, CheckCircle2, Moon, Send } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Network, Cpu, Thermometer, Wifi, Monitor, Zap, AlertTriangle, CheckCircle2, Moon, Loader2, Send } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useWebSocket, useWsEvents } from "@/contexts/WebSocketContext";
 
 const STATUS_COLORS: Record<string, string> = {
   online: "text-[#22ff44]",
@@ -39,31 +34,104 @@ const TYPE_COLORS: Record<string, string> = {
   simulated: "text-muted-foreground",
 };
 
+type DeviceReading = {
+  sensor?: string;
+  value?: unknown;
+  unit?: string;
+};
+
+type Device = {
+  id: string;
+  name: string;
+  type?: string;
+  category?: string;
+  protocol?: string;
+  status?: string;
+  lastSeen?: string;
+  location?: string;
+  capabilities?: string[];
+  readings?: DeviceReading[];
+};
+
+type DeviceListPayload = { devices?: Device[]; count?: number };
+type DeviceReadingPayload = { deviceId?: string; readings?: DeviceReading[]; status?: string; newStatus?: string };
+type DeviceConnPayload = { deviceId?: string; status?: string; newStatus?: string };
+
 export default function DeviceControl() {
+  const { sendEvent } = useWebSocket();
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   const [action, setAction] = useState("");
-  const [controlLog, setControlLog] = useState<Array<{ deviceId: string; action: string; message: string; success: boolean }>>([]);
-  const qc = useQueryClient();
+  const [controlLog, setControlLog] = useState<Array<{ deviceId: string; action: string; timestamp: string }>>([]);
 
-  const { data } = useListDevices({ query: { queryKey: getListDevicesQueryKey(), refetchInterval: 3000 } });
-  const { data: stats } = useGetDeviceStats({ query: { queryKey: getGetDeviceStatsQueryKey(), refetchInterval: 5000 } });
-  const control = useControlDevice();
+  const deviceListEvents = useWsEvents((e) => e.type === "device.registry.snapshot");
+  const readingEvents = useWsEvents((e) => e.type === "device.reading");
+  const connEvents = useWsEvents((e) => e.type === "device.connected" || e.type === "device.disconnected");
+  const stateChangedEvents = useWsEvents((e) => e.type === "device.state.changed");
+  const commandEvents = useWsEvents((e) => e.type === "device.command.send" || e.type === "device.command_sent");
+
+  useEffect(() => {
+    sendEvent({ type: "device.list.request", payload: {} });
+  }, [sendEvent]);
+
+  const baseDevices: Device[] = useMemo(() => {
+    const latest = deviceListEvents.at(-1);
+    if (!latest) return [];
+    return ((latest.payload as DeviceListPayload).devices ?? []);
+  }, [deviceListEvents]);
+
+  const devices = useMemo(() => {
+    return baseDevices.map((d) => {
+      const latestReading = readingEvents
+        .filter((e) => (e.payload as DeviceReadingPayload).deviceId === d.id)
+        .at(-1);
+      const latestConn = connEvents
+        .filter((e) => (e.payload as DeviceConnPayload).deviceId === d.id)
+        .at(-1);
+      const latestStateChange = stateChangedEvents
+        .filter((e) => (e.payload as DeviceConnPayload).deviceId === d.id)
+        .at(-1);
+
+      const statePayload = latestStateChange?.payload as DeviceReadingPayload | undefined;
+      const status = statePayload?.newStatus ?? statePayload?.status
+        ?? (latestConn
+          ? (latestConn.type === "device.connected" ? "online" : "offline")
+          : d.status ?? "offline");
+
+      const readings = statePayload?.readings?.length
+        ? statePayload.readings
+        : latestReading
+          ? ((latestReading.payload as DeviceReadingPayload).readings ?? d.readings ?? [])
+          : d.readings ?? [];
+
+      return { ...d, status, readings };
+    });
+  }, [baseDevices, readingEvents, connEvents, stateChangedEvents]);
+
+  const selected = devices.find((d) => d.id === selectedDevice);
+
+  const onlineCount = devices.filter((d) => d.status === "online").length;
+  const offlineCount = devices.filter((d) => d.status === "offline").length;
+  const errorCount = devices.filter((d) => d.status === "error").length;
 
   const handleControl = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDevice || !action.trim()) return;
-    const act = action;
+    const act = action.trim();
     setAction("");
-    control.mutate({ deviceId: selectedDevice, data: { action: act } }, {
-      onSuccess: (res) => {
-        setControlLog((prev) => [{ deviceId: selectedDevice, action: act, message: res.message, success: res.success }, ...prev].slice(0, 30));
-        qc.invalidateQueries({ queryKey: getListDevicesQueryKey() });
-      },
+    setControlLog((prev) => [{ deviceId: selectedDevice, action: act, timestamp: new Date().toISOString() }, ...prev].slice(0, 30));
+    sendEvent({
+      type: "device.command.send",
+      payload: { deviceId: selectedDevice, action: act, parameters: {} },
     });
   };
 
-  const devices = data?.devices ?? [];
-  const selected = devices.find((d) => d.id === selectedDevice);
+  const recentDeviceReadings = useMemo(() => {
+    if (!selectedDevice) return [];
+    return readingEvents
+      .filter((e) => (e.payload as DeviceReadingPayload).deviceId === selectedDevice)
+      .slice(-10)
+      .reverse();
+  }, [readingEvents, selectedDevice]);
 
   return (
     <div className="flex flex-col gap-6 h-full">
@@ -72,22 +140,22 @@ export default function DeviceControl() {
         <span>DEVICE.CONTROL // IOT ABSTRACTION LAYER</span>
       </div>
 
-      {stats && (
+      {devices.length > 0 && (
         <div className="grid grid-cols-4 gap-4">
           <div className="border border-primary/20 bg-card/40 p-3 font-mono text-center">
-            <div className="text-2xl text-primary font-bold">{stats.total}</div>
+            <div className="text-2xl text-primary font-bold">{devices.length}</div>
             <div className="text-xs text-muted-foreground">TOTAL</div>
           </div>
           <div className="border border-[#22ff44]/30 bg-card/40 p-3 font-mono text-center">
-            <div className="text-2xl text-[#22ff44] font-bold">{stats.online}</div>
+            <div className="text-2xl text-[#22ff44] font-bold">{onlineCount}</div>
             <div className="text-xs text-muted-foreground">ONLINE</div>
           </div>
           <div className="border border-[#ff3333]/30 bg-card/40 p-3 font-mono text-center">
-            <div className="text-2xl text-[#ff3333] font-bold">{stats.offline}</div>
+            <div className="text-2xl text-[#ff3333] font-bold">{offlineCount}</div>
             <div className="text-xs text-muted-foreground">OFFLINE</div>
           </div>
           <div className="border border-[#ff6600]/30 bg-card/40 p-3 font-mono text-center">
-            <div className="text-2xl text-[#ff6600] font-bold">{stats.error}</div>
+            <div className="text-2xl text-[#ff6600] font-bold">{errorCount}</div>
             <div className="text-xs text-muted-foreground">ERROR</div>
           </div>
         </div>
@@ -95,10 +163,21 @@ export default function DeviceControl() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
         <div className="col-span-2 overflow-y-auto space-y-3">
+          {devices.length === 0 && (
+            <div className="font-mono text-xs text-primary/30 p-4 border border-primary/10 text-center">
+              // Waiting for device.registry.snapshot from EventBus...
+            </div>
+          )}
           {devices.map((device) => {
-            const StatusIcon = STATUS_ICONS[device.status] ?? AlertTriangle;
-            const TypeIcon = TYPE_ICONS[device.type] ?? Cpu;
+            const StatusIcon = STATUS_ICONS[device.status ?? "offline"] ?? AlertTriangle;
+            const TypeIcon = TYPE_ICONS[device.type ?? "simulated"] ?? Cpu;
             const isSelected = selectedDevice === device.id;
+            const isActuator = device.type === "actuator" || device.capabilities?.includes("toggle");
+
+            const recentReadings = readingEvents
+              .filter((e) => (e.payload as DeviceReadingPayload).deviceId === device.id)
+              .slice(-5);
+
             return (
               <div
                 key={device.id}
@@ -110,29 +189,45 @@ export default function DeviceControl() {
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div className={`p-2 border ${isSelected ? "border-primary bg-primary/10" : "border-primary/20"}`}>
-                      <TypeIcon className={`w-4 h-4 ${TYPE_COLORS[device.type] ?? "text-primary"}`} />
+                      <TypeIcon className={`w-4 h-4 ${TYPE_COLORS[device.type ?? "simulated"] ?? "text-primary"}`} />
                     </div>
                     <div>
                       <div className="text-sm text-primary font-bold">{device.name}</div>
                       <div className="text-xs text-muted-foreground">
-                        [{device.type.toUpperCase()}] // {device.protocol.toUpperCase()}
+                        [{(device.type ?? "device").toUpperCase()}] // {(device.protocol ?? "WS").toUpperCase()}
                         {device.location && ` // ${device.location}`}
                       </div>
                     </div>
                   </div>
-                  <div className={`text-xs flex items-center gap-1 ${STATUS_COLORS[device.status] ?? "text-muted-foreground"}`}>
-                    <StatusIcon className="w-3 h-3" />
-                    {device.status.toUpperCase()}
+                  <div className="flex items-center gap-3">
+                    {isActuator && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          sendEvent({
+                            type: "device.command.send",
+                            payload: { deviceId: device.id, action: "toggle", parameters: {} },
+                          });
+                        }}
+                        className="border border-[#ffaa00]/40 text-[#ffaa00] px-2 py-1 text-xs hover:bg-[#ffaa00]/10 transition-all"
+                      >
+                        TOGGLE
+                      </button>
+                    )}
+                    <div className={`text-xs flex items-center gap-1 ${STATUS_COLORS[device.status ?? "offline"] ?? "text-muted-foreground"}`}>
+                      <StatusIcon className="w-3 h-3" />
+                      {(device.status ?? "offline").toUpperCase()}
+                    </div>
                   </div>
                 </div>
 
-                {device.readings.length > 0 && (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    {device.readings.map((r) => (
-                      <div key={r.sensor} className="border border-primary/10 bg-background/50 p-2 text-center">
-                        <div className="text-xs text-muted-foreground uppercase">{r.sensor.replace(/_/g, " ")}</div>
+                {device.readings && device.readings.length > 0 && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+                    {device.readings.map((r, ri) => (
+                      <div key={ri} className="border border-primary/10 bg-background/50 p-2 text-center">
+                        <div className="text-xs text-muted-foreground uppercase">{(r.sensor ?? "").replace(/_/g, " ")}</div>
                         <div className="text-sm text-primary font-bold">
-                          {typeof r.value === "boolean" ? (r.value ? "ON" : "OFF") : String(r.value)}
+                          {typeof r.value === "boolean" ? (r.value ? "ON" : "OFF") : String(r.value ?? "---")}
                           {r.unit && <span className="text-xs text-muted-foreground ml-1">{r.unit}</span>}
                         </div>
                       </div>
@@ -140,7 +235,25 @@ export default function DeviceControl() {
                   </div>
                 )}
 
-                {device.capabilities.length > 0 && (
+                {recentReadings.length > 1 && (
+                  <div className="flex gap-0.5 h-8 items-end mt-1">
+                    {recentReadings.map((re, ri) => {
+                      const p = re.payload as DeviceReadingPayload;
+                      const r = p.readings?.[0];
+                      const v = typeof r?.value === "number" ? r.value : 0;
+                      const pct = Math.min(100, Math.max(5, v));
+                      return (
+                        <div
+                          key={ri}
+                          className="flex-1 bg-primary/20 rounded-sm"
+                          style={{ height: `${pct}%` }}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+
+                {device.capabilities && device.capabilities.length > 0 && (
                   <div className="flex gap-1 mt-2">
                     {device.capabilities.map((cap) => (
                       <span key={cap} className="text-xs border border-primary/20 px-1.5 py-0.5 text-primary/50">{cap}</span>
@@ -162,20 +275,35 @@ export default function DeviceControl() {
             {selected && (
               <div className="mb-3 text-primary/40 space-y-1">
                 <div>CAPABILITIES:</div>
-                {selected.capabilities.map((c) => <div key={c} className="pl-2 text-primary/60">// {c}</div>)}
+                {(selected.capabilities ?? []).map((c) => <div key={c} className="pl-2 text-primary/60">// {c}</div>)}
+                {(selected.capabilities ?? []).length === 0 && <div className="pl-2 text-primary/20">none listed</div>}
+              </div>
+            )}
+            {selected && recentDeviceReadings.length > 0 && (
+              <div className="mb-3">
+                <div className="text-primary/40 mb-1">RECENT READINGS:</div>
+                {recentDeviceReadings.slice(0, 5).map((re, i) => (
+                  <div key={i} className="text-primary/50 flex justify-between">
+                    <span>reading</span>
+                    <span>{new Date(re.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                  </div>
+                ))}
               </div>
             )}
             {controlLog.map((log, i) => (
-              <div key={i} className={`border p-2 ${log.success ? "border-primary/20" : "border-[#ff3333]/30"}`}>
+              <div key={i} className="border border-primary/20 p-2">
                 <div className="text-primary/40 mb-1">&gt; [{log.deviceId}] {log.action}</div>
-                <div className={log.success ? "text-[#22ff44]" : "text-[#ff3333]"}>{log.message}</div>
+                <div className="text-primary/60 text-xs">{new Date(log.timestamp).toLocaleTimeString()}</div>
               </div>
             ))}
-            {control.isPending && (
-              <div className="flex items-center gap-2 text-primary/60">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                <span>Sending control signal...</span>
+            {commandEvents.slice(-5).reverse().map((e, i) => (
+              <div key={i} className="border border-[#22ff44]/20 p-2">
+                <div className="text-[#22ff44]/60">&gt; device.command.send</div>
+                <div className="text-primary/40 text-xs">{JSON.stringify(e.payload).slice(0, 80)}</div>
               </div>
+            ))}
+            {controlLog.length === 0 && commandEvents.length === 0 && (
+              <div className="text-primary/30">// Select a device and send a command</div>
             )}
           </div>
           <form onSubmit={handleControl} className="border-t border-primary/20 p-4 flex gap-2">
@@ -186,12 +314,12 @@ export default function DeviceControl() {
               onChange={(e) => setAction(e.target.value)}
               disabled={!selected}
               className="font-mono border-none bg-transparent focus-visible:ring-0 text-primary px-0 disabled:opacity-40"
-              placeholder={selected ? `Action (on, off, read...)` : "Select a device first"}
+              placeholder={selected ? `Action (on, off, read, toggle...)` : "Select a device first"}
             />
             <button
               type="submit"
               data-testid="device-control-submit"
-              disabled={!selected || control.isPending}
+              disabled={!selected}
               className="border border-primary/40 px-3 font-mono text-xs text-primary hover:bg-primary/10 transition-all disabled:opacity-40"
             >
               <Send className="w-3 h-3" />

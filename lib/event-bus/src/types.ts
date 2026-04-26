@@ -29,6 +29,7 @@ export const PluginEventTypeSchema = z.enum([
   "plugin.status_changed",
   "plugin.list.request",
   "plugin.list.response",
+  "plugin.toggle.request",
 ]);
 
 export const DeviceEventTypeSchema = z.enum([
@@ -36,15 +37,20 @@ export const DeviceEventTypeSchema = z.enum([
   "device.disconnected",
   "device.reading",
   "device.command_sent",
+  "device.command.send",
+  "device.state.changed",
   "device.error",
   "device.list.request",
   "device.list.response",
+  "device.registry.snapshot",
 ]);
 
 export const AiEventTypeSchema = z.enum([
   "ai.inference_started",
   "ai.inference_completed",
   "ai.model_changed",
+  "ai.mode.set",
+  "ai.router.status",
   "ai.error",
   "ai.chat.request",
   "ai.chat.response",
@@ -56,6 +62,9 @@ export const MemoryEventTypeSchema = z.enum([
   "memory.deleted",
   "memory.expired",
   "memory.search.request",
+  "memory.search.response",
+  "memory.recent.request",
+  "memory.recent.response",
 ]);
 
 export const ClientEventTypeSchema = z.enum([

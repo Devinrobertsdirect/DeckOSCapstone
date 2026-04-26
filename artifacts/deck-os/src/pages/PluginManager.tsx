@@ -1,13 +1,7 @@
-import { useState } from "react";
-import {
-  useListPlugins, getListPluginsQueryKey,
-  useTogglePlugin,
-  useExecutePluginCommand,
-} from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { Settings, Power, ChevronRight, CheckCircle2, XCircle, AlertTriangle, Circle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Settings, Play, Power, ChevronRight, Loader2, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import { useWebSocket, useLatestPayload, useWsEvents } from "@/contexts/WebSocketContext";
 
 const STATUS_COLORS: Record<string, string> = {
   active: "text-[#22ff44]",
@@ -24,38 +18,53 @@ const CATEGORY_COLORS: Record<string, string> = {
   automation: "text-muted-foreground",
 };
 
+type Plugin = {
+  id: string;
+  name: string;
+  version?: string;
+  enabled?: boolean;
+  status?: string;
+  category?: string;
+  description?: string;
+  commands?: string[];
+};
+
+type PluginListPayload = {
+  plugins?: Plugin[];
+  count?: number;
+};
+
+type PluginExecutedPayload = {
+  pluginId?: string;
+  command?: string;
+  success?: boolean;
+  output?: string;
+  executionTimeMs?: number;
+};
+
 export default function PluginManager() {
+  const { sendEvent } = useWebSocket();
   const [selectedPlugin, setSelectedPlugin] = useState<string | null>(null);
-  const [command, setCommand] = useState("");
-  const [commandOutput, setCommandOutput] = useState<Array<{ plugin: string; command: string; output: string; success: boolean; ms: number }>>([]);
-  const qc = useQueryClient();
 
-  const { data } = useListPlugins({ query: { queryKey: getListPluginsQueryKey(), refetchInterval: 5000 } });
-  const toggle = useTogglePlugin();
-  const execute = useExecutePluginCommand();
+  const pluginList = useLatestPayload<PluginListPayload>("plugin.list.response");
+  const pluginEvents = useWsEvents((e) =>
+    e.type === "plugin.executed" ||
+    e.type === "plugin.status_changed" ||
+    e.type === "plugin.loaded" ||
+    e.type === "plugin.error"
+  );
 
-  const handleToggle = (pluginId: string, currentEnabled: boolean) => {
-    toggle.mutate({ pluginId, data: { enabled: !currentEnabled } }, {
-      onSuccess: () => qc.invalidateQueries({ queryKey: getListPluginsQueryKey() }),
-    });
-  };
+  useEffect(() => {
+    sendEvent({ type: "plugin.list.request", payload: {} });
+  }, [sendEvent]);
 
-  const handleExecute = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedPlugin || !command.trim()) return;
-    const parts = command.trim().split(/\s+/);
-    const cmd = parts[0];
-    const cmdCopy = command;
-    setCommand("");
-    execute.mutate({ pluginId: selectedPlugin, data: { command: cmd } }, {
-      onSuccess: (res) => {
-        setCommandOutput((prev) => [{ plugin: selectedPlugin, command: cmdCopy, output: res.output, success: res.success, ms: res.executionTimeMs }, ...prev].slice(0, 30));
-      },
-    });
-  };
-
-  const plugins = data?.plugins ?? [];
+  const plugins = pluginList?.plugins ?? [];
   const selected = plugins.find((p) => p.id === selectedPlugin);
+
+  const pluginEventFeed = pluginEvents
+    .filter((e) => !selectedPlugin || (e.payload as Record<string, unknown>)?.["pluginId"] === selectedPlugin)
+    .slice(-20)
+    .reverse();
 
   return (
     <div className="flex flex-col gap-6 h-full">
@@ -65,10 +74,25 @@ export default function PluginManager() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
-        <div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 content-start">
+        <div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 content-start overflow-y-auto">
+          {plugins.length === 0 && (
+            <div className="col-span-2 font-mono text-xs text-primary/30 p-4 border border-primary/10 text-center">
+              // Waiting for plugin.list.response from EventBus...
+            </div>
+          )}
           {plugins.map((plugin) => {
             const isSelected = selectedPlugin === plugin.id;
-            const statusColor = STATUS_COLORS[plugin.status] ?? "text-muted-foreground";
+            const statusColor = STATUS_COLORS[plugin.status ?? "inactive"] ?? "text-muted-foreground";
+            const catColor = CATEGORY_COLORS[plugin.category ?? ""] ?? "text-muted-foreground";
+
+            const pluginEventCount = pluginEvents.filter(
+              (e) => (e.payload as Record<string, unknown>)?.["pluginId"] === plugin.id
+            ).length;
+
+            const lastEvent = pluginEvents
+              .filter((e) => (e.payload as Record<string, unknown>)?.["pluginId"] === plugin.id)
+              .at(-1);
+
             return (
               <Card
                 key={plugin.id}
@@ -81,13 +105,19 @@ export default function PluginManager() {
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="font-mono text-sm text-primary font-bold">{plugin.name}</div>
-                      <div className={`font-mono text-xs ${CATEGORY_COLORS[plugin.category] ?? "text-muted-foreground"}`}>
-                        [{plugin.category.toUpperCase()}] v{plugin.version}
+                      <div className={`font-mono text-xs ${catColor}`}>
+                        [{(plugin.category ?? "system").toUpperCase()}] v{plugin.version ?? "1.0.0"}
                       </div>
                     </div>
                     <button
                       data-testid={`toggle-${plugin.id}`}
-                      onClick={(e) => { e.stopPropagation(); handleToggle(plugin.id, plugin.enabled); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        sendEvent({
+                          type: "plugin.toggle.request",
+                          payload: { pluginId: plugin.id, enabled: !plugin.enabled },
+                        });
+                      }}
                       className={`p-1.5 border transition-all ${plugin.enabled ? "border-primary/40 text-primary hover:bg-primary/10" : "border-primary/20 text-primary/30 hover:text-primary/60"}`}
                     >
                       <Power className="w-3 h-3" />
@@ -95,20 +125,18 @@ export default function PluginManager() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-4 space-y-3">
-                  <p className="font-mono text-xs text-muted-foreground">{plugin.description}</p>
+                  <p className="font-mono text-xs text-muted-foreground">{plugin.description ?? "No description"}</p>
                   <div className="flex items-center justify-between">
                     <div className={`font-mono text-xs flex items-center gap-1 ${statusColor}`}>
                       {plugin.status === "active" ? <CheckCircle2 className="w-3 h-3" /> : plugin.status === "error" ? <AlertTriangle className="w-3 h-3" /> : <Power className="w-3 h-3" />}
-                      {plugin.status.toUpperCase()}
+                      {(plugin.status ?? "inactive").toUpperCase()}
                     </div>
                     {isSelected && <ChevronRight className="w-4 h-4 text-primary" />}
                   </div>
-                  <div className="flex flex-wrap gap-1">
-                    {plugin.commands.slice(0, 4).map((cmd) => (
-                      <span key={cmd} className="font-mono text-xs border border-primary/20 px-1.5 py-0.5 text-primary/60">{cmd}</span>
-                    ))}
-                    {plugin.commands.length > 4 && (
-                      <span className="font-mono text-xs text-primary/40">+{plugin.commands.length - 4}</span>
+                  <div className="flex items-center gap-3 font-mono text-xs text-primary/30">
+                    <span>{pluginEventCount} events</span>
+                    {lastEvent && (
+                      <span>{new Date(lastEvent.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
                     )}
                   </div>
                 </CardContent>
@@ -120,56 +148,38 @@ export default function PluginManager() {
         <Card className="bg-card/40 border-primary/20 rounded-none flex flex-col min-h-0">
           <CardHeader className="border-b border-primary/20 p-4">
             <CardTitle className="font-mono text-sm text-primary">
-              {selected ? `EXEC // ${selected.id.toUpperCase()}` : "SELECT A PLUGIN"}
+              {selected ? `EVENTS // ${selected.id.toUpperCase()}` : "PLUGIN.EVENT.FEED"}
             </CardTitle>
           </CardHeader>
           <div className="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs min-h-0">
-            {selected && (
-              <div className="mb-3 text-primary/40">
-                <div>AVAILABLE CMDS:</div>
-                {selected.commands.map((c) => (
-                  <div key={c} className="pl-2 text-primary/60">// {c}</div>
-                ))}
+            {pluginEventFeed.length === 0 && (
+              <div className="text-primary/30">
+                {selected ? "// No events for this plugin yet" : "// Select a plugin to filter events"}
               </div>
             )}
-            {commandOutput.map((o, i) => (
-              <div key={i} className={`border p-2 ${o.success ? "border-primary/20" : "border-[#ff3333]/30"}`}>
-                <div className="flex justify-between text-primary/40 mb-1">
-                  <span>&gt; [{o.plugin}] {o.command}</span>
-                  <span className="flex gap-2">
-                    {o.success ? <CheckCircle2 className="w-3 h-3 text-[#22ff44]" /> : <XCircle className="w-3 h-3 text-[#ff3333]" />}
-                    {o.ms}ms
-                  </span>
+            {pluginEventFeed.map((evt, i) => {
+              const p = evt.payload as PluginExecutedPayload;
+              return (
+                <div key={i} className={`border p-2 ${p.success === false ? "border-[#ff3333]/30" : "border-primary/20"}`}>
+                  <div className="flex justify-between text-primary/40 mb-1">
+                    <span className="truncate">{evt.type}</span>
+                    <span>{new Date(evt.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                  </div>
+                  {p.output && <div className="text-primary/80">{p.output}</div>}
+                  {p.command && <div className="text-primary/50">cmd: {p.command}</div>}
+                  <div className="flex items-center gap-2 mt-1">
+                    {p.success === true && <CheckCircle2 className="w-3 h-3 text-[#22ff44]" />}
+                    {p.success === false && <XCircle className="w-3 h-3 text-[#ff3333]" />}
+                    {p.executionTimeMs !== undefined && <span className="text-primary/30">{p.executionTimeMs}ms</span>}
+                  </div>
                 </div>
-                <div className="text-primary/80">{o.output}</div>
-              </div>
-            ))}
-            {execute.isPending && (
-              <div className="flex items-center gap-2 text-primary/60">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                <span>Executing...</span>
-              </div>
-            )}
+              );
+            })}
           </div>
-          <form onSubmit={handleExecute} className="border-t border-primary/20 p-4 flex gap-2">
-            <span className="text-primary font-mono mt-2 text-sm">&gt;</span>
-            <Input
-              data-testid="plugin-cmd-input"
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              disabled={!selected}
-              className="font-mono border-none bg-transparent focus-visible:ring-0 text-primary px-0 disabled:opacity-40"
-              placeholder={selected ? `Command for ${selected.id}...` : "Select a plugin first"}
-            />
-            <button
-              type="submit"
-              data-testid="plugin-cmd-submit"
-              disabled={!selected || execute.isPending}
-              className="border border-primary/40 px-3 font-mono text-xs text-primary hover:bg-primary/10 transition-all disabled:opacity-40"
-            >
-              <Play className="w-3 h-3" />
-            </button>
-          </form>
+          <div className="border-t border-primary/10 p-3 font-mono text-xs text-primary/30">
+            <Circle className="w-1.5 h-1.5 fill-[#00ff88] text-[#00ff88] inline mr-1.5" />
+            Watching EventBus for plugin events
+          </div>
         </Card>
       </div>
     </div>

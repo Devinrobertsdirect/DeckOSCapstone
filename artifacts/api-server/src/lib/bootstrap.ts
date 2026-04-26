@@ -1,7 +1,7 @@
 import { bus } from "./bus.js";
 import { PluginRegistry } from "./plugin-registry.js";
 import { memoryService } from "./memory-service.js";
-import { runInference, refreshOllamaDetection } from "./inference.js";
+import { runInference, refreshOllamaDetection, getInferenceState } from "./inference.js";
 import { logger } from "./logger.js";
 import { presenceManager } from "./presence-manager.js";
 import { initiativeEngine } from "./initiative-engine.js";
@@ -17,6 +17,28 @@ export let registry: PluginRegistry;
 let mqttTransport: MqttTransport | null = null;
 let wsDeviceTransport: WsDeviceTransport | null = null;
 let stopSimDevices: (() => void) | null = null;
+let routerStatusTimer: NodeJS.Timeout | null = null;
+let currentAiMode = "DIRECT_EXECUTION";
+
+function emitRouterStatus(): void {
+  const state = getInferenceState();
+  const totalReqs = state.totalRequests;
+  const cacheHitRate = totalReqs > 0 ? state.cacheHits / totalReqs : 0;
+  bus.emit({
+    source: "ai-router",
+    target: null,
+    type: "ai.router.status",
+    payload: {
+      mode: currentAiMode,
+      ollamaAvailable: state.ollamaAvailable ?? false,
+      cloudAvailable: false,
+      totalRequests: totalReqs,
+      cacheHitRate: parseFloat(cacheHitRate.toFixed(4)),
+      lastDetectedAt: state.lastDetected.toISOString(),
+      timestamp: new Date().toISOString(),
+    },
+  });
+}
 
 function registerQueryHandlers(deviceManager: DeviceManager): void {
   bus.subscribe("device.list.request", async (event: BusEvent) => {
@@ -28,6 +50,7 @@ function registerQueryHandlers(deviceManager: DeviceManager): void {
       category: d.category,
       protocol: d.protocol,
       status: d.state.status,
+      readings: d.state.readings,
       lastSeen: d.state.lastSeen,
       location: d.location,
       capabilities: d.capabilities,
@@ -35,7 +58,7 @@ function registerQueryHandlers(deviceManager: DeviceManager): void {
     bus.emit({
       source: "device-manager",
       target: event.source,
-      type: "device.list.response",
+      type: "device.registry.snapshot",
       payload: { devices, count: devices.length },
     });
   });
@@ -68,9 +91,39 @@ function registerQueryHandlers(deviceManager: DeviceManager): void {
     bus.emit({
       source: "memory-service",
       target: event.source,
-      type: "memory.retrieved",
+      type: "memory.search.response",
       payload: { query, results, count: results.length },
     });
+  });
+
+  bus.subscribe("memory.recent.request", async (event: BusEvent) => {
+    if (event.type !== "memory.recent.request") return;
+    const p = event.payload as Record<string, unknown>;
+    const limit = typeof p?.["limit"] === "number" ? p["limit"] : 20;
+    const entries = await memoryService.getRecent(limit);
+    bus.emit({
+      source: "memory-service",
+      target: event.source,
+      type: "memory.recent.response",
+      payload: { entries, count: entries.length },
+    });
+  });
+
+  bus.subscribe("ai.mode.set", (event: BusEvent) => {
+    if (event.type !== "ai.mode.set") return;
+    const p = event.payload as Record<string, unknown>;
+    const mode = String(p?.["mode"] ?? currentAiMode);
+    currentAiMode = mode;
+    emitRouterStatus();
+  });
+
+  bus.subscribe("plugin.toggle.request", (event: BusEvent) => {
+    if (event.type !== "plugin.toggle.request") return;
+    const p = event.payload as Record<string, unknown>;
+    const pluginId = String(p?.["pluginId"] ?? "");
+    const enabled = Boolean(p?.["enabled"] ?? false);
+    if (!pluginId) return;
+    registry.setEnabled(pluginId, enabled);
   });
 }
 
@@ -106,6 +159,9 @@ export async function bootstrap(): Promise<void> {
 
   stopSimDevices = startSimulatedDevices(deviceManager);
 
+  routerStatusTimer = setInterval(emitRouterStatus, 10_000);
+  setTimeout(emitRouterStatus, 2_000);
+
   mqttTransport = new MqttTransport(bus, deviceManager);
   await mqttTransport.start();
 
@@ -124,6 +180,10 @@ export async function bootstrap(): Promise<void> {
 }
 
 export async function teardown(): Promise<void> {
+  if (routerStatusTimer) {
+    clearInterval(routerStatusTimer);
+    routerStatusTimer = null;
+  }
   if (registry) {
     await registry.shutdownAll();
   }

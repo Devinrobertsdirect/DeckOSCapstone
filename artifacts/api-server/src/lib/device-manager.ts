@@ -126,7 +126,7 @@ export class DeviceManager {
     this.bus.emit({
       source: device.id,
       target: null,
-      type: "device.state.changed" as string,
+      type: "device.state.changed",
       payload: {
         deviceId,
         prevStatus,
@@ -147,7 +147,7 @@ export class DeviceManager {
     this.bus.emit({
       source: "api",
       target: deviceId,
-      type: "device.command.send" as string,
+      type: "device.command.send",
       payload: { deviceId, action: command.action, parameters: command.parameters },
     });
 

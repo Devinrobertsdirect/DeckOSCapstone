@@ -9,6 +9,21 @@ import {
 
 const MEMORY_CONTEXT_LIMIT = 5;
 
+const FRONTEND_MODE_MAP: Record<string, "fast" | "deep" | "none"> = {
+  DIRECT_EXECUTION: "none",
+  LIGHT_REASONING: "fast",
+  DEEP_REASONING: "deep",
+  HYBRID_MODE: "fast",
+  fast: "fast",
+  deep: "deep",
+  none: "none",
+};
+
+function resolveMode(raw: unknown): "fast" | "deep" | "none" {
+  const key = String(raw ?? "DIRECT_EXECUTION");
+  return FRONTEND_MODE_MAP[key] ?? "fast";
+}
+
 export default class AiChatPlugin extends Plugin {
   readonly id = "ai_chat";
   readonly name = "AI Chat";
@@ -27,7 +42,7 @@ export default class AiChatPlugin extends Plugin {
       if (event.type !== "ai.chat.request") return;
       const payload = event.payload as Record<string, unknown>;
       const prompt = String(payload?.prompt ?? "");
-      const mode = (payload?.mode as "fast" | "deep" | "none") ?? "fast";
+      const mode = resolveMode(payload?.mode);
       const extraContext = (payload?.context as Array<{ role: string; content: string }>) ?? [];
       const requestId = String(payload?.requestId ?? event.id);
 
@@ -122,7 +137,7 @@ export default class AiChatPlugin extends Plugin {
   async execute(payload: unknown): Promise<unknown> {
     const p = payload as Record<string, unknown> | null;
     const prompt = String(p?.prompt ?? p?.message ?? "");
-    const mode = (p?.mode as "fast" | "deep" | "none") ?? "fast";
+    const mode = resolveMode(p?.mode);
 
     if (!prompt) {
       return { response: "No prompt provided.", modelUsed: "rule-engine-v1" };

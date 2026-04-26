@@ -1,15 +1,8 @@
-import { useState } from "react";
-import {
-  useGetAiRouterStatus, getGetAiRouterStatusQueryKey,
-  useListAvailableModels, getListAvailableModelsQueryKey,
-  useGetIntelligenceMode, getGetIntelligenceModeQueryKey,
-  useSetIntelligenceMode,
-  useRouteInference,
-} from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useEffect, useState } from "react";
+import { Brain, Zap, Database, Globe, CheckCircle2, XCircle, ChevronRight, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Brain, Zap, Database, Globe, CheckCircle2, XCircle, Loader2, ChevronRight } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useWebSocket, useLatestPayload, useWsEvents } from "@/contexts/WebSocketContext";
 
 const MODES = ["DIRECT_EXECUTION", "LIGHT_REASONING", "DEEP_REASONING", "HYBRID_MODE"] as const;
 type Mode = typeof MODES[number];
@@ -28,35 +21,84 @@ const MODE_ICONS: Record<Mode, React.ElementType> = {
   HYBRID_MODE: Globe,
 };
 
-export default function AiControl() {
-  const [prompt, setPrompt] = useState("");
-  const [inferMode, setInferMode] = useState<"fast" | "deep" | "none">("fast");
-  const [output, setOutput] = useState<Array<{ text: string; model: string; latency: number; fromCache: boolean }>>([]);
-  const qc = useQueryClient();
+type RouterStatusPayload = {
+  mode?: string;
+  ollamaAvailable?: boolean;
+  cloudAvailable?: boolean;
+  totalRequests?: number;
+  cacheHitRate?: number;
+  lastDetectedAt?: string;
+  timestamp?: string;
+};
 
-  const { data: status } = useGetAiRouterStatus({ query: { queryKey: getGetAiRouterStatusQueryKey(), refetchInterval: 5000 } });
-  const { data: models } = useListAvailableModels({ query: { queryKey: getListAvailableModelsQueryKey(), refetchInterval: 10000 } });
-  const { data: modeData } = useGetIntelligenceMode({ query: { queryKey: getGetIntelligenceModeQueryKey() } });
-  const setMode = useSetIntelligenceMode();
-  const infer = useRouteInference();
+type ChatResponsePayload = {
+  model?: string;
+  modelUsed?: string;
+  mode?: string;
+  latencyMs?: number;
+  fromCache?: boolean;
+  response?: string;
+  requestId?: string;
+};
+
+export default function AiControl() {
+  const { sendEvent } = useWebSocket();
+  const [prompt, setPrompt] = useState("");
+  const [currentMode, setCurrentMode] = useState<Mode>("DIRECT_EXECUTION");
+  const [sending, setSending] = useState(false);
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
+
+  const routerStatus = useLatestPayload<RouterStatusPayload>("ai.router.status");
+  const latestChatResponse = useLatestPayload<ChatResponsePayload>("ai.chat.response");
+  const aiEvents = useWsEvents((e) =>
+    e.type === "ai.router.status" ||
+    e.type === "ai.inference_started" ||
+    e.type === "ai.inference_completed" ||
+    e.type === "ai.chat.request" ||
+    e.type === "ai.chat.response"
+  );
+
+  const chatResponses = useWsEvents((e) => e.type === "ai.chat.response");
+
+  useEffect(() => {
+    const mode = routerStatus?.mode as Mode | undefined;
+    if (mode && MODES.includes(mode)) setCurrentMode(mode);
+  }, [routerStatus]);
+
+  useEffect(() => {
+    if (!pendingRequestId) return;
+    const matched = chatResponses.some((e) => {
+      const p = e.payload as ChatResponsePayload;
+      return p.requestId === pendingRequestId;
+    });
+    if (matched) {
+      setSending(false);
+      setPendingRequestId(null);
+    }
+  }, [chatResponses, pendingRequestId]);
 
   const handleSetMode = (m: Mode) => {
-    setMode.mutate({ data: { mode: m } }, {
-      onSuccess: () => qc.invalidateQueries({ queryKey: getGetIntelligenceModeQueryKey() }),
-    });
+    setCurrentMode(m);
+    sendEvent({ type: "ai.mode.set", payload: { mode: m } });
   };
 
   const handleInfer = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim()) return;
-    const p = prompt;
-    setPrompt("");
-    infer.mutate({ data: { prompt: p, mode: inferMode, useCache: true } }, {
-      onSuccess: (res) => {
-        setOutput((prev) => [{ text: res.response, model: res.modelUsed, latency: res.latencyMs, fromCache: res.fromCache }, ...prev].slice(0, 20));
-      },
+    if (!prompt.trim() || sending) return;
+    const requestId = `req-${Date.now()}`;
+    setSending(true);
+    setPendingRequestId(requestId);
+    sendEvent({
+      type: "ai.chat.request",
+      payload: { prompt: prompt.trim(), mode: currentMode, requestId },
     });
+    setPrompt("");
   };
+
+  const ollamaOk = routerStatus?.ollamaAvailable ?? false;
+  const cloudOk = routerStatus?.cloudAvailable ?? false;
+
+  const outputItems = chatResponses.slice(-20).reverse();
 
   return (
     <div className="flex flex-col gap-6 h-full">
@@ -66,13 +108,12 @@ export default function AiControl() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatusTile label="OLLAMA.LOCAL" value={status?.ollamaAvailable ? "CONNECTED" : "OFFLINE"} ok={!!status?.ollamaAvailable} />
-        <StatusTile label="CLOUD.API" value={status?.cloudAvailable ? "AVAILABLE" : "UNAVAILABLE"} ok={!!status?.cloudAvailable} />
-        <StatusTile label="FALLBACK.MODE" value={status?.fallbackMode ? "ACTIVE" : "STANDBY"} ok={!status?.fallbackMode} invert />
+        <StatusTile label="OLLAMA.LOCAL" value={ollamaOk ? "CONNECTED" : "OFFLINE"} ok={ollamaOk} />
+        <StatusTile label="CLOUD.API" value={cloudOk ? "AVAILABLE" : "UNAVAILABLE"} ok={cloudOk} />
+        <StatusTile label="AI.EVENTS" value={`${aiEvents.length} EVENTS`} ok={aiEvents.length > 0} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Mode selector */}
         <Card className="bg-card/40 border-primary/20 rounded-none">
           <CardHeader className="border-b border-primary/20 p-4">
             <CardTitle className="font-mono text-sm text-primary">INTELLIGENCE.MODE</CardTitle>
@@ -80,7 +121,7 @@ export default function AiControl() {
           <CardContent className="p-4 space-y-2">
             {MODES.map((m) => {
               const Icon = MODE_ICONS[m];
-              const active = modeData?.mode === m;
+              const active = currentMode === m;
               return (
                 <button
                   key={m}
@@ -98,72 +139,80 @@ export default function AiControl() {
                 </button>
               );
             })}
-            {modeData && (
-              <p className="text-xs text-muted-foreground font-mono pt-2 border-t border-primary/20">{modeData.description}</p>
-            )}
           </CardContent>
         </Card>
 
-        {/* Model list */}
         <Card className="bg-card/40 border-primary/20 rounded-none">
           <CardHeader className="border-b border-primary/20 p-4">
-            <CardTitle className="font-mono text-sm text-primary">AVAILABLE.MODELS</CardTitle>
+            <CardTitle className="font-mono text-sm text-primary">LIVE.AI.STATUS</CardTitle>
           </CardHeader>
-          <CardContent className="p-4 space-y-2">
-            {models?.models.map((model) => (
-              <div key={model.id} data-testid={`model-${model.id}`} className="flex items-center justify-between p-2 border border-primary/10 bg-background/50">
-                <div>
-                  <div className="font-mono text-xs text-primary">{model.name}</div>
-                  <div className="font-mono text-xs text-muted-foreground">{model.type} // {model.tier} // {model.speed}</div>
+          <CardContent className="p-4 space-y-2 font-mono text-xs">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">CURRENT.MODE</span>
+              <span className="text-primary">{routerStatus?.mode ?? currentMode}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">TOTAL.REQUESTS</span>
+              <span className="text-primary">{routerStatus?.totalRequests ?? 0}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">CACHE.HIT.RATE</span>
+              <span className="text-[#aa88ff]">{((routerStatus?.cacheHitRate ?? 0) * 100).toFixed(0)}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">LAST.MODEL</span>
+              <span className="text-[#00d4ff] truncate max-w-[120px]">{latestChatResponse?.modelUsed ?? latestChatResponse?.model ?? "---"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">LAST.LATENCY</span>
+              <span className="text-primary">{latestChatResponse?.latencyMs ?? "---"}ms</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">LAST.DETECTED</span>
+              <span className="text-primary/50 text-xs truncate">
+                {routerStatus?.lastDetectedAt
+                  ? new Date(routerStatus.lastDetectedAt).toLocaleTimeString()
+                  : "---"}
+              </span>
+            </div>
+            <div className="pt-2 border-t border-primary/10 space-y-1">
+              <div className="text-primary/40 mb-1">EVENT.STREAM</div>
+              {aiEvents.slice(-5).reverse().map((e, i) => (
+                <div key={i} className="flex justify-between text-primary/50">
+                  <span>{e.type}</span>
+                  <span>{new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
                 </div>
-                <div className={`font-mono text-xs flex items-center gap-1 ${model.available ? "text-[#22ff44]" : "text-[#ff3333]"}`}>
-                  {model.available ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                  {model.available ? "READY" : "UNAVAIL"}
-                </div>
-              </div>
-            ))}
+              ))}
+              {aiEvents.length === 0 && <div className="text-primary/20">No AI events yet</div>}
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Inference console */}
       <Card className="flex-1 bg-card/40 border-primary/20 rounded-none flex flex-col min-h-0">
-        <CardHeader className="border-b border-primary/20 p-4 flex-row items-center justify-between">
-          <CardTitle className="font-mono text-sm text-primary">INFERENCE.CONSOLE</CardTitle>
-          <div className="flex gap-2">
-            {(["fast", "deep", "none"] as const).map((m) => (
-              <button
-                key={m}
-                data-testid={`infer-mode-${m}`}
-                onClick={() => setInferMode(m)}
-                className={`font-mono text-xs px-3 py-1 border transition-all
-                  ${inferMode === m ? "border-primary bg-primary/10 text-primary" : "border-primary/20 text-primary/50 hover:text-primary/80"}`}
-              >
-                {m.toUpperCase()}
-              </button>
-            ))}
-          </div>
+        <CardHeader className="border-b border-primary/20 p-4">
+          <CardTitle className="font-mono text-sm text-primary">AI.CHAT.CONSOLE</CardTitle>
         </CardHeader>
         <div className="flex-1 overflow-y-auto p-4 space-y-3 font-mono text-xs min-h-0">
-          {output.length === 0 && (
-            <div className="text-primary/40">// Inference output will appear here. Submit a prompt to begin.</div>
+          {outputItems.length === 0 && (
+            <div className="text-primary/40">// Send a prompt to get an AI response via WebSocket event stream</div>
           )}
-          {output.map((item, i) => (
-            <div key={i} className="border border-primary/10 p-3 bg-background/50 space-y-1">
-              <div className="flex justify-between text-primary/40">
-                <span>MODEL: {item.model}</span>
-                <span className="flex gap-4">
-                  {item.fromCache && <span className="text-[#ffaa00]">CACHED</span>}
-                  <span>{item.latency}ms</span>
-                </span>
+          {outputItems.map((item, i) => {
+            const p = item.payload as ChatResponsePayload;
+            return (
+              <div key={i} className="border border-primary/10 p-3 bg-background/50 space-y-1">
+                <div className="flex justify-between text-primary/40">
+                  <span>MODEL: {p.modelUsed ?? p.model ?? "---"}</span>
+                  <span>{p.fromCache && <span className="text-[#ffaa00] mr-2">CACHED</span>}{p.latencyMs}ms</span>
+                </div>
+                <div className="text-primary/90 whitespace-pre-wrap">{p.response ?? "---"}</div>
               </div>
-              <div className="text-primary/90 whitespace-pre-wrap">{item.text}</div>
-            </div>
-          ))}
-          {infer.isPending && (
+            );
+          })}
+          {sending && (
             <div className="flex items-center gap-2 text-primary/60">
               <Loader2 className="w-3 h-3 animate-spin" />
-              <span>Processing inference...</span>
+              <span>Processing via EventBus...</span>
             </div>
           )}
         </div>
@@ -179,10 +228,10 @@ export default function AiControl() {
           <button
             type="submit"
             data-testid="infer-submit"
-            disabled={infer.isPending}
+            disabled={sending}
             className="border border-primary/40 px-4 font-mono text-xs text-primary hover:bg-primary/10 transition-all disabled:opacity-50"
           >
-            {infer.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "SEND"}
+            {sending ? <Loader2 className="w-3 h-3 animate-spin" /> : "SEND"}
           </button>
         </form>
       </Card>
@@ -190,18 +239,14 @@ export default function AiControl() {
   );
 }
 
-function StatusTile({ label, value, ok, invert = false }: { label: string; value: string; ok: boolean; invert?: boolean }) {
-  const isGood = invert ? !ok : ok;
+function StatusTile({ label, value, ok }: { label: string; value: string; ok: boolean }) {
   return (
     <div className="border border-primary/20 bg-card/40 p-4 font-mono">
       <div className="text-xs text-muted-foreground mb-1">{label}</div>
-      <div className={`text-sm font-bold flex items-center gap-2 ${isGood ? "text-[#22ff44]" : "text-[#ff3333]"}`}>
-        {isGood ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+      <div className={`text-sm font-bold flex items-center gap-2 ${ok ? "text-[#22ff44]" : "text-[#ff3333]"}`}>
+        {ok ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
         {value}
       </div>
-      {label === "OLLAMA.LOCAL" && (
-        <div className="text-xs text-muted-foreground mt-1">ENDPOINT: localhost:11434</div>
-      )}
     </div>
   );
 }
