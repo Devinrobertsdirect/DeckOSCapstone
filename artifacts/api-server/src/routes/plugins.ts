@@ -38,7 +38,7 @@ const plugins: Plugin[] = [
     status: "active",
     commands: ["stats", "processes", "network", "disk", "alert-threshold"],
     category: "monitoring",
-    lastActivity: new Date().toISOString(),
+    lastActivity: null,
     errorMessage: null,
   },
   {
@@ -50,7 +50,7 @@ const plugins: Plugin[] = [
     status: "active",
     commands: ["ls", "read", "write", "search", "delete", "move"],
     category: "system",
-    lastActivity: new Date(Date.now() - 60000).toISOString(),
+    lastActivity: null,
     errorMessage: null,
   },
   {
@@ -62,7 +62,7 @@ const plugins: Plugin[] = [
     status: "active",
     commands: ["chat", "summarize", "explain", "analyze", "generate"],
     category: "ai",
-    lastActivity: new Date(Date.now() - 30000).toISOString(),
+    lastActivity: null,
     errorMessage: null,
   },
   {
@@ -74,7 +74,7 @@ const plugins: Plugin[] = [
     status: "active",
     commands: ["list", "read", "control", "simulate", "discover"],
     category: "iot",
-    lastActivity: new Date(Date.now() - 120000).toISOString(),
+    lastActivity: null,
     errorMessage: null,
   },
   {
@@ -120,6 +120,41 @@ const pluginHandlers: Record<string, Record<string, (args: Record<string, unknow
   },
 };
 
+const HEALTH_CHECK_COMMANDS: Record<string, string> = {
+  system_monitor: "stats",
+  file_manager: "ls",
+  ai_chat: "chat",
+  device_control: "list",
+  automation_scheduler: "list",
+};
+
+async function pingPlugin(plugin: Plugin): Promise<void> {
+  const command = HEALTH_CHECK_COMMANDS[plugin.id];
+  const handlers = pluginHandlers[plugin.id] ?? {};
+  const handler = command ? handlers[command] : undefined;
+  if (!handler) return;
+  try {
+    await handler({});
+    plugin.lastActivity = new Date().toISOString();
+    if (plugin.status === "error") plugin.status = "active";
+  } catch {
+    plugin.status = "error";
+    plugin.errorMessage = "Health check failed";
+  }
+}
+
+async function runHealthChecks(): Promise<void> {
+  for (const plugin of plugins) {
+    if (plugin.enabled) {
+      await pingPlugin(plugin);
+    }
+  }
+}
+
+runHealthChecks();
+const HEALTH_INTERVAL_MS = 60_000;
+setInterval(runHealthChecks, HEALTH_INTERVAL_MS);
+
 router.get("/plugins", (req, res) => {
   const body = ListPluginsResponse.parse({ plugins });
   res.json(body);
@@ -157,7 +192,7 @@ router.post("/plugins/:pluginId/toggle", (req, res) => {
   plugin.enabled = body.data.enabled;
   plugin.status = body.data.enabled ? "active" : "inactive";
   if (body.data.enabled) {
-    plugin.lastActivity = new Date().toISOString();
+    pingPlugin(plugin).catch(() => {});
   }
 
   const response = TogglePluginResponse.parse(plugin);
