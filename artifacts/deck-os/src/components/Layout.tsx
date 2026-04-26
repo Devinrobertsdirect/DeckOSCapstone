@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { applyColor, getStoredColor, type ColorScheme } from "@/components/Onboarding";
+import { applyColor, getStoredColor, getStoredConfig, type ColorScheme } from "@/components/Onboarding";
 import { useAiName } from "@/hooks/useAiName";
 import { useUserName } from "@/hooks/useUserName";
 import { AIFace, useFaceStyle } from "@/components/AIFace";
@@ -188,6 +188,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   function changeColor(c: ColorScheme) {
     setActiveColor(c);
     applyColor(c);
+    const cfg = getStoredConfig();
     if (cfg) {
       const updated = { ...cfg, color: c };
       localStorage.setItem("jarvis.user", JSON.stringify(updated));
