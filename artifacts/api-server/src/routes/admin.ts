@@ -2,19 +2,33 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import { execSync, spawn } from "child_process";
 import path from "path";
 import fs from "fs";
+import os from "os";
 
 const router: IRouter = Router();
 
+const LOOPBACK = new Set(["::1", "127.0.0.1", "::ffff:127.0.0.1"]);
 const LOCAL_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/;
 
-function requireLocalOrigin(req: Request, res: Response, next: NextFunction): void {
+function requireLocalAccess(req: Request, res: Response, next: NextFunction): void {
+  const socketIp = req.socket?.remoteAddress ?? req.ip ?? "";
   const origin = req.headers.origin;
-  if (origin && !LOCAL_ORIGIN_RE.test(origin)) {
-    res.removeHeader("Access-Control-Allow-Origin");
-    res.removeHeader("Access-Control-Allow-Credentials");
+
+  if (origin) {
+    if (!LOCAL_ORIGIN_RE.test(origin)) {
+      res.removeHeader("Access-Control-Allow-Origin");
+      res.removeHeader("Access-Control-Allow-Credentials");
+      res.status(403).json({ error: "Admin endpoints are only accessible from localhost" });
+      return;
+    }
+    next();
+    return;
+  }
+
+  if (!LOOPBACK.has(socketIp)) {
     res.status(403).json({ error: "Admin endpoints are only accessible from localhost" });
     return;
   }
+
   next();
 }
 
@@ -41,36 +55,54 @@ function stripAnsi(str: string): string {
   return str.replace(/\x1B\[[0-9;]*[mGKHF]/g, "");
 }
 
-function findUpdateScript(): string | null {
-  const candidates = [
-    path.resolve(process.cwd(), "update.sh"),
-    path.resolve(process.cwd(), "../..", "update.sh"),
-    path.resolve(process.cwd(), "..", "update.sh"),
-    path.resolve(__dirname, "../../../../update.sh"),
-    path.resolve(__dirname, "../../../../../update.sh"),
+type ScriptSpec = { cmd: string; args: string[] };
+
+function findUpdateScript(flags: string[]): ScriptSpec | null {
+  const isWindows = os.platform() === "win32";
+
+  const candidateDirs = [
+    process.cwd(),
+    path.resolve(process.cwd(), "../.."),
+    path.resolve(process.cwd(), ".."),
+    path.resolve(__dirname, "../../../../"),
+    path.resolve(__dirname, "../../../../../"),
   ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
+
+  for (const dir of candidateDirs) {
+    if (isWindows) {
+      const ps1 = path.join(dir, "update.ps1");
+      if (fs.existsSync(ps1)) {
+        return { cmd: "powershell", args: ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", ps1, ...flags] };
+      }
+    }
+    const sh = path.join(dir, "update.sh");
+    if (fs.existsSync(sh)) {
+      return { cmd: "bash", args: [sh, ...flags] };
+    }
   }
+
   return null;
 }
 
-router.get("/admin/version", requireLocalOrigin, (_req, res) => {
+router.get("/admin/version", requireLocalAccess, (_req, res) => {
   const version = getVersion();
   res.json({ version });
 });
 
-router.post("/admin/update", requireLocalOrigin, (req, res) => {
+router.post("/admin/update", requireLocalAccess, (req, res) => {
   if (updateInProgress) {
     res.status(409).json({ error: "An update is already in progress — wait for it to finish before starting another." });
     return;
   }
 
-  const useDocker = (req.body as { docker?: boolean }).docker === true;
+  const useDocker = (req.body as { docker?: boolean })?.docker === true;
 
-  const scriptPath = findUpdateScript();
-  if (!scriptPath) {
-    res.status(503).json({ error: "update.sh not found — this endpoint is only available in a local bare-metal or Docker installation." });
+  const flags = ["--no-pull"];
+  if (useDocker) flags.push("--docker");
+
+  const spec = findUpdateScript(flags);
+  if (!spec) {
+    res.status(503).json({ error: "update.sh / update.ps1 not found — this endpoint is only available in a local bare-metal or Docker installation." });
     return;
   }
 
@@ -88,12 +120,7 @@ router.post("/admin/update", requireLocalOrigin, (req, res) => {
 
   send("start", { message: "Starting update..." });
 
-  const args = ["--no-pull"];
-  if (useDocker) args.push("--docker");
-
-  const scriptDir = path.dirname(scriptPath);
-  const child = spawn("bash", [scriptPath, ...args], {
-    cwd: scriptDir,
+  const child = spawn(spec.cmd, spec.args, {
     env: { ...process.env, TERM: "dumb" },
   });
 
