@@ -72,7 +72,8 @@ export function NotificationDrawer({
 }: NotificationDrawerProps) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(false);
-  const prevWsLen = useRef(0);
+  // Track seen event IDs to detect new notifications even when the WS array rotates
+  const seenEventIds = useRef(new Set<string>());
 
   const load = useCallback(async () => {
     try {
@@ -91,21 +92,25 @@ export function NotificationDrawer({
   // Initial load
   useEffect(() => { void load(); }, [load]);
 
-  // Poll when open
+  // Poll when drawer is open (10s), and as a background resilience fallback (30s) when closed
   useEffect(() => {
-    if (!open) return;
-    const iv = setInterval(() => void load(), 10_000);
+    const interval = open ? 10_000 : 30_000;
+    const iv = setInterval(() => void load(), interval);
     return () => clearInterval(iv);
   }, [open, load]);
 
-  // React to notification.created WS events
+  // React to notification.created WS events — scan tail by event ID to survive WS array rotation
   useEffect(() => {
-    if (wsEvents.length === prevWsLen.current) return;
-    const newEvs = wsEvents.slice(prevWsLen.current);
-    prevWsLen.current = wsEvents.length;
-    const hasNew = newEvs.some(
-      (e) => (e as { type?: string }).type === "notification.created",
-    );
+    let hasNew = false;
+    for (const ev of wsEvents) {
+      const e = ev as { type?: string; id?: string };
+      if (e.type !== "notification.created") continue;
+      const id = e.id ?? JSON.stringify(ev);
+      if (!seenEventIds.current.has(id)) {
+        seenEventIds.current.add(id);
+        hasNew = true;
+      }
+    }
     if (hasNew) void load();
   }, [wsEvents, load]);
 
