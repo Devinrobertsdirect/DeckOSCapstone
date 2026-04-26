@@ -1,10 +1,19 @@
 import { useState, useEffect } from "react";
 import {
   Settings as SettingsIcon, Wifi, Key, Cpu, CheckCircle2,
-  XCircle, Loader2, Eye, EyeOff, Save, RotateCcw, AlertTriangle, Zap,
-  Volume2, Mic,
+  XCircle, Loader2, Eye, EyeOff, Save, AlertTriangle, RotateCcw, Zap,
+  Volume2, Mic, Globe, HardDrive,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+type FeatureInfo = { available: boolean; provider: string | null; local?: boolean };
+type FeatureMap = {
+  inference: FeatureInfo & { fallback?: string };
+  tts: FeatureInfo;
+  stt: FeatureInfo;
+  vision: FeatureInfo;
+  store: FeatureInfo;
+};
 
 type Tab = "connection" | "apikeys" | "models";
 
@@ -58,6 +67,7 @@ export default function Settings() {
   const [dirty, setDirty]   = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveOk, setSaveOk] = useState(false);
+  const [features, setFeatures] = useState<FeatureMap | null>(null);
 
   const [testing, setTesting]       = useState(false);
   const [testResult, setTestResult] = useState<TestResult>(null);
@@ -71,6 +81,13 @@ export default function Settings() {
   const [showEl, setShowEl]       = useState(false);
   const [elTesting, setElTesting] = useState(false);
   const [elTestOk, setElTestOk]   = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch("/api/features")
+      .then((r) => r.json())
+      .then((data: FeatureMap) => setFeatures(data))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetch("/api/config")
@@ -207,6 +224,67 @@ export default function Settings() {
         <SettingsIcon className="w-4 h-4 text-primary" />
         <span>SYSTEM.SETTINGS // CONFIGURATION &amp; CONNECTIONS // DECK OS</span>
       </div>
+
+      {/* Feature status strip */}
+      {features && (
+        <div className="grid grid-cols-5 gap-px border border-primary/20 bg-primary/5 font-mono text-[10px]">
+          {([
+            {
+              key: "inference",
+              label: "INFERENCE",
+              icon: <HardDrive className="w-3 h-3" />,
+              f: features.inference,
+              localLabel: features.inference.provider === "rule-engine" ? "RULE ENGINE" : (features.inference.provider ?? "LOCAL").toUpperCase(),
+            },
+            {
+              key: "tts",
+              label: "VOICE TTS",
+              icon: <Volume2 className="w-3 h-3" />,
+              f: features.tts,
+              localLabel: features.tts.provider ? features.tts.provider.toUpperCase() : "DISABLED",
+            },
+            {
+              key: "stt",
+              label: "SPEECH STT",
+              icon: <Mic className="w-3 h-3" />,
+              f: features.stt,
+              localLabel: features.stt.provider ? features.stt.provider.toUpperCase() : "DISABLED",
+            },
+            {
+              key: "vision",
+              label: "VISION",
+              icon: <Cpu className="w-3 h-3" />,
+              f: features.vision,
+              localLabel: features.vision.provider ? features.vision.provider.toUpperCase() : "DISABLED",
+            },
+            {
+              key: "store",
+              label: "PLUGIN STORE",
+              icon: <Globe className="w-3 h-3" />,
+              f: features.store,
+              localLabel: features.store.local ? "LOCAL" : "REMOTE",
+            },
+          ] as const).map(({ key, label, icon, f, localLabel }) => (
+            <div key={key} className="flex flex-col gap-1 px-3 py-2 bg-card/30">
+              <div className="flex items-center gap-1 text-primary/40 uppercase tracking-widest">
+                {icon}{label}
+              </div>
+              <div className={`flex items-center gap-1 tracking-wider ${f.available ? "text-[#11d97a]" : "text-primary/30"}`}>
+                {f.available
+                  ? <><CheckCircle2 className="w-2.5 h-2.5" />{localLabel}</>
+                  : <><XCircle className="w-2.5 h-2.5" />OFFLINE</>
+                }
+                {!f.local && f.available && (
+                  <span className="text-primary/25 ml-1">CLOUD</span>
+                )}
+                {f.local && (
+                  <span className="text-primary/25 ml-1">LOCAL</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Tab bar */}
       <div className="flex items-center gap-1 font-mono text-xs border-b border-primary/20 pb-0">

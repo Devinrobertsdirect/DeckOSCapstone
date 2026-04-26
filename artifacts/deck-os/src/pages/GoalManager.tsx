@@ -99,14 +99,14 @@ export default function GoalManager() {
   const { data: goalsData, isLoading } = useQuery<{ goals: Goal[]; total: number }>({
     queryKey: ["goals", statusFilter],
     queryFn: () => apiFetch(`/goals?status=${statusFilter}`),
-    refetchInterval: 10000,
+    refetchInterval: 30_000,
   });
 
   const { data: detail } = useQuery<{ goal: Goal; subgoals: Goal[]; plans: Plan[] }>({
     queryKey: ["goal-detail", selected],
     queryFn: () => apiFetch(`/goals/${selected}`),
     enabled: selected !== null,
-    refetchInterval: 5000,
+    refetchInterval: 30_000,
   });
 
   const createGoal = useMutation({

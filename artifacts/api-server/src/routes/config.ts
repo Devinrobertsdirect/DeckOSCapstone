@@ -1,18 +1,61 @@
-/**
- * /api/config — Runtime configuration management
- *
- * GET  /api/config          — read all non-sensitive config values
- * PUT  /api/config          — set one or more values
- * DELETE /api/config/:key   — remove a key
- * POST /api/config/test-connection — ping an Ollama URL and return available models
- */
-
 import { Router } from "express";
 import { z } from "zod/v4";
-import { getConfig, setConfig, deleteConfig, getAllConfig, isSensitive } from "../lib/app-config.js";
+import { getConfig, setConfig, deleteConfig, getAllConfig } from "../lib/app-config.js";
 import { invalidateConfigCache } from "../lib/app-config.js";
+import { detectOllama, detectOpenWebUI, getInferenceState } from "../lib/inference.js";
 
 const router = Router();
+
+// ── GET /api/features ────────────────────────────────────────────────────────
+// Returns which capabilities are available based on configured keys and local
+// service availability. Used by the frontend to show/hide cloud feature UI.
+router.get("/features", async (_req, res) => {
+  const state = getInferenceState();
+
+  const [oaiFromDb, elFromDb, owFromDb] = await Promise.all([
+    getConfig("OPENAI_API_KEY").catch(() => null),
+    getConfig("ELEVENLABS_API_KEY").catch(() => null),
+    getConfig("OPENWEBUI_HOST").catch(() => null),
+  ]);
+
+  const hasOpenAi = !!(oaiFromDb ?? process.env["OPENAI_API_KEY"]);
+  const hasElevenLabs = !!elFromDb;
+  const ttsProvider = hasElevenLabs ? "elevenlabs" : hasOpenAi ? "openai" : null;
+
+  const ollamaOnline = state.ollamaAvailable ?? (await detectOllama().catch(() => false));
+  const owHostConfigured = !!((owFromDb ?? process.env["OPENWEBUI_HOST"] ?? "").trim());
+  const owOnline = owHostConfigured ? (state.openWebUIAvailable ?? (await detectOpenWebUI().catch(() => false))) : false;
+  const localAiOnline = ollamaOnline || owOnline;
+
+  res.json({
+    inference: {
+      available: localAiOnline,
+      provider: ollamaOnline ? "ollama" : owOnline ? "openwebui" : "rule-engine",
+      local: true,
+      fallback: "rule-engine",
+    },
+    tts: {
+      available: hasElevenLabs || hasOpenAi,
+      provider: ttsProvider,
+      local: false,
+    },
+    stt: {
+      available: hasOpenAi,
+      provider: hasOpenAi ? "openai-whisper" : null,
+      local: false,
+    },
+    vision: {
+      available: hasOpenAi,
+      provider: hasOpenAi ? "openai-gpt4v" : null,
+      local: false,
+    },
+    store: {
+      available: true,
+      provider: process.env["PLUGIN_REGISTRY_URL"] ? "remote" : "local",
+      local: !process.env["PLUGIN_REGISTRY_URL"],
+    },
+  });
+});
 
 // ── GET /api/config ────────────────────────────────────────────────────────
 router.get("/config", async (_req, res) => {

@@ -9,9 +9,19 @@ import { bus } from "../lib/bus.js";
 import { db, aiPersonaTable } from "@workspace/db";
 import { getConfig } from "../lib/app-config.js";
 
+async function hasOpenAiKey(): Promise<boolean> {
+  const fromDb = await getConfig("OPENAI_API_KEY").catch(() => null);
+  return !!(fromDb ?? process.env["OPENAI_API_KEY"]);
+}
+
 const router = Router();
 
 router.post("/analyze", async (req, res) => {
+  if (!(await hasOpenAiKey())) {
+    res.status(503).json({ available: false, reason: "no-vision-key" });
+    return;
+  }
+
   const { image, mimeType, context } = req.body as {
     image?: string;
     mimeType?: string;
@@ -55,6 +65,11 @@ router.post("/analyze", async (req, res) => {
 });
 
 router.post("/ambient", async (req, res) => {
+  if (!(await hasOpenAiKey())) {
+    res.status(503).json({ available: false, reason: "no-vision-key" });
+    return;
+  }
+
   const { image, mimeType } = req.body as { image?: string; mimeType?: string };
   if (!image || typeof image !== "string") {
     res.status(400).json({ error: "image (base64) required" });
@@ -136,9 +151,14 @@ router.post("/tts", async (req, res) => {
     return;
   }
 
-  // Check for ElevenLabs config first
   const elKey    = await getConfig("ELEVENLABS_API_KEY").catch(() => null);
   const provider = await getConfig("TTS_PROVIDER").catch(() => "auto");
+  const oaiKey   = await getConfig("OPENAI_API_KEY").catch(() => null) ?? process.env["OPENAI_API_KEY"];
+
+  if (!elKey && !oaiKey) {
+    res.status(503).json({ available: false, reason: "no-tts-key" });
+    return;
+  }
 
   if (elKey && provider !== "openai") {
     const voiceId = voice ?? (await getConfig("ELEVENLABS_VOICE_ID").catch(() => "pNInz6obpgDQGcFmaJgB"));
@@ -181,6 +201,11 @@ router.get("/elevenlabs/voices", async (_req, res) => {
 });
 
 router.post("/stt", async (req, res) => {
+  if (!(await hasOpenAiKey())) {
+    res.status(503).json({ available: false, reason: "no-stt-key" });
+    return;
+  }
+
   const { audio } = req.body as { audio?: string };
 
   if (!audio || typeof audio !== "string") {

@@ -63,13 +63,13 @@ export default function FeedbackLoop() {
   const { data: profile, isLoading: profileLoading } = useQuery<BehaviorProfile>({
     queryKey: ["feedback-profile"],
     queryFn: () => apiFetch("/feedback/profile"),
-    refetchInterval: 5000,
+    refetchInterval: 30_000,
   });
 
   const { data: signalsData, isLoading: signalsLoading } = useQuery<{ signals: Signal[]; total: number }>({
     queryKey: ["feedback-signals"],
     queryFn: () => apiFetch("/feedback/signals?limit=30"),
-    refetchInterval: 10000,
+    refetchInterval: 30_000,
   });
 
   const recordSignal = useMutation({
