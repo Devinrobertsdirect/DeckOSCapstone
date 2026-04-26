@@ -14,14 +14,19 @@ router.get("/notifications", async (_req, res) => {
       .where(eq(notificationsTable.read, false))
       .orderBy(desc(notificationsTable.createdAt));
 
-    // Last 30 read notifications for history
+    // Last 50 read notifications for history
     const recent = await db.select().from(notificationsTable)
       .where(eq(notificationsTable.read, true))
       .orderBy(desc(notificationsTable.createdAt))
-      .limit(30);
+      .limit(50);
 
     const unreadCount = unread.length;
-    const notifications = [...unread, ...recent];
+
+    // Globally sorted newest-first across both buckets
+    const notifications = [...unread, ...recent].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+
     res.json({ notifications, unread, recent, unreadCount, total: notifications.length });
   } catch (err) {
     res.status(500).json({ error: "Failed to list notifications" });

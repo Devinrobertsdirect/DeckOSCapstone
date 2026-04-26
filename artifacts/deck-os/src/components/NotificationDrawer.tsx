@@ -48,6 +48,8 @@ function fmtTime(iso: string): string {
 
 interface NotificationApiResponse {
   notifications: AppNotification[];
+  unread: AppNotification[];
+  recent: AppNotification[];
   unreadCount: number;
 }
 
@@ -76,7 +78,8 @@ export function NotificationDrawer({
     try {
       setLoading(true);
       const data = await fetchNotifications();
-      setNotifications(data.notifications ?? []);
+      // Drawer shows only UNREAD notifications — dismissed/read items do not reappear
+      setNotifications(data.unread ?? []);
       onUnreadChange(data.unreadCount ?? 0);
     } catch {
       // silent
@@ -107,17 +110,16 @@ export function NotificationDrawer({
   }, [wsEvents, load]);
 
   // Dismiss: mark read on server and immediately REMOVE from list
-  async function dismiss(n: AppNotification) {
+  // All items in the drawer are unread, so count goes down by 1
+  async function dismiss(id: number) {
     try {
-      await fetch(`${BASE}api/notifications/${n.id}/read`, { method: "PATCH" });
+      await fetch(`${BASE}api/notifications/${id}/read`, { method: "PATCH" });
     } catch {}
-    setNotifications((prev) => prev.filter((x) => x.id !== n.id));
-    // If the dismissed item was unread, update bell immediately
-    if (!n.read) {
-      onUnreadChange(
-        Math.max(0, notifications.filter((x) => !x.read && x.id !== n.id).length),
-      );
-    }
+    setNotifications((prev) => {
+      const next = prev.filter((x) => x.id !== id);
+      onUnreadChange(next.length);
+      return next;
+    });
   }
 
   async function markAllRead() {
@@ -222,7 +224,7 @@ export function NotificationDrawer({
                         {n.title}
                       </span>
                       <button
-                        onClick={() => void dismiss(n)}
+                        onClick={() => void dismiss(n.id)}
                         className="text-primary/30 hover:text-primary transition-colors shrink-0"
                         title="Dismiss"
                       >
