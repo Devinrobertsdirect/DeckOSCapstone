@@ -501,6 +501,8 @@ router.get("/plugins/store/reviews", async (_req, res) => {
         r.pluginId,
         {
           rating: r.rating,
+          avgRating: r.rating,
+          reviewCount: 1,
           review: r.review,
           createdAt: r.createdAt?.toISOString() ?? null,
           updatedAt: r.updatedAt?.toISOString() ?? null,
@@ -514,7 +516,7 @@ router.get("/plugins/store/reviews", async (_req, res) => {
   }
 });
 
-router.get("/plugins/store/:pluginId/reviews", async (req, res) => {
+router.get("/plugins/store/:pluginId/review", async (req, res) => {
   const { pluginId } = req.params;
   if (!SAFE_PLUGIN_ID_RE.test(pluginId)) {
     res.status(400).json({ error: "Invalid plugin ID format" });
@@ -531,6 +533,8 @@ router.get("/plugins/store/:pluginId/reviews", async (req, res) => {
       review: row
         ? {
             rating: row.rating,
+            avgRating: row.rating,
+            reviewCount: 1,
             review: row.review,
             createdAt: row.createdAt?.toISOString() ?? null,
             updatedAt: row.updatedAt?.toISOString() ?? null,

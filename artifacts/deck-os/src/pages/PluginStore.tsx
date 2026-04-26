@@ -29,6 +29,8 @@ interface RegistryPlugin {
 
 interface ReviewEntry {
   rating: number;
+  avgRating: number;
+  reviewCount: number;
   review: string | null;
   createdAt: string | null;
   updatedAt: string | null;
@@ -849,10 +851,10 @@ export default function PluginStore() {
                     <span
                       className="flex items-center gap-1 ml-auto cursor-pointer"
                       onClick={(e) => { e.stopPropagation(); setSelectedPlugin(plugin); }}
-                      title="Your rating — click to update"
+                      title={`Your rating: ${cardReview.avgRating.toFixed(1)} — click to update`}
                     >
-                      <StarRating value={cardReview.rating} />
-                      <span className="font-mono text-[9px] text-primary/30 ml-0.5">1</span>
+                      <StarRating value={cardReview.avgRating} />
+                      <span className="font-mono text-[9px] text-primary/30 ml-0.5">{cardReview.reviewCount}</span>
                     </span>
                   )}
                   {plugin.installed && !cardReview && (
