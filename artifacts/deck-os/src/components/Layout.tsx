@@ -746,8 +746,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
                                     ) : (
                                       <>
                                         <button
-                                          onClick={() => applyPreset(p)}
-                                          title={`Density ${p.density}% · Speed ${p.speed}%`}
+                                          onClick={() => startRenamePreset(idx)}
+                                          title="Click to rename"
                                           className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border transition-all ${
                                             active
                                               ? "border-primary/60 bg-primary/15 text-primary"
@@ -757,11 +757,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
                                           {p.name}
                                         </button>
                                         <button
-                                          onClick={() => startRenamePreset(idx)}
-                                          title="Rename preset"
-                                          className="text-[9px] text-primary/20 hover:text-primary/60 transition-colors leading-none"
+                                          onClick={() => applyPreset(p)}
+                                          title={`Apply — Density ${p.density}% · Speed ${p.speed}%`}
+                                          className="text-[9px] text-primary/20 hover:text-primary/70 transition-colors leading-none"
                                         >
-                                          ✎
+                                          ▶
                                         </button>
                                         <button
                                           onClick={() => deleteCustomPreset(idx)}
