@@ -519,6 +519,8 @@ function VoiceStep({ aiName, onComplete }: { aiName: string; onComplete: (voice:
       }
       const audio = new Audio(url);
       audioRef.current = audio;
+      const { attachAmplitudeAnalyser } = await import("@/components/AIFace");
+      attachAmplitudeAnalyser(audio);
       audio.onended = () => setPlaying(null);
       audio.onerror = () => setPlaying(null);
       await audio.play();
@@ -811,6 +813,8 @@ function FirstContactStep({
         const url = `data:audio/${data.format ?? "mp3"};base64,${data.audio}`;
         const audio = new Audio(url);
         audioRef.current = audio;
+        const { attachAmplitudeAnalyser } = await import("@/components/AIFace");
+        attachAmplitudeAnalyser(audio);
         audio.onended = () => { if (!cancelled) { setSpeaking(false); setDone(true); } };
         audio.onerror = () => { if (!cancelled) { setSpeaking(false); setDone(true); } };
         await audio.play();

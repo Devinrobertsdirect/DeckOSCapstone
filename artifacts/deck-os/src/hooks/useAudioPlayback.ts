@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+import { attachAmplitudeAnalyser } from "@/components/AIFace";
 
 export type PlaybackState = "idle" | "speaking";
 
@@ -16,6 +17,7 @@ export function useAudioPlayback() {
     return new Promise((resolve) => {
       const audio = new Audio(`data:audio/mpeg;base64,${base64Mp3}`);
       audioRef.current = audio;
+      attachAmplitudeAnalyser(audio);
       setPlaybackState("speaking");
 
       const done = () => {
