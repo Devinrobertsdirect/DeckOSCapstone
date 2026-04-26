@@ -79,8 +79,10 @@ export default function Settings() {
   const [showOai, setShowOai]     = useState(false);
   const [showAnt, setShowAnt]     = useState(false);
   const [showEl, setShowEl]       = useState(false);
-  const [elTesting, setElTesting] = useState(false);
-  const [elTestOk, setElTestOk]   = useState<boolean | null>(null);
+  const [elTesting, setElTesting]         = useState(false);
+  const [elTestOk, setElTestOk]           = useState<boolean | null>(null);
+  const [localTesting, setLocalTesting]   = useState(false);
+  const [localTestOk, setLocalTestOk]     = useState<boolean | null>(null);
 
   useEffect(() => {
     fetch("/api/features")
@@ -175,6 +177,36 @@ export default function Settings() {
     }
   }
 
+  async function testLocalTts() {
+    setLocalTesting(true);
+    setLocalTestOk(null);
+    try {
+      await fetch("/api/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ TTS_PROVIDER: "local" }),
+      });
+      const r = await fetch("/api/vision/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Local offline voice confirmed. JARVIS online." }),
+      });
+      if (!r.ok) throw new Error("Local TTS request failed");
+      const { audio, format } = await r.json() as { audio: string; format: string };
+      const el = new Audio(`data:audio/${format};base64,${audio}`);
+      const { attachAmplitudeAnalyser } = await import("@/lib/audioAnalyser");
+      attachAmplitudeAnalyser(el);
+      el.play().catch(() => {});
+      setLocalTestOk(true);
+      setCfg((prev) => ({ ...prev, TTS_PROVIDER: "local" }));
+      setDirty(false);
+    } catch {
+      setLocalTestOk(false);
+    } finally {
+      setLocalTesting(false);
+    }
+  }
+
   async function testConnection() {
     setTesting(true);
     setTestResult(null);
@@ -241,7 +273,7 @@ export default function Settings() {
               label: "VOICE TTS",
               icon: <Volume2 className="w-3 h-3" />,
               f: features.tts,
-              localLabel: features.tts.provider ? features.tts.provider.toUpperCase() : "DISABLED",
+              localLabel: features.tts.provider === "local" ? "ESPEAK-NG" : features.tts.provider ? features.tts.provider.toUpperCase() : "DISABLED",
             },
             {
               key: "stt",
@@ -548,9 +580,10 @@ export default function Settings() {
                 <label className="font-mono text-xs text-primary/60 uppercase">Voice Provider</label>
                 <div className="flex gap-2">
                   {[
-                    { val: "auto",       label: "AUTO (ElevenLabs → OpenAI)" },
+                    { val: "auto",       label: "AUTO (ElevenLabs → OpenAI → Local)" },
                     { val: "elevenlabs", label: "ElevenLabs Only" },
                     { val: "openai",     label: "OpenAI Only" },
+                    { val: "local",      label: "Local (Offline)" },
                   ].map(({ val, label }) => (
                     <button
                       key={val}
@@ -567,18 +600,33 @@ export default function Settings() {
                 </div>
               </div>
 
-              {/* Test button */}
-              <div className="flex items-center gap-3">
+              {/* Test buttons */}
+              <div className="flex items-center gap-3 flex-wrap">
                 <button
                   onClick={testElevenLabs}
                   disabled={elTesting || !cfg.ELEVENLABS_API_KEY.trim()}
                   className="flex items-center gap-1.5 px-4 py-2 border border-primary/40 font-mono text-xs text-primary hover:bg-primary/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {elTesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Volume2 className="w-3 h-3" />}
-                  {elTesting ? "TESTING..." : "PLAY TEST"}
+                  {elTesting ? "TESTING..." : "TEST ELEVENLABS"}
                 </button>
                 {elTestOk === true  && <span className="font-mono text-xs text-[#11d97a] flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />VOICE OK</span>}
                 {elTestOk === false && <span className="font-mono text-xs text-[#f03248] flex items-center gap-1"><XCircle className="w-3 h-3" />CHECK KEY</span>}
+
+                {features?.tts.local && (
+                  <>
+                    <button
+                      onClick={testLocalTts}
+                      disabled={localTesting}
+                      className="flex items-center gap-1.5 px-4 py-2 border border-primary/40 font-mono text-xs text-primary hover:bg-primary/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {localTesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <HardDrive className="w-3 h-3" />}
+                      {localTesting ? "TESTING..." : "TEST LOCAL"}
+                    </button>
+                    {localTestOk === true  && <span className="font-mono text-xs text-[#11d97a] flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />LOCAL OK</span>}
+                    {localTestOk === false && <span className="font-mono text-xs text-[#f03248] flex items-center gap-1"><XCircle className="w-3 h-3" />LOCAL FAIL</span>}
+                  </>
+                )}
               </div>
             </CardContent>
           </Card>

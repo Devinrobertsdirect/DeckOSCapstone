@@ -3,6 +3,7 @@ import { z } from "zod/v4";
 import { getConfig, setConfig, deleteConfig, getAllConfig } from "../lib/app-config.js";
 import { invalidateConfigCache } from "../lib/app-config.js";
 import { detectOllama, detectOpenWebUI, getInferenceState } from "../lib/inference.js";
+import { isLocalTtsAvailable } from "../lib/local-tts.js";
 
 const router = Router();
 
@@ -20,7 +21,8 @@ router.get("/features", async (_req, res) => {
 
   const hasOpenAi = !!(oaiFromDb ?? process.env["OPENAI_API_KEY"]);
   const hasElevenLabs = !!elFromDb;
-  const ttsProvider = hasElevenLabs ? "elevenlabs" : hasOpenAi ? "openai" : null;
+  const ttsLocal = isLocalTtsAvailable();
+  const ttsProvider = hasElevenLabs ? "elevenlabs" : hasOpenAi ? "openai" : ttsLocal ? "local" : null;
 
   const ollamaOnline = state.ollamaAvailable ?? (await detectOllama().catch(() => false));
   const owHostConfigured = !!((owFromDb ?? process.env["OPENWEBUI_HOST"] ?? "").trim());
@@ -35,9 +37,9 @@ router.get("/features", async (_req, res) => {
       fallback: "rule-engine",
     },
     tts: {
-      available: hasElevenLabs || hasOpenAi,
+      available: hasElevenLabs || hasOpenAi || ttsLocal,
       provider: ttsProvider,
-      local: false,
+      local: ttsLocal,
     },
     stt: {
       available: hasOpenAi,

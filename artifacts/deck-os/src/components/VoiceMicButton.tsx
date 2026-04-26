@@ -104,8 +104,8 @@ export function VoiceMicButton({ onTranscript, disabled = false, className = "",
         body: JSON.stringify({ text: responseText }),
       });
       if (!ttsRes.ok) { setPipelineState("idle"); return; }
-      const { audio } = await ttsRes.json() as { audio: string };
-      await speak(audio);
+      const { audio, format } = await ttsRes.json() as { audio: string; format?: string };
+      await speak(audio, format);
     } catch (e) {
       handleError(e instanceof Error ? e.message : "Voice pipeline error");
       return;

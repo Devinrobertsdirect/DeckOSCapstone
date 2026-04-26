@@ -8,6 +8,7 @@ import {
 import { bus } from "../lib/bus.js";
 import { db, aiPersonaTable } from "@workspace/db";
 import { getConfig } from "../lib/app-config.js";
+import { localTts, isLocalTtsAvailable } from "../lib/local-tts.js";
 
 async function hasOpenAiKey(): Promise<boolean> {
   const fromDb = await getConfig("OPENAI_API_KEY").catch(() => null);
@@ -152,14 +153,42 @@ router.post("/tts", async (req, res) => {
   }
 
   const elKey    = await getConfig("ELEVENLABS_API_KEY").catch(() => null);
-  const provider = await getConfig("TTS_PROVIDER").catch(() => "auto");
-  const oaiKey   = await getConfig("OPENAI_API_KEY").catch(() => null) ?? process.env["OPENAI_API_KEY"];
+  const provider = (await getConfig("TTS_PROVIDER").catch(() => null)) ?? "auto";
+  const oaiKey   = (await getConfig("OPENAI_API_KEY").catch(() => null)) ?? process.env["OPENAI_API_KEY"];
+  const localOk  = isLocalTtsAvailable();
 
+  // ── Local-only mode ─────────────────────────────────────────────────────
+  if (provider === "local") {
+    if (!localOk) {
+      res.status(503).json({ available: false, reason: "local-tts-unavailable" });
+      return;
+    }
+    try {
+      const wav = await localTts(text);
+      res.json({ audio: wav.toString("base64"), format: "wav", provider: "local" });
+    } catch (err) {
+      res.status(500).json({ error: "Local TTS failed", detail: String(err) });
+    }
+    return;
+  }
+
+  // ── No cloud keys — auto-fallback to local if available ─────────────────
   if (!elKey && !oaiKey) {
+    if (localOk && provider === "auto") {
+      try {
+        const wav = await localTts(text);
+        res.json({ audio: wav.toString("base64"), format: "wav", provider: "local" });
+        return;
+      } catch (err) {
+        res.status(503).json({ available: false, reason: "all-tts-failed", detail: String(err) });
+        return;
+      }
+    }
     res.status(503).json({ available: false, reason: "no-tts-key" });
     return;
   }
 
+  // ── ElevenLabs ──────────────────────────────────────────────────────────
   if (elKey && provider !== "openai") {
     const voiceId = voice ?? (await getConfig("ELEVENLABS_VOICE_ID").catch(() => "pNInz6obpgDQGcFmaJgB"));
     try {
@@ -167,23 +196,44 @@ router.post("/tts", async (req, res) => {
       res.json({ audio: audio.toString("base64"), format: "mp3", provider: "elevenlabs" });
       return;
     } catch (err) {
-      console.warn("[TTS] ElevenLabs failed, falling back to OpenAI:", err);
+      console.warn("[TTS] ElevenLabs failed, falling back:", err);
+      // fall through to OpenAI / local
     }
   }
 
-  // Fall back to OpenAI TTS
-  let resolvedVoice = voice;
-  if (!resolvedVoice) {
+  // ── OpenAI TTS ──────────────────────────────────────────────────────────
+  if (oaiKey) {
+    let resolvedVoice = voice;
+    if (!resolvedVoice) {
+      try {
+        const [persona] = await db.select({ voice: aiPersonaTable.voice }).from(aiPersonaTable).limit(1);
+        resolvedVoice = persona?.voice ?? "onyx";
+      } catch {
+        resolvedVoice = "onyx";
+      }
+    }
     try {
-      const [persona] = await db.select({ voice: aiPersonaTable.voice }).from(aiPersonaTable).limit(1);
-      resolvedVoice = persona?.voice ?? "onyx";
-    } catch {
-      resolvedVoice = "onyx";
+      const audio = await textToSpeech(text.slice(0, 4096), (resolvedVoice as "onyx"), "mp3");
+      res.json({ audio: audio.toString("base64"), format: "mp3", provider: "openai" });
+      return;
+    } catch (err) {
+      console.warn("[TTS] OpenAI failed, falling back to local:", err);
     }
   }
 
-  const audio = await textToSpeech(text.slice(0, 4096), (resolvedVoice as "onyx"), "mp3");
-  res.json({ audio: audio.toString("base64"), format: "mp3", provider: "openai" });
+  // ── Final fallback: local TTS ────────────────────────────────────────────
+  if (localOk) {
+    try {
+      const wav = await localTts(text);
+      res.json({ audio: wav.toString("base64"), format: "wav", provider: "local" });
+      return;
+    } catch (err) {
+      res.status(503).json({ available: false, reason: "all-tts-failed", detail: String(err) });
+      return;
+    }
+  }
+
+  res.status(503).json({ available: false, reason: "no-tts-available" });
 });
 
 // ── ElevenLabs voices list (for settings UI) ─────────────────────────────
