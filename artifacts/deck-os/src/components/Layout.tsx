@@ -63,9 +63,20 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [notifOpen, setNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const { mode, setMode, particlePrefs, setParticlePrefs } = useVisualMode();
-  const cfg = useMemo(() => getStoredConfig(), []);
-  const aiName   = cfg?.aiName ?? cfg?.systemName ?? "JARVIS";
+  const cfg      = useMemo(() => getStoredConfig(), []);
   const userName = cfg?.userName ?? null;
+  const [aiName, setAiName] = useState(() => {
+    const c = getStoredConfig();
+    return c?.aiName ?? c?.systemName ?? "JARVIS";
+  });
+  useEffect(() => {
+    function onNameUpdate() {
+      const c = getStoredConfig();
+      setAiName(c?.aiName ?? c?.systemName ?? "JARVIS");
+    }
+    window.addEventListener("deckos:ai_name_updated", onNameUpdate);
+    return () => window.removeEventListener("deckos:ai_name_updated", onNameUpdate);
+  }, []);
   const [activeColor, setActiveColor] = useState<ColorScheme>(getStoredColor());
   const [now, setNow] = useState(() => new Date());
   const { status: wsStatus, events } = useWebSocket();

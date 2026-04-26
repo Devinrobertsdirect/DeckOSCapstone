@@ -4,13 +4,14 @@ import { useWsEvents } from "@/contexts/WebSocketContext";
 import {
   Bot, Mic2, Palette, Brain, MessageSquare, User2,
   ChevronRight, Check, Volume2, RefreshCw, Sparkles, SlidersHorizontal,
-  Play, Square, Wand2, MonitorPlay,
+  Play, Square, Wand2, MonitorPlay, Loader2,
 } from "lucide-react";
 import { HudCorners } from "@/components/HudCorners";
 import { AIFace, saveFaceStyle, useFaceStyle } from "@/components/AIFace";
 import {
-  FACE_OPTIONS, QUIZ_QUESTIONS, VOICE_OPTIONS, VOICE_KEY,
+  FACE_OPTIONS, QUIZ_QUESTIONS, VOICE_OPTIONS, VOICE_KEY, AI_NAME_KEY,
 } from "@/components/CinematicOnboarding";
+import { getStoredConfig } from "@/components/Onboarding";
 import type { FaceStyle } from "@/components/AIFace";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -234,6 +235,8 @@ function PersonaPreview({ persona }: { persona: Partial<AiPersona> }) {
 
 const API_BASE = `${import.meta.env.BASE_URL}api`;
 
+export const AI_NAME_UPDATED_EVENT = "deckos:ai_name_updated";
+
 function RecalibrateTab() {
   const currentFace  = useFaceStyle();
   const [face, setFaceLocal]    = useState<FaceStyle>(currentFace);
@@ -241,6 +244,10 @@ function RecalibrateTab() {
   const [playing, setPlaying]   = useState<string | null>(null);
   const [ttsError, setTtsError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const [aiNameVal,  setAiNameVal]  = useState(() => localStorage.getItem(AI_NAME_KEY) ?? getStoredConfig()?.aiName ?? "JARVIS");
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nameSaved,  setNameSaved]  = useState(false);
 
   const [quizQ, setQuizQ]       = useState(0);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
@@ -342,6 +349,28 @@ function RecalibrateTab() {
     }, 250);
   }
 
+  async function saveAiName() {
+    const trimmed = aiNameVal.trim();
+    if (!trimmed) return;
+    setNameSaving(true);
+    localStorage.setItem(AI_NAME_KEY, trimmed);
+    const currentCfg = getStoredConfig();
+    if (currentCfg) {
+      localStorage.setItem("jarvis.user", JSON.stringify({ ...currentCfg, aiName: trimmed, systemName: trimmed }));
+    }
+    try {
+      await fetch(`${API_BASE}/ucm/identity`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: { aiName: trimmed }, merge: true }),
+      });
+    } catch { /* silently ignore — localStorage already updated */ }
+    window.dispatchEvent(new Event(AI_NAME_UPDATED_EVENT));
+    setNameSaving(false);
+    setNameSaved(true);
+    setTimeout(() => setNameSaved(false), 2000);
+  }
+
   function resetQuiz() {
     setQuizQ(0);
     setQuizAnswers({});
@@ -380,6 +409,43 @@ function RecalibrateTab() {
 
   return (
     <div className="space-y-8">
+
+      {/* ── AI Name ─────────────────────────────────────────────────────── */}
+      <div className="relative border border-primary/30 bg-card/40 p-5">
+        <HudCorners />
+        <div className="flex items-center justify-between mb-4">
+          <SectionHeader icon={Bot} title="AI DESIGNATION" sub="The name your AI identifies itself by across the interface" />
+          {nameSaved && (
+            <span className="font-mono text-[10px] text-emerald-400 flex items-center gap-1">
+              <Check className="w-3 h-3" /> APPLIED
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <input
+            className="flex-1 bg-background/50 border border-primary/20 px-3 py-2 font-mono text-sm text-primary focus:outline-none focus:border-primary/60 transition-colors uppercase tracking-widest placeholder:text-primary/20 placeholder:normal-case placeholder:tracking-normal"
+            value={aiNameVal}
+            onChange={e => setAiNameVal(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") void saveAiName(); }}
+            maxLength={32}
+            placeholder="e.g. JARVIS"
+            spellCheck={false}
+          />
+          <button
+            onClick={() => void saveAiName()}
+            disabled={nameSaving || !aiNameVal.trim()}
+            className="border border-primary/40 px-4 py-2 font-mono text-xs text-primary bg-primary/10 hover:bg-primary/20 transition-all disabled:opacity-40 flex items-center gap-1.5 shrink-0"
+          >
+            {nameSaving
+              ? <><Loader2 className="w-3 h-3 animate-spin" /> SAVING</>
+              : "APPLY"
+            }
+          </button>
+        </div>
+        <div className="mt-2 font-mono text-[10px] text-primary/25">
+          Updates the sidebar, command console, and AI chat headers immediately.
+        </div>
+      </div>
 
       {/* ── Face picker ─────────────────────────────────────────────────── */}
       <div className="relative border border-primary/30 bg-card/40 p-5">
