@@ -247,6 +247,7 @@ function RecalibrateTab() {
   const [quizTransition, setQuizTransition] = useState(false);
   const [quizDone, setQuizDone] = useState(false);
   const [quizSaved, setQuizSaved] = useState(false);
+  const [quizSaveError, setQuizSaveError] = useState(false);
 
   const [faceSaved, setFaceSaved]   = useState(false);
   const [voiceSaved, setVoiceSaved] = useState(false);
@@ -258,6 +259,11 @@ function RecalibrateTab() {
   function applyFace(f: FaceStyle) {
     setFaceLocal(f);
     saveFaceStyle(f);
+    fetch(`${API_BASE}/ucm/preferences`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: { faceStyle: f }, merge: true }),
+    }).catch(() => {});
     setFaceSaved(true);
     setTimeout(() => setFaceSaved(false), 2000);
   }
@@ -265,6 +271,11 @@ function RecalibrateTab() {
   function applyVoice(v: string) {
     setVoiceLocal(v);
     localStorage.setItem(VOICE_KEY, v);
+    fetch(`${API_BASE}/ucm/preferences`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: { voice: v }, merge: true }),
+    }).catch(() => {});
     setVoiceSaved(true);
     setTimeout(() => setVoiceSaved(false), 2000);
   }
@@ -326,21 +337,23 @@ function RecalibrateTab() {
     setQuizTransition(false);
     setQuizDone(false);
     setQuizSaved(false);
+    setQuizSaveError(false);
   }
 
   async function saveQuizToUCM(answers?: Record<string, number>) {
     const a = answers ?? quizAnswers;
     try {
+      localStorage.setItem("deckos_quiz_answers", JSON.stringify(a));
       const res = await fetch(`${API_BASE}/ucm/preferences`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           data: {
-            verbosityLevel:  a["verbosity"]      ?? 0.5,
-            humorLevel:      a["humor"]          ?? 0.4,
-            proactivityLevel: a["proactivity"]   ?? 0.5,
-            toneFormality:   a["formality"]      ?? 0.5,
-            analyticalDepth: a["analyticalDepth"] ?? 0.5,
+            verbosityLevel:   a["verbosity"]       ?? 0.5,
+            humorLevel:       a["humor"]           ?? 0.4,
+            proactivityLevel: a["proactivity"]     ?? 0.5,
+            toneFormality:    a["formality"]       ?? 0.5,
+            analyticalDepth:  a["analyticalDepth"] ?? 0.5,
           },
           merge: true,
         }),
@@ -349,6 +362,7 @@ function RecalibrateTab() {
       setQuizSaved(true);
     } catch {
       setQuizSaved(false);
+      setQuizSaveError(true);
     }
   }
 
@@ -491,6 +505,26 @@ function RecalibrateTab() {
                 >
                   <RefreshCw className="w-3 h-3" /> RECALIBRATE AGAIN
                 </button>
+              </div>
+            ) : quizSaveError ? (
+              <div className="flex flex-col items-center gap-4">
+                <div className="text-red-400 font-mono text-xs flex items-center gap-2">
+                  ✗ SAVE FAILED — check API connection
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => saveQuizToUCM()}
+                    className="flex items-center gap-2 px-4 py-2 border border-primary/40 font-mono text-[10px] text-primary hover:bg-primary/10 transition-all"
+                  >
+                    <RefreshCw className="w-3 h-3" /> RETRY
+                  </button>
+                  <button
+                    onClick={resetQuiz}
+                    className="flex items-center gap-2 px-4 py-2 border border-primary/20 font-mono text-[10px] text-primary/40 hover:text-primary/70 transition-all"
+                  >
+                    <RefreshCw className="w-3 h-3" /> REDO
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-4">
