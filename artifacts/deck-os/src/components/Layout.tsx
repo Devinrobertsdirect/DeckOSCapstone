@@ -1,6 +1,7 @@
-import { useEffect, useState, useMemo, useRef } from "react";
-import { getStoredConfig, applyColor, getStoredColor, type ColorScheme } from "@/components/Onboarding";
+import { useEffect, useState, useRef } from "react";
+import { applyColor, getStoredColor, type ColorScheme } from "@/components/Onboarding";
 import { useAiName } from "@/hooks/useAiName";
+import { useUserName } from "@/hooks/useUserName";
 import { AIFace, useFaceStyle } from "@/components/AIFace";
 import { Link, useLocation } from "wouter";
 import {
@@ -64,8 +65,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [notifOpen, setNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const { mode, setMode, particlePrefs, setParticlePrefs } = useVisualMode();
-  const cfg      = useMemo(() => getStoredConfig(), []);
-  const userName = cfg?.userName ?? null;
+  const userName = useUserName();
   const aiName   = useAiName();
   const [activeColor, setActiveColor] = useState<ColorScheme>(getStoredColor());
   const [now, setNow] = useState(() => new Date());

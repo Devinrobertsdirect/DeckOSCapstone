@@ -13,6 +13,7 @@ import {
 } from "@/components/CinematicOnboarding";
 import { getStoredConfig } from "@/components/Onboarding";
 import { AI_NAME_UPDATED_EVENT } from "@/hooks/useAiName";
+import { USER_NAME_UPDATED_EVENT } from "@/hooks/useUserName";
 import type { FaceStyle } from "@/components/AIFace";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -244,9 +245,13 @@ function RecalibrateTab() {
   const [ttsError, setTtsError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const [aiNameVal,  setAiNameVal]  = useState(() => localStorage.getItem(AI_NAME_KEY) ?? getStoredConfig()?.aiName ?? "JARVIS");
-  const [nameSaving, setNameSaving] = useState(false);
-  const [nameSaved,  setNameSaved]  = useState(false);
+  const [aiNameVal,    setAiNameVal]    = useState(() => localStorage.getItem(AI_NAME_KEY) ?? getStoredConfig()?.aiName ?? "JARVIS");
+  const [nameSaving,   setNameSaving]   = useState(false);
+  const [nameSaved,    setNameSaved]    = useState(false);
+
+  const [userNameVal,  setUserNameVal]  = useState(() => getStoredConfig()?.userName ?? "Commander");
+  const [uNameSaving,  setUNameSaving]  = useState(false);
+  const [uNameSaved,   setUNameSaved]   = useState(false);
 
   const [quizQ, setQuizQ]       = useState(0);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
@@ -374,6 +379,31 @@ function RecalibrateTab() {
     }
   }
 
+  async function saveUserName() {
+    const trimmed = userNameVal.trim();
+    if (!trimmed) return;
+    setUNameSaving(true);
+    const currentCfg = getStoredConfig();
+    if (currentCfg) {
+      localStorage.setItem("jarvis.user", JSON.stringify({ ...currentCfg, userName: trimmed }));
+    }
+    window.dispatchEvent(new Event(USER_NAME_UPDATED_EVENT));
+    try {
+      const res = await fetch(`${API_BASE}/ucm/identity`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: { userName: trimmed }, merge: true }),
+      });
+      if (!res.ok) console.warn("[deckos] UCM identity PATCH failed:", res.status);
+    } catch (e) {
+      console.warn("[deckos] UCM identity PATCH error:", e);
+    } finally {
+      setUNameSaving(false);
+      setUNameSaved(true);
+      setTimeout(() => setUNameSaved(false), 2000);
+    }
+  }
+
   function resetQuiz() {
     setQuizQ(0);
     setQuizAnswers({});
@@ -447,6 +477,43 @@ function RecalibrateTab() {
         </div>
         <div className="mt-2 font-mono text-[10px] text-primary/25">
           Updates the sidebar, command console, and AI chat headers immediately.
+        </div>
+      </div>
+
+      {/* ── User Name ─────────────────────────────────────────────────────── */}
+      <div className="relative border border-primary/30 bg-card/40 p-5">
+        <HudCorners />
+        <div className="flex items-center justify-between mb-4">
+          <SectionHeader icon={User2} title="YOUR NAME" sub="How the AI addresses you in greetings and conversations" />
+          {uNameSaved && (
+            <span className="font-mono text-[10px] text-emerald-400 flex items-center gap-1">
+              <Check className="w-3 h-3" /> APPLIED
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <input
+            className="flex-1 bg-background/50 border border-primary/20 px-3 py-2 font-mono text-sm text-primary focus:outline-none focus:border-primary/60 transition-colors uppercase tracking-widest placeholder:text-primary/20 placeholder:normal-case placeholder:tracking-normal"
+            value={userNameVal}
+            onChange={e => setUserNameVal(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") void saveUserName(); }}
+            maxLength={32}
+            placeholder="e.g. COMMANDER"
+            spellCheck={false}
+          />
+          <button
+            onClick={() => void saveUserName()}
+            disabled={uNameSaving || !userNameVal.trim()}
+            className="border border-primary/40 px-4 py-2 font-mono text-xs text-primary bg-primary/10 hover:bg-primary/20 transition-all disabled:opacity-40 flex items-center gap-1.5 shrink-0"
+          >
+            {uNameSaving
+              ? <><Loader2 className="w-3 h-3 animate-spin" /> SAVING</>
+              : "APPLY"
+            }
+          </button>
+        </div>
+        <div className="mt-2 font-mono text-[10px] text-primary/25">
+          Updates the sidebar profile and how the AI addresses you.
         </div>
       </div>
 
