@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWebSocket, useLatestPayload, useWsEvents } from "@/contexts/WebSocketContext";
 import { AIFace, useFaceStyle } from "@/components/AIFace";
 import { useAiName } from "@/hooks/useAiName";
+import { useUserName } from "@/hooks/useUserName";
 
 const MODES = ["DIRECT_EXECUTION", "LIGHT_REASONING", "DEEP_REASONING", "HYBRID_MODE"] as const;
 type Mode = typeof MODES[number];
@@ -65,6 +66,7 @@ export default function AiControl() {
   const processedTokenKeysRef = useRef(new Set<string>());
   const faceStyle = useFaceStyle();
   const aiName = useAiName();
+  const userName = useUserName();
 
   useEffect(() => {
     const fetchTiers = () => {
@@ -324,7 +326,14 @@ export default function AiControl() {
         </CardHeader>
         <div className="flex-1 overflow-y-auto p-4 space-y-3 font-mono text-xs min-h-0">
           {outputItems.length === 0 && !sending && (
-            <div className="text-primary/40">// Send a prompt to get an AI response via WebSocket event stream</div>
+            <div className="space-y-1">
+              <div className="text-primary/70 font-mono">
+                {aiName} online. All systems nominal.
+              </div>
+              <div className="text-primary/50 font-mono">
+                Welcome back, {userName || "Commander"}. Standing by for your command.
+              </div>
+            </div>
           )}
           {outputItems.map((item, i) => {
             const p = item.payload as ChatResponsePayload;
