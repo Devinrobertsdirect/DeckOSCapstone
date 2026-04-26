@@ -82,12 +82,13 @@ export async function callOllama(
   model: string,
   context: Array<{ role: string; content: string }>,
 ): Promise<string> {
+  // Use the system message already present in context (personalized via UCM).
+  // Fall back to a generic system message only if none was provided.
+  const hasSystemMsg = context.some((m) => m.role === "system");
   const messages = [
-    {
-      role: "system",
-      content:
-        "You are JARVIS, a helpful AI assistant running as part of Deck OS, a local-first AI command center. Be concise and technical. Respond like a capable AI assistant, not a chatbot.",
-    },
+    ...(!hasSystemMsg
+      ? [{ role: "system", content: "You are an advanced AI assistant integrated into DeckOS. Be concise and precise." }]
+      : []),
     ...context,
     { role: "user", content: prompt },
   ];

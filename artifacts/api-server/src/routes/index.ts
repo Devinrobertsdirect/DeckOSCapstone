@@ -16,6 +16,8 @@ import traceRouter from "./trace";
 import chatRouter from "./chat";
 import presenceRouter from "./presence";
 import visionRouter from "./vision";
+import whatsappRouter from "./whatsapp";
+import locationRouter from "./location";
 
 const router: IRouter = Router();
 
@@ -36,5 +38,7 @@ router.use(autonomyRouter);
 router.use(traceRouter);
 router.use("/presence", presenceRouter);
 router.use("/vision", visionRouter);
+router.use(whatsappRouter);
+router.use(locationRouter);
 
 export default router;

@@ -1,11 +1,11 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { getStoredConfig, applyColor, getStoredColor, type ColorScheme } from "@/components/Onboarding";
 import { Link, useLocation } from "wouter";
 import {
   Activity, HardDrive, Cpu as Microchip, Network, Settings,
   TerminalSquare, AlertTriangle, CheckCircle2,
   ChevronRight, Layers, Eye, Minimize2, Film, List,
-  Camera, CameraOff,
+  Camera, CameraOff, Shield, Zap, Map, MapPin,
 } from "lucide-react";
 import { useCamera } from "@/hooks/useCamera";
 import { useHealthCheck, getHealthCheckQueryKey } from "@workspace/api-client-react";
@@ -13,10 +13,49 @@ import { useVisualMode, type VisualMode } from "@/contexts/VisualMode";
 import { useWebSocket } from "@/contexts/WebSocketContext";
 import { EventLogPanel } from "@/components/EventLogPanel";
 import { ParticleOverlay } from "@/components/ParticleOverlay";
+import { useQuery } from "@tanstack/react-query";
+
+interface AutonomyConfig {
+  enabled: boolean;
+  safetyLevel: string;
+  confirmationRequired: boolean;
+  allowedActions: string[];
+  blockedActions: string[];
+}
+
+interface ActionFlash {
+  id: number;
+  label: string;
+  detail: string;
+}
+
+const CORE_DISPLAYS: { key: string; label: string }[] = [
+  { key: "refresh_memory",   label: "store memories" },
+  { key: "send_notification", label: "send nudges"   },
+  { key: "generate_summary", label: "suggest steps"  },
+  { key: "query_goals",      label: "read goals"     },
+];
+
+function eventToAction(type: string, payload: Record<string, unknown>): ActionFlash | null {
+  if (type === "memory.stored") {
+    const layer = payload.layer as string | undefined;
+    return { id: Date.now(), label: "stored to memory", detail: layer ? `layer: ${layer}` : "identity layer updated" };
+  }
+  if (type === "initiative.nudge_created") {
+    const cat = payload.category as string | undefined;
+    return { id: Date.now(), label: "nudge fired", detail: cat ?? "initiative engine" };
+  }
+  if (type === "system.config_changed") {
+    const comp = payload.component as string | undefined;
+    return { id: Date.now(), label: "config updated", detail: comp ?? "system" };
+  }
+  return null;
+}
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [autonomyOpen, setAutonomyOpen] = useState(false);
   const [eventLogOpen, setEventLogOpen] = useState(false);
   const { mode, setMode } = useVisualMode();
   const cfg = useMemo(() => getStoredConfig(), []);
@@ -26,11 +65,34 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [now, setNow] = useState(() => new Date());
   const { status: wsStatus, events } = useWebSocket();
   const camera = useCamera();
+  const [autonomyConfig, setAutonomyConfig] = useState<AutonomyConfig | null>(null);
+  const [recentActions, setRecentActions] = useState<ActionFlash[]>([]);
+  const lastEventCount = useRef(0);
 
   useEffect(() => {
     document.documentElement.classList.add("dark");
     applyColor(getStoredColor());
+
+    fetch("/api/autonomy/config")
+      .then((r) => r.json())
+      .then((d) => setAutonomyConfig(d as AutonomyConfig))
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (events.length === lastEventCount.current) return;
+    const newEvents = events.slice(lastEventCount.current);
+    lastEventCount.current = events.length;
+
+    for (const ev of newEvents) {
+      const typed = ev as { type?: string; payload?: Record<string, unknown> };
+      if (!typed.type) continue;
+      const action = eventToAction(typed.type, typed.payload ?? {});
+      if (action) {
+        setRecentActions((prev) => [action, ...prev].slice(0, 3));
+      }
+    }
+  }, [events]);
 
   useEffect(() => {
     const iv = setInterval(() => setNow(new Date()), 1000);
@@ -48,6 +110,34 @@ export function Layout({ children }: { children: React.ReactNode }) {
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
+
+  async function toggleAutonomy() {
+    if (!autonomyConfig) return;
+    const next = { ...autonomyConfig, enabled: !autonomyConfig.enabled };
+    setAutonomyConfig(next);
+    try {
+      await fetch("/api/autonomy/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: next.enabled }),
+      });
+    } catch {}
+  }
+
+  async function cycleSafetyLevel() {
+    if (!autonomyConfig) return;
+    const levels = ["strict", "moderate", "permissive"] as const;
+    const idx  = levels.indexOf(autonomyConfig.safetyLevel as "strict" | "moderate" | "permissive");
+    const next = { ...autonomyConfig, safetyLevel: levels[(idx + 1) % levels.length] };
+    setAutonomyConfig(next);
+    try {
+      await fetch("/api/autonomy/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ safetyLevel: next.safetyLevel }),
+      });
+    } catch {}
+  }
 
   function changeColor(c: ColorScheme) {
     setActiveColor(c);
@@ -69,6 +159,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const wsColor = wsStatus === "connected" ? "text-[#00ff88]" : wsStatus === "connecting" ? "text-[#ffaa00]" : "text-[#ff3333]";
 
+  const { data: trackerData } = useQuery<{ devices: { device_id: string; created_at: string }[] }>({
+    queryKey: ["location-latest"],
+    queryFn:  () => fetch(`${import.meta.env.BASE_URL}api/location/latest`).then(r => r.json()),
+    refetchInterval: 15_000,
+  });
+  const activeTrackers = (trackerData?.devices ?? []).filter(d =>
+    Date.now() - new Date(d.created_at).getTime() < 5 * 60_000,
+  ).length;
+
   const navSections = [
     {
       label: "SYSTEM",
@@ -79,6 +178,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
         { href: "/memory",  icon: HardDrive,       label: "MEMORY.BANK" },
         { href: "/devices", icon: Network,         label: "DEVICES"   },
         { href: "/commands",icon: TerminalSquare,  label: "CONSOLE"   },
+      ],
+    },
+    {
+      label: "SPATIAL",
+      items: [
+        { href: "/map", icon: Map, label: "SPATIAL.MAP" },
       ],
     },
   ];
@@ -113,6 +218,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </span>
             <span className="text-primary/30">({events.length})</span>
           </div>
+          {/* Tracker count */}
+          {activeTrackers > 0 && (
+            <div className="hidden sm:flex items-center gap-1.5 text-[#11d97a]">
+              <MapPin className="w-3 h-3 animate-pulse" />
+              <span className="font-mono">{activeTrackers}</span>
+              <span className="text-primary/40 uppercase">TRACKER{activeTrackers !== 1 ? "S" : ""}</span>
+            </div>
+          )}
           {/* API status */}
           <div className="flex items-center gap-1.5">
             <span className="text-muted-foreground">API</span>
@@ -307,6 +420,81 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     {camera.lastDescription}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* AUTONOMY CONTROLS */}
+            <div className="mt-2 border border-primary/20 bg-background/50 font-mono text-xs">
+              <button
+                onClick={() => setAutonomyOpen((o) => !o)}
+                className="w-full flex items-center gap-2 px-2.5 py-2 text-primary/50 hover:text-primary transition-colors"
+              >
+                <Shield className="w-3 h-3 shrink-0" />
+                <span className="tracking-wider uppercase">Autonomy</span>
+                {autonomyConfig && (
+                  <span className={`ml-auto text-[10px] ${autonomyConfig.enabled ? "text-[#00ff88]" : "text-primary/25"}`}>
+                    {autonomyConfig.enabled ? "ON" : "OFF"}
+                  </span>
+                )}
+                <ChevronRight className={`w-3 h-3 transition-transform duration-200 ${autonomyOpen ? "rotate-90" : ""}`} />
+              </button>
+
+              {autonomyOpen && autonomyConfig && (
+                <div className="px-2.5 pb-2.5 space-y-2 border-t border-primary/10 pt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-primary/40">Enabled</span>
+                    <button
+                      onClick={toggleAutonomy}
+                      className={`px-2 py-0.5 border text-[10px] transition-colors ${autonomyConfig.enabled ? "border-[#00ff88]/40 text-[#00ff88] bg-[#00ff88]/5" : "border-primary/20 text-primary/30"}`}
+                    >
+                      {autonomyConfig.enabled ? "ON" : "OFF"}
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-primary/40">Safety</span>
+                    <button
+                      onClick={cycleSafetyLevel}
+                      className="px-2 py-0.5 border border-primary/20 text-primary/60 text-[10px] hover:border-primary/40 transition-colors"
+                      title="Click to cycle safety level"
+                    >
+                      {autonomyConfig.safetyLevel.toUpperCase()}
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-primary/40">Confirm</span>
+                    <span className={`text-[10px] ${autonomyConfig.confirmationRequired ? "text-[#ffcc00]" : "text-primary/30"}`}>
+                      {autonomyConfig.confirmationRequired ? "REQUIRED" : "NONE"}
+                    </span>
+                  </div>
+                  <div className="pt-1.5 border-t border-primary/10">
+                    <div className="text-primary/25 text-[10px] mb-1 uppercase tracking-wider">{aiName} can:</div>
+                    {CORE_DISPLAYS.map(({ key, label }) => {
+                      const allowed = (autonomyConfig.allowedActions ?? []).includes(key);
+                      return (
+                        <div key={key} className="flex items-center justify-between py-0.5">
+                          <span className="text-primary/35">{label}</span>
+                          <span className={`text-[10px] ${allowed ? "text-[#00ff88]/70" : "text-red-400/40"}`}>{allowed ? "✓" : "✗"}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* RECENT JARVIS ACTIONS — decision transparency feed */}
+            {recentActions.length > 0 && (
+              <div className="mt-2 border border-primary/10 p-2 bg-background/30 font-mono text-xs">
+                <div className="flex items-center gap-1.5 text-primary/25 mb-1.5 uppercase text-[10px] tracking-wider">
+                  <Zap className="w-2.5 h-2.5" />
+                  <span>Last actions</span>
+                </div>
+                {recentActions.map((a) => (
+                  <div key={a.id} className="mb-0.5">
+                    <span className="text-primary/40">{a.label}</span>
+                    <span className="text-primary/20 ml-1">— {a.detail}</span>
+                  </div>
+                ))}
               </div>
             )}
 

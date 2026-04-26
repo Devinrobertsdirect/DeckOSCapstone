@@ -6,6 +6,7 @@ import { runInference } from "../lib/inference.js";
 import { bus } from "../lib/bus.js";
 import { broadcast } from "../lib/ws-server.js";
 import { presenceManager } from "../lib/presence-manager.js";
+import { buildPersonalizedPrompt } from "../lib/system-prompt.js";
 
 const router = Router();
 
@@ -70,7 +71,7 @@ router.post("/chat", async (req, res) => {
     content: m.content,
   }));
 
-  const systemPrompt = buildSystemPrompt(recentMemory.map((m) => m.content));
+  const systemPrompt = await buildPersonalizedPrompt(recentMemory.map((m) => m.content), channel);
 
   let response: string;
   let modelUsed: string;
@@ -129,7 +130,13 @@ router.post("/chat", async (req, res) => {
     timestamp: new Date().toISOString(),
   });
 
-  res.json({ response, channel, sessionId, latencyMs, modelUsed, fromCache });
+  const reasonCode = fromCache
+    ? "cached"
+    : modelUsed.includes("rule-engine")
+      ? "rule-engine"
+      : "ai-inference";
+
+  res.json({ response, channel, sessionId, latencyMs, modelUsed, fromCache, reasonCode });
 });
 
 // ── GET /api/chat/history ──────────────────────────────────────────────────
@@ -194,13 +201,5 @@ router.put("/voice-identity", async (req, res) => {
 
   res.json(updated[0]);
 });
-
-function buildSystemPrompt(memoryContext: string[]): string {
-  const memSection = memoryContext.length > 0
-    ? `\n\nRecent context from memory:\n${memoryContext.slice(0, 3).join("\n")}`
-    : "";
-
-  return `You are JARVIS, an AI assistant integrated into DeckOS — an intelligent command center. You are calm, precise, and slightly witty. Keep responses concise (2-4 sentences unless detail is needed). You have access to system context and memory. You assist the user with tasks, answer questions, and help manage their digital environment.${memSection}`;
-}
 
 export default router;

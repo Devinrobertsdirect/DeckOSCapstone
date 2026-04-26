@@ -92,6 +92,7 @@ interface ChatMsg {
   modelUsed?: string;
   latencyMs?: number;
   fromCache?: boolean;
+  reasonCode?: string;
   timestamp: string;
   pending?: boolean;
 }
@@ -153,6 +154,8 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [identity, setIdentity] = useState<VoiceIdentity | null>(null);
   const [showIdentity, setShowIdentity] = useState(false);
+  const [aiName, setAiName] = useState("JARVIS");
+  const [userName, setUserName] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -197,8 +200,19 @@ export default function App() {
       } catch {}
     };
 
+    const loadUcmIdentity = async () => {
+      try {
+        const res  = await fetch(`${API_BASE}/ucm`);
+        const data = await res.json() as { layers: { identity: { data: { aiName?: string; userName?: string } } } };
+        const id   = data?.layers?.identity?.data;
+        if (id?.aiName?.trim())   setAiName(id.aiName.trim());
+        if (id?.userName?.trim()) setUserName(id.userName.trim());
+      } catch {}
+    };
+
     void loadHistory();
     void loadIdentity();
+    void loadUcmIdentity();
   }, []);
 
   useEffect(() => {
@@ -234,7 +248,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, channel: "mobile", sessionId: SESSION_ID }),
       });
-      const data = await res.json() as { response: string; modelUsed: string; latencyMs: number; fromCache: boolean };
+      const data = await res.json() as { response: string; modelUsed: string; latencyMs: number; fromCache: boolean; reasonCode?: string };
       const aiMsg: ChatMsg = {
         id: `a_${Date.now()}`,
         role: "assistant",
@@ -243,6 +257,7 @@ export default function App() {
         modelUsed: data.modelUsed,
         latencyMs: data.latencyMs,
         fromCache: data.fromCache,
+        reasonCode: data.reasonCode,
         timestamp: new Date().toISOString(),
       };
       setMessages((prev) => [...prev.filter((m) => !m.pending), aiMsg]);
@@ -274,11 +289,13 @@ export default function App() {
       <header className="shrink-0 border-b border-primary/30 bg-card/80 backdrop-blur px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full border-2 border-primary/60 flex items-center justify-center bg-primary/10">
-            <span className="font-mono text-xs text-primary font-bold">J</span>
+            <span className="font-mono text-xs text-primary font-bold">{aiName.charAt(0).toUpperCase()}</span>
           </div>
           <div>
-            <div className="font-bold text-primary tracking-widest text-sm uppercase leading-none">JARVIS</div>
-            <div className="font-mono text-xs text-primary/40 leading-none mt-0.5">DeckOS.Mobile</div>
+            <div className="font-bold text-primary tracking-widest text-sm uppercase leading-none">{aiName}</div>
+            <div className="font-mono text-xs text-primary/40 leading-none mt-0.5">
+              {userName ? `${userName} · Mobile` : "DeckOS.Mobile"}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -383,23 +400,43 @@ function MessageBubble({ msg }: { msg: ChatMsg }) {
             <span className="whitespace-pre-wrap break-words">{msg.content}</span>
           )}
         </div>
-        <div className="flex items-center gap-2 font-mono text-xs text-primary/25">
+        <div className="flex items-center gap-2 font-mono text-xs text-primary/25 flex-wrap">
           <span>{formatTime(msg.timestamp)}</span>
-          {msg.modelUsed && !msg.pending && (
-            <>
-              <span>·</span>
-              <span className={msg.fromCache ? "text-[#aa88ff]/50" : "text-primary/30"}>{msg.modelUsed}{msg.fromCache ? " ⚡" : ""}</span>
-            </>
+          {!msg.pending && msg.role === "assistant" && msg.modelUsed && (
+            <ReasonBadge reasonCode={msg.reasonCode} modelUsed={msg.modelUsed} fromCache={msg.fromCache} latencyMs={msg.latencyMs} />
           )}
-          {msg.latencyMs && !msg.pending && (
+          {!msg.pending && msg.role === "assistant" && !msg.id.startsWith("welcome") && (
             <>
               <span>·</span>
-              <span>{msg.latencyMs}ms</span>
+              <span className="text-primary/15">saved to memory</span>
             </>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+function ReasonBadge({ reasonCode, modelUsed, fromCache, latencyMs }: {
+  reasonCode?: string;
+  modelUsed: string;
+  fromCache?: boolean;
+  latencyMs?: number;
+}) {
+  const code  = reasonCode ?? (fromCache ? "cached" : modelUsed.includes("rule-engine") ? "rule-engine" : "ai-inference");
+  const label = code === "cached" ? "⚡ cached" : code === "rule-engine" ? "rule engine" : "AI inference";
+  const color = code === "cached" ? "text-[#aa88ff]/50" : code === "rule-engine" ? "text-[#ffcc00]/40" : "text-[#00d4ff]/35";
+  return (
+    <>
+      <span>·</span>
+      <span className={color}>{label}</span>
+      {!!latencyMs && latencyMs > 0 && (
+        <>
+          <span>·</span>
+          <span>{latencyMs}ms</span>
+        </>
+      )}
+    </>
   );
 }
 

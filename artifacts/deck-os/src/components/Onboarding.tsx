@@ -1133,6 +1133,22 @@ function ActivationPhase({
     localStorage.setItem(INIT_KEY, "true");
     localStorage.setItem("deckos_visual_mode", cfg.visualMode);
     document.documentElement.setAttribute("data-visual-mode", cfg.visualMode);
+
+    // Sync identity to server so every channel knows the user's name, AI name, and goals
+    fetch(`${window.location.origin}/api/ucm/identity`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        data: {
+          aiName:       cfg.aiName,
+          userName:     cfg.userName,
+          answers:      cfg.answers,
+          photoComment: cfg.photoComment ?? null,
+        },
+        merge: false,
+      }),
+    }).catch(() => {});
+
     setTimeout(onComplete, 800);
   }
 

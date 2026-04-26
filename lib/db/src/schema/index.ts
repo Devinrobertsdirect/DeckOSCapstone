@@ -5,3 +5,4 @@ export * from "./ucm";
 export * from "./cognitive";
 export * from "./chat";
 export * from "./presence";
+export * from "./location";

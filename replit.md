@@ -33,8 +33,11 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - **Preview Path**: `/`
 - Full Iron Man JARVIS-style cyberdeck dashboard
 - React + Vite + TailwindCSS, dark-only, JetBrains Mono font
-- Pages: Dashboard HUD, AI Router, Plugins, Memory Bank, Cognitive Model, Goal Manager, Feedback Loop, Autonomous Layer, Devices, Command Console
-- Nav sections: SYSTEM (6 pages) | COGNITION (4 pages) | Visual Mode selector (sidebar footer)
+- Pages: Dashboard HUD, AI Router, Plugins, Memory Bank, Cognitive Model, Goal Manager, Feedback Loop, Autonomous Layer, Devices, Command Console, **Spatial Map** (`/map`)
+- Nav sections: SYSTEM (6 pages) | SPATIAL (1 page — Map) | Visual Mode selector (sidebar footer)
+- **Spatial Awareness Layer**: Leaflet + OpenStreetMap map at `/map` — live device markers (colored per device), movement trails (polyline), geofence circles, geofence CRUD panel, device info popups, pending-zone placement mode (click-to-place)
+- Dashboard SPATIAL.TRACKER widget: `MiniMap` component shows tracker positions; click opens full `/map` page
+- Header: active tracker count badge (`N TRACKERS`) appears when devices reported GPS in last 5 min
 - Visual Mode system: minimal / standard / cinematic — persisted to localStorage, applied via `data-visual-mode` HTML attribute
 - Dashboard: fixed AI.MODE tile overflow, added LIVE badges + timestamps per tile, live console lines, richer SYS.SUMMARY panel
 - HUD corners (hud-corner-tl/tr/bl/br): visible only in cinematic mode via CSS
@@ -74,6 +77,11 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - **GET /api/chat/history** — returns session chat history
 - **GET/PUT /api/voice-identity** — manages the Voice Identity profile (tone, pacing, formality, verbosity, emotionRange)
 - DB tables added: `chat_messages`, `voice_identity`
+- **Spatial API** (`artifacts/api-server/src/routes/location.ts`): `POST /api/location/ingest` (store GPS + trigger geofence check), `GET /api/location/latest` (latest position per device), `GET /api/location/:id/trail` (history), `GET/POST/PUT/DELETE /api/geofences`, `GET /api/geofences/:id/events`
+- **GPS auto-persistence**: bootstrap.ts subscribes to `device.reading` events — any that include GPS values are auto-persisted to `device_locations` table and emit `device.location.updated`
+- **Geofence engine**: haversine-based enter/exit detection; transitions stored in `geofence_events` table and emitted as `device.geofence.triggered` bus events
+- DB tables added: `device_locations`, `geofences`, `geofence_events`
+- Event types added: `device.location.updated`, `device.geofence.triggered`, `device.status.updated`
 
 ## Architecture
 

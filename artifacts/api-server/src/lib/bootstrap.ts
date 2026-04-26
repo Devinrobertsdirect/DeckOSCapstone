@@ -11,6 +11,7 @@ import { MqttTransport } from "./mqtt-transport.js";
 import { WsDeviceTransport } from "./ws-device-transport.js";
 import { startSimulatedDevices } from "./simulated-devices.js";
 import type { BusEvent } from "@workspace/event-bus";
+import { db, deviceLocationsTable } from "@workspace/db";
 
 export let registry: PluginRegistry;
 
@@ -175,6 +176,60 @@ export async function bootstrap(): Promise<void> {
   } else {
     logger.info("WsDeviceTransport: WS_DEVICE_PORT not set — WS device transport disabled");
   }
+
+  // ── GPS location persistence ──────────────────────────────────────────────
+  // Intercept device.reading events from mobile/WebSocket devices that carry
+  // GPS data and persist them into device_locations for the map layer.
+  bus.subscribe("device.reading", async (event: BusEvent) => {
+    if (event.type !== "device.reading") return;
+
+    const p = event.payload as Record<string, unknown>;
+    const values = p["values"] as Record<string, unknown> | undefined;
+    if (!values) return;
+
+    const gps = values["gps"] as Record<string, unknown> | undefined;
+    if (!gps || typeof gps["lat"] !== "number" || typeof gps["lon"] !== "number") return;
+
+    const deviceId   = typeof p["deviceId"]   === "string" ? p["deviceId"]   : String(event.source ?? "unknown");
+    const deviceType = typeof p["deviceType"] === "string" ? p["deviceType"] : "unknown";
+    const bat        = (values["battery"] as Record<string, unknown> | undefined);
+    const battery    = typeof bat?.["level"] === "number" ? (bat["level"] as number) : undefined;
+    const netInfo    = (values["network"] as Record<string, unknown> | undefined);
+    const signal     = typeof netInfo?.["type"] === "string" ? (netInfo["type"] as string) : undefined;
+
+    try {
+      await db.insert(deviceLocationsTable).values({
+        deviceId,
+        deviceType,
+        lat:      gps["lat"] as number,
+        lng:      gps["lon"] as number,
+        accuracy: typeof gps["accuracy"] === "number" ? gps["accuracy"] as number : undefined,
+        altitude: typeof gps["altitude"] === "number" ? gps["altitude"] as number : undefined,
+        speed:    typeof gps["speed"]    === "number" ? gps["speed"]    as number : undefined,
+        battery:  battery ?? undefined,
+        signal:   signal  ?? undefined,
+        source:   "websocket",
+        extra:    {},
+      });
+
+      bus.emit({
+        source: `device.${deviceId}`,
+        target: null,
+        type:   "device.location.updated",
+        payload: {
+          deviceId,
+          deviceType,
+          coordinates: { lat: gps["lat"], lng: gps["lon"] },
+          accuracy:    gps["accuracy"],
+          battery,
+          signal,
+          timestamp:   typeof p["timestamp"] === "string" ? p["timestamp"] : new Date().toISOString(),
+        },
+      });
+    } catch (err) {
+      logger.debug({ err, deviceId }, "GPS persistence skipped");
+    }
+  });
 
   logger.info("EventBus, PluginRegistry, DeviceManager, and transports bootstrapped");
 }

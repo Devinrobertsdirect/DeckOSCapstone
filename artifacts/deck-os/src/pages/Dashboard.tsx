@@ -3,6 +3,8 @@ import { Terminal, Cpu, MemoryStick, Activity, Network, Circle, Radio, Zap, Send
 import { type LucideIcon } from "lucide-react";
 import { Link } from "wouter";
 import { useWebSocket, useLatestPayload, useWsEvents } from "@/contexts/WebSocketContext";
+import { MiniMap } from "@/components/MiniMap";
+import { HudCorners } from "@/components/HudCorners";
 
 type MetricsPayload = {
   cpu?: { usage?: number };
@@ -344,22 +346,20 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+
+          {/* SPATIAL.TRACKER mini-map */}
+          <div className="border-t border-primary/10 p-4 space-y-2">
+            <div className="font-mono text-[10px] text-primary/30 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <MapPin className="w-3 h-3" /> SPATIAL.TRACKER
+            </div>
+            <MiniMap />
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function HudCorners() {
-  return (
-    <>
-      <span className="hud-corner hud-corner-tl" />
-      <span className="hud-corner hud-corner-tr" />
-      <span className="hud-corner hud-corner-bl" />
-      <span className="hud-corner hud-corner-br" />
-    </>
-  );
-}
 
 function LiveBadge() {
   return (
