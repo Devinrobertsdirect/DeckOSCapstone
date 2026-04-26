@@ -1,4 +1,5 @@
-import { pgTable, serial, text, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, timestamp, check } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const pluginStateTable = pgTable("plugin_state", {
   pluginId: text("plugin_id").primaryKey(),
@@ -29,3 +30,19 @@ export const communityPluginsTable = pgTable("community_plugins", {
 
 export type CommunityPlugin = typeof communityPluginsTable.$inferSelect;
 export type InsertCommunityPlugin = typeof communityPluginsTable.$inferInsert;
+
+export const pluginReviewsTable = pgTable(
+  "plugin_reviews",
+  {
+    id: serial("id").primaryKey(),
+    pluginId: text("plugin_id").notNull().unique(),
+    rating: integer("rating").notNull(),
+    review: text("review"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+  },
+  (t) => [check("rating_range", sql`${t.rating} >= 1 AND ${t.rating} <= 5`)],
+);
+
+export type PluginReview = typeof pluginReviewsTable.$inferSelect;
+export type InsertPluginReview = typeof pluginReviewsTable.$inferInsert;

@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Store, Download, Trash2, Power, Search, Filter,
   CheckCircle2, Shield, Tag, User, Globe, Loader2, RefreshCw,
-  X, BookOpen, Calendar, Info, ChevronRight,
+  X, BookOpen, Calendar, Info, ChevronRight, Star, MessageSquare, Pencil,
 } from "lucide-react";
 
 const API_BASE = "/api";
@@ -26,6 +26,14 @@ interface RegistryPlugin {
   enabled: boolean;
   installedAt: string | null;
 }
+
+interface ReviewEntry {
+  rating: number;
+  review: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+type ReviewsMap = Record<string, ReviewEntry>;
 
 type StoreTab = "store" | "installed";
 
@@ -68,6 +76,43 @@ async function fetchRegistry() {
   return res.json() as Promise<{ plugins: RegistryPlugin[]; version: string; updatedAt: string }>;
 }
 
+function StarRating({
+  value,
+  onChange,
+  size = "sm",
+}: {
+  value: number;
+  onChange?: (v: number) => void;
+  size?: "sm" | "md";
+}) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  const display = hovered ?? value;
+  const cls = size === "md" ? "w-5 h-5" : "w-3.5 h-3.5";
+
+  return (
+    <div className="flex gap-0.5" onMouseLeave={() => setHovered(null)}>
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          onClick={() => onChange?.(star)}
+          onMouseEnter={() => onChange && setHovered(star)}
+          disabled={!onChange}
+          className={`transition-all leading-none ${onChange ? "cursor-pointer hover:scale-110 active:scale-95" : "cursor-default"}`}
+        >
+          <Star
+            className={`${cls} transition-colors ${
+              star <= display
+                ? "text-[#ffaa00] fill-[#ffaa00]"
+                : "text-primary/20 fill-transparent"
+            }`}
+          />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function renderReadme(text: string): string {
   let html = text
     .replace(/&/g, "&amp;")
@@ -99,13 +144,17 @@ function renderReadme(text: string): string {
 
 interface DetailPanelProps {
   plugin: RegistryPlugin;
+  existingReview: ReviewEntry | null;
   onClose: () => void;
   onInstall: (pluginId: string, force?: boolean) => void;
   onUninstall: (pluginId: string) => void;
   onToggle: (pluginId: string, enabled: boolean) => void;
+  onRate: (pluginId: string, rating: number, review?: string) => void;
+  onDeleteReview: (pluginId: string) => void;
   installing: boolean;
   uninstalling: boolean;
   toggling: boolean;
+  rating: boolean;
   replaceMode: boolean;
   confirmUninstall: string | null;
   setConfirmUninstall: (id: string | null) => void;
@@ -113,17 +162,33 @@ interface DetailPanelProps {
 
 function PluginDetailPanel({
   plugin,
+  existingReview,
   onClose,
   onInstall,
   onUninstall,
   onToggle,
+  onRate,
+  onDeleteReview,
   installing,
   uninstalling,
   toggling,
+  rating,
   replaceMode,
   confirmUninstall,
   setConfirmUninstall,
 }: DetailPanelProps) {
+  const [draftRating, setDraftRating] = useState<number>(existingReview?.rating ?? 0);
+  const [draftText, setDraftText] = useState<string>(existingReview?.review ?? "");
+  const [reviewEditing, setReviewEditing] = useState(!existingReview);
+
+  useEffect(() => {
+    if (existingReview) {
+      setDraftRating(existingReview.rating);
+      setDraftText(existingReview.review ?? "");
+      setReviewEditing(false);
+    }
+  }, [existingReview]);
+
   const isOfficial = plugin.author.startsWith("deck-os/official");
   const catColor = CATEGORY_COLORS[plugin.category] ?? "text-primary/60";
   const highRiskPerms = plugin.permissions.filter(
@@ -330,6 +395,114 @@ function PluginDetailPanel({
               )}
             </div>
           </div>
+
+          {/* Rating & Review — installed plugins only */}
+          {plugin.installed && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1 font-mono text-[9px] text-primary/30 uppercase tracking-widest">
+                  <Star className="w-2.5 h-2.5" />
+                  Your Rating
+                </div>
+                {existingReview && !reviewEditing && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setReviewEditing(true)}
+                      className="flex items-center gap-0.5 font-mono text-[9px] text-primary/30 hover:text-primary/60 transition-colors"
+                    >
+                      <Pencil className="w-2.5 h-2.5" />
+                      EDIT
+                    </button>
+                    <button
+                      onClick={() => onDeleteReview(plugin.id)}
+                      className="font-mono text-[9px] text-[#ff3333]/30 hover:text-[#ff3333]/60 transition-colors"
+                    >
+                      DELETE
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Existing review (read mode) */}
+              {existingReview && !reviewEditing ? (
+                <div className="border border-primary/15 p-3 space-y-2 bg-primary/[0.02]">
+                  <StarRating value={existingReview.rating} size="md" />
+                  {existingReview.review && (
+                    <p className="font-mono text-xs text-primary/60 leading-relaxed">
+                      {existingReview.review}
+                    </p>
+                  )}
+                  {existingReview.updatedAt && (
+                    <p className="font-mono text-[9px] text-primary/25">
+                      {new Date(existingReview.updatedAt).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
+              ) : reviewEditing ? (
+                /* Rating form */
+                <div className="border border-primary/20 p-3 space-y-3">
+                  <div>
+                    <p className="font-mono text-[9px] text-primary/30 mb-1.5">
+                      {existingReview ? "UPDATE RATING" : "SELECT RATING"}
+                    </p>
+                    <StarRating value={draftRating} onChange={setDraftRating} size="md" />
+                  </div>
+                  <div>
+                    <p className="font-mono text-[9px] text-primary/30 mb-1">
+                      <MessageSquare className="w-2.5 h-2.5 inline mr-0.5" />
+                      REVIEW (OPTIONAL)
+                    </p>
+                    <textarea
+                      value={draftText}
+                      onChange={(e) => setDraftText(e.target.value)}
+                      maxLength={1000}
+                      rows={3}
+                      placeholder="Share your experience with this plugin..."
+                      className="w-full bg-transparent border border-primary/20 text-primary font-mono text-xs placeholder:text-primary/20 p-2 outline-none focus:border-primary/40 resize-none"
+                    />
+                    <p className="font-mono text-[9px] text-primary/20 text-right">{draftText.length}/1000</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        if (draftRating > 0) {
+                          onRate(plugin.id, draftRating, draftText || undefined);
+                        }
+                      }}
+                      disabled={draftRating === 0 || rating}
+                      className="flex items-center gap-1 font-mono text-xs text-primary/60 hover:text-primary border border-primary/30 hover:border-primary/60 px-3 py-1.5 transition-all disabled:opacity-40"
+                    >
+                      {rating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Star className="w-3 h-3" />}
+                      {existingReview ? "UPDATE" : "SUBMIT"}
+                    </button>
+                    {existingReview && (
+                      <button
+                        onClick={() => {
+                          setDraftRating(existingReview.rating);
+                          setDraftText(existingReview.review ?? "");
+                          setReviewEditing(false);
+                        }}
+                        className="font-mono text-xs text-primary/30 hover:text-primary/60 border border-primary/15 hover:border-primary/30 px-3 py-1.5 transition-all"
+                      >
+                        CANCEL
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* No review yet, prompt */
+                <div className="border border-dashed border-primary/15 p-3 flex items-center gap-2">
+                  <button
+                    onClick={() => setReviewEditing(true)}
+                    className="flex items-center gap-1.5 font-mono text-xs text-primary/40 hover:text-primary transition-colors"
+                  >
+                    <Star className="w-3.5 h-3.5" />
+                    Rate this plugin
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Action bar */}
@@ -459,6 +632,39 @@ export default function PluginStore() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["plugin-store-registry"] }),
   });
 
+  const { data: reviewsData } = useQuery({
+    queryKey: ["plugin-reviews"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/plugins/store/reviews`);
+      if (!res.ok) throw new Error(`${res.status}`);
+      return res.json() as Promise<{ reviews: ReviewsMap; count: number }>;
+    },
+    staleTime: 30 * 1000,
+  });
+  const reviews: ReviewsMap = reviewsData?.reviews ?? {};
+
+  const reviewMut = useMutation({
+    mutationFn: async ({ pluginId, rating, review }: { pluginId: string; rating: number; review?: string }) => {
+      const res = await fetch(`${API_BASE}/plugins/store/${pluginId}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating, review }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["plugin-reviews"] }),
+  });
+
+  const deleteReviewMut = useMutation({
+    mutationFn: async (pluginId: string) => {
+      const res = await fetch(`${API_BASE}/plugins/store/${pluginId}/review`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["plugin-reviews"] }),
+  });
+
   const allPlugins = data?.plugins ?? [];
   const categories = ["all", ...new Set(allPlugins.map((p) => p.category))];
 
@@ -582,6 +788,7 @@ export default function PluginStore() {
             const highRiskPerms = plugin.permissions.filter(
               (p) => (PERMISSION_LABELS[p]?.risk ?? "low") === "high"
             );
+            const cardReview = reviews[plugin.id] ?? null;
 
             return (
               <div
@@ -619,7 +826,7 @@ export default function PluginStore() {
                 </p>
 
                 {/* Meta row */}
-                <div className="flex items-center gap-3 font-mono text-[10px] text-primary/40">
+                <div className="flex items-center gap-3 font-mono text-[10px] text-primary/40 flex-wrap">
                   <span className="flex items-center gap-1">
                     <User className="w-2.5 h-2.5" />
                     {plugin.author}
@@ -633,6 +840,20 @@ export default function PluginStore() {
                       <Globe className="w-2.5 h-2.5" />
                       remote
                     </span>
+                  )}
+                  {cardReview && (
+                    <span className="flex items-center gap-1 ml-auto">
+                      <StarRating value={cardReview.rating} />
+                    </span>
+                  )}
+                  {plugin.installed && !cardReview && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setSelectedPlugin(plugin); }}
+                      className="ml-auto flex items-center gap-0.5 font-mono text-[9px] text-primary/25 hover:text-[#ffaa00]/60 transition-colors"
+                    >
+                      <Star className="w-2.5 h-2.5" />
+                      RATE
+                    </button>
                   )}
                 </div>
 
@@ -772,13 +993,17 @@ export default function PluginStore() {
         {syncedSelectedPlugin && (
           <PluginDetailPanel
             plugin={syncedSelectedPlugin}
+            existingReview={reviews[syncedSelectedPlugin.id] ?? null}
             onClose={() => setSelectedPlugin(null)}
             onInstall={(pluginId, force) => installMut.mutate({ pluginId, force })}
             onUninstall={(pluginId) => uninstallMut.mutate(pluginId)}
             onToggle={(pluginId, enabled) => toggleMut.mutate({ pluginId, enabled })}
+            onRate={(pluginId, rating, review) => reviewMut.mutate({ pluginId, rating, review })}
+            onDeleteReview={(pluginId) => deleteReviewMut.mutate(pluginId)}
             installing={installMut.isPending && installMut.variables?.pluginId === syncedSelectedPlugin.id}
             uninstalling={uninstallMut.isPending && uninstallMut.variables === syncedSelectedPlugin.id}
             toggling={toggleMut.isPending}
+            rating={reviewMut.isPending && reviewMut.variables?.pluginId === syncedSelectedPlugin.id}
             replaceMode={replaceMode}
             confirmUninstall={confirmUninstall}
             setConfirmUninstall={setConfirmUninstall}

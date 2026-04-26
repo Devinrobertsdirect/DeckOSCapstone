@@ -2,7 +2,7 @@ import { Router } from "express";
 import { readFileSync, mkdirSync, writeFileSync, unlinkSync, existsSync } from "fs";
 import path from "path";
 import { z } from "zod";
-import { db, communityPluginsTable } from "@workspace/db";
+import { db, communityPluginsTable, pluginReviewsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { bus } from "../lib/bus.js";
 import { logger } from "../lib/logger.js";
@@ -491,6 +491,124 @@ router.get("/plugins/store/installed", async (_req, res) => {
     .orderBy(communityPluginsTable.installedAt);
 
   res.json({ plugins: installed, count: installed.length });
+});
+
+router.get("/plugins/store/reviews", async (_req, res) => {
+  try {
+    const rows = await db.select().from(pluginReviewsTable);
+    const reviews = Object.fromEntries(
+      rows.map((r) => [
+        r.pluginId,
+        {
+          rating: r.rating,
+          review: r.review,
+          createdAt: r.createdAt?.toISOString() ?? null,
+          updatedAt: r.updatedAt?.toISOString() ?? null,
+        },
+      ]),
+    );
+    res.json({ reviews, count: rows.length });
+  } catch (err) {
+    logger.error({ err }, "Failed to fetch plugin reviews");
+    res.status(500).json({ error: "Failed to load reviews" });
+  }
+});
+
+router.get("/plugins/store/:pluginId/reviews", async (req, res) => {
+  const { pluginId } = req.params;
+  if (!SAFE_PLUGIN_ID_RE.test(pluginId)) {
+    res.status(400).json({ error: "Invalid plugin ID format" });
+    return;
+  }
+  try {
+    const rows = await db
+      .select()
+      .from(pluginReviewsTable)
+      .where(eq(pluginReviewsTable.pluginId, pluginId))
+      .limit(1);
+    const row = rows[0];
+    res.json({
+      review: row
+        ? {
+            rating: row.rating,
+            review: row.review,
+            createdAt: row.createdAt?.toISOString() ?? null,
+            updatedAt: row.updatedAt?.toISOString() ?? null,
+          }
+        : null,
+    });
+  } catch (err) {
+    logger.error({ err, pluginId }, "Failed to fetch plugin review");
+    res.status(500).json({ error: "Failed to load review" });
+  }
+});
+
+const ReviewBody = z.object({
+  rating: z.number().int().min(1).max(5),
+  review: z.string().max(1000).optional(),
+});
+
+router.post("/plugins/store/:pluginId/review", async (req, res) => {
+  const { pluginId } = req.params;
+  if (!SAFE_PLUGIN_ID_RE.test(pluginId)) {
+    res.status(400).json({ error: "Invalid plugin ID format" });
+    return;
+  }
+
+  const parsed = ReviewBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: "Body must include { rating: 1-5, review?: string }" });
+    return;
+  }
+
+  const { rating, review } = parsed.data;
+
+  try {
+    const [row] = await db
+      .insert(pluginReviewsTable)
+      .values({ pluginId, rating, review: review ?? null })
+      .onConflictDoUpdate({
+        target: pluginReviewsTable.pluginId,
+        set: { rating, review: review ?? null, updatedAt: new Date() },
+      })
+      .returning();
+
+    res.json({
+      review: {
+        rating: row.rating,
+        review: row.review,
+        createdAt: row.createdAt?.toISOString() ?? null,
+        updatedAt: row.updatedAt?.toISOString() ?? null,
+      },
+    });
+  } catch (err) {
+    logger.error({ err, pluginId }, "Failed to save plugin review");
+    res.status(500).json({ error: "Failed to save review" });
+  }
+});
+
+router.delete("/plugins/store/:pluginId/review", async (req, res) => {
+  const { pluginId } = req.params;
+  if (!SAFE_PLUGIN_ID_RE.test(pluginId)) {
+    res.status(400).json({ error: "Invalid plugin ID format" });
+    return;
+  }
+
+  try {
+    const deleted = await db
+      .delete(pluginReviewsTable)
+      .where(eq(pluginReviewsTable.pluginId, pluginId))
+      .returning();
+
+    if (deleted.length === 0) {
+      res.status(404).json({ error: `No review found for plugin '${pluginId}'` });
+      return;
+    }
+    res.json({ deleted: true, pluginId });
+  } catch (err) {
+    logger.error({ err, pluginId }, "Failed to delete plugin review");
+    res.status(500).json({ error: "Failed to delete review" });
+  }
 });
 
 const CommunityExecuteBody = z.object({
