@@ -9,3 +9,4 @@ export * from "./location";
 export * from "./devices";
 export * from "./persona";
 export * from "./config";
+export * from "./plugins";

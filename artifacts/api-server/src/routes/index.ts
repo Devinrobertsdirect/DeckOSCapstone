@@ -24,6 +24,7 @@ import routinesRouter from "./routines";
 import notificationsRouter from "./notifications";
 import briefingsRouter from "./briefings";
 import configRouter from "./config";
+import storeRouter from "./store";
 
 const router: IRouter = Router();
 
@@ -52,5 +53,6 @@ router.use(routinesRouter);
 router.use(notificationsRouter);
 router.use(briefingsRouter);
 router.use(configRouter);
+router.use(storeRouter);
 
 export default router;

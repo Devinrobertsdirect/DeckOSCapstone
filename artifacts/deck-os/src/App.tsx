@@ -14,6 +14,7 @@ import Dashboard from "@/pages/Dashboard";
 import AiControl from "@/pages/AiControl";
 import AiPersonality from "@/pages/AiPersonality";
 import PluginManager from "@/pages/PluginManager";
+import PluginStore from "@/pages/PluginStore";
 import MemorySystem from "@/pages/MemorySystem";
 import DeviceControl from "@/pages/DeviceControl";
 import CommandConsole from "@/pages/CommandConsole";
@@ -41,6 +42,7 @@ function Router() {
         <Route path="/ai" component={AiControl} />
         <Route path="/ai/personality" component={AiPersonality} />
         <Route path="/plugins" component={PluginManager} />
+        <Route path="/plugins/store" component={PluginStore} />
         <Route path="/memory" component={MemorySystem} />
         <Route path="/devices" component={DeviceControl} />
         <Route path="/commands" component={CommandConsole} />

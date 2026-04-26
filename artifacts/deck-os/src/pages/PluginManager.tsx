@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { Settings, Power, ChevronRight, CheckCircle2, XCircle, AlertTriangle, Circle } from "lucide-react";
+import { Settings, Power, ChevronRight, CheckCircle2, XCircle, AlertTriangle, Circle, Package } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWebSocket, useLatestPayload, useWsEvents } from "@/contexts/WebSocketContext";
-import { useSearch } from "wouter";
+import { useSearch, Link } from "wouter";
 
 const STATUS_COLORS: Record<string, string> = {
   active: "text-[#22ff44]",
@@ -71,9 +71,17 @@ export default function PluginManager() {
 
   return (
     <div className="flex flex-col gap-6 h-full">
-      <div className="flex items-center gap-2 font-mono text-xs text-primary/60 uppercase tracking-widest">
-        <Settings className="w-4 h-4 text-primary" />
-        <span>PLUGIN.MANAGER // SKILLS SYSTEM</span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 font-mono text-xs text-primary/60 uppercase tracking-widest">
+          <Settings className="w-4 h-4 text-primary" />
+          <span>PLUGIN.MANAGER // SKILLS SYSTEM</span>
+        </div>
+        <Link href="/plugins/store">
+          <a className="flex items-center gap-1 font-mono text-xs text-primary/40 hover:text-primary border border-primary/20 hover:border-primary/40 px-3 py-1.5 transition-all">
+            <Package className="w-3 h-3" />
+            PLUGIN STORE
+          </a>
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
