@@ -915,20 +915,14 @@ function PluginsCard({
                   className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-primary/5 transition-colors group"
                 >
                   <PluginStatusIcon status={p.status} />
-                  <button
-                    className="flex-1 min-w-0 text-left"
-                    onClick={() => {
-                      setOpen(false);
-                      navigate(`/plugins?selected=${encodeURIComponent(p.id ?? "")}`);
-                    }}
-                  >
+                  <div className="flex-1 min-w-0">
                     <div className="font-mono text-xs text-primary/80 truncate group-hover:text-primary transition-colors">
                       {p.name ?? p.id ?? "Unknown"}
                     </div>
                     <div className="font-mono text-[10px] text-primary/30">
                       checked {formatLastChecked(p.lastActivity)}
                     </div>
-                  </button>
+                  </div>
                   <div className={`font-mono text-[10px] uppercase tracking-wider shrink-0 ${statusColor}`}>
                     {isEnabled ? (p.status ?? "active").toUpperCase() : "DISABLED"}
                   </div>
@@ -945,13 +939,16 @@ function PluginsCard({
                   >
                     <Power className="w-3 h-3" />
                   </button>
-                  <ChevronRight
-                    className="w-3 h-3 text-primary/20 group-hover:text-primary/60 transition-colors shrink-0 cursor-pointer"
+                  <button
+                    title="Open in Plugin Manager"
                     onClick={() => {
                       setOpen(false);
                       navigate(`/plugins?selected=${encodeURIComponent(p.id ?? "")}`);
                     }}
-                  />
+                    className="p-0.5 hover:bg-primary/10 transition-colors shrink-0"
+                  >
+                    <ChevronRight className="w-3 h-3 text-primary/20 group-hover:text-primary/60 transition-colors" />
+                  </button>
                 </div>
               );
             })}
