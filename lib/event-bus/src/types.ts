@@ -21,6 +21,8 @@ export const SystemEventTypeSchema = z.enum([
   "system.monitor.request",
   "system.cognitive_tick",
   "system.maintenance",
+  "system.resource.alert",
+  "system.resource.clear",
 ]);
 
 export const PluginEventTypeSchema = z.enum([
