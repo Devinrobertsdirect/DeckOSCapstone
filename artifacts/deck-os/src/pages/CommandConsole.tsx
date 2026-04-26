@@ -100,20 +100,24 @@ export default function CommandConsole() {
 
   useEffect(() => {
     configChanged.forEach((evt) => {
-      const p = evt.payload as { origin?: string; changes?: Record<string, number> };
+      const p = evt.payload as { origin?: string; changes?: Record<string, number>; prev?: Record<string, number> };
       if (p.origin !== "self_upgrade" || !p.changes) return;
       const key = `cfg:${evt.timestamp}:${evt.id ?? ""}`;
       if (processedConfigKeysRef.current.has(key)) return;
       processedConfigKeysRef.current.add(key);
 
       const parts = Object.entries(p.changes)
-        .map(([k, v]) => `${PERSONA_FIELD_LABELS[k] ?? k.replace(/Level$/, "").toUpperCase()}: ${v}`)
-        .join(" · ");
+        .map(([k, v]) => {
+          const label = PERSONA_FIELD_LABELS[k] ?? k.replace(/Level$/, "").toUpperCase();
+          const oldV  = p.prev?.[k];
+          return oldV !== undefined ? `${label} ${oldV} → ${v}` : `${label}: ${v}`;
+        })
+        .join(", ");
 
       const sysLine: ConsoleLine = {
         id:        `sys-${key}`,
         input:     "[SYSTEM]",
-        output:    `PERSONA CALIBRATED — ${parts}`,
+        output:    `Persona updated: ${parts}`,
         system:    true,
         pending:   false,
         timestamp: evt.timestamp,

@@ -107,13 +107,18 @@ router.post("/chat", async (req, res) => {
     try {
       const rows = await db.select().from(aiPersonaTable).limit(1);
       if (rows.length > 0) {
+        const current = rows[0]! as Record<string, unknown>;
+        const prev: Record<string, number> = {};
+        for (const key of Object.keys(personaUpdate)) {
+          if (typeof current[key] === "number") prev[key] = current[key] as number;
+        }
         await db.update(aiPersonaTable).set(personaUpdate).where(drEq(aiPersonaTable.id, rows[0]!.id));
         personaUpdated = personaUpdate as Record<string, number>;
         bus.emit({
           source: "self-upgrade",
           target: null,
           type:   "system.config_changed",
-          payload: { component: "ai_persona", changes: personaUpdate, origin: "self_upgrade" },
+          payload: { component: "ai_persona", changes: personaUpdate, prev, origin: "self_upgrade" },
         });
       }
     } catch { /* non-fatal */ }
