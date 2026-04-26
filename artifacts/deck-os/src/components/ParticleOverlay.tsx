@@ -62,7 +62,8 @@ export function ParticleOverlay() {
   useEffect(() => { speedRef.current   = particlePrefs.speed;   }, [particlePrefs.speed]);
 
   useEffect(() => {
-    if (mode !== "cinematic") return;
+    const isCinematic = mode === "cinematic";
+    if (!isCinematic && !particlePrefs.particlesEnabled) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -75,8 +76,9 @@ export function ParticleOverlay() {
     colorObs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-color"] });
 
     function getTargetCount(w: number, h: number): number {
-      const base  = Math.max(Math.floor((w * h) / 9000), 32);
-      return Math.max(4, Math.round(base * (densityRef.current / 100)));
+      const base      = Math.max(Math.floor((w * h) / 9000), 32);
+      const modeFactor = isCinematic ? 1.0 : 0.35;
+      return Math.max(4, Math.round(base * (densityRef.current / 100) * modeFactor));
     }
 
     function spawnParticle(w: number, h: number, randomY = false): Particle {
@@ -175,9 +177,9 @@ export function ParticleOverlay() {
         particles.splice(target);
       }
 
-      // ── Horizontal streaks ───────────────────────────────────────────
+      // ── Horizontal streaks (cinematic only) ──────────────────────────
       const streakInterval = Math.max(60, Math.round(180 - activityRef.current * 120));
-      if (frameCount % streakInterval === 0 && Math.random() < 0.7) {
+      if (isCinematic && frameCount % streakInterval === 0 && Math.random() < 0.7) {
         streaksRef.current.push(spawnStreak(w, h));
       }
 
@@ -253,9 +255,9 @@ export function ParticleOverlay() {
       ro.disconnect();
       colorObs.disconnect();
     };
-  }, [mode]);
+  }, [mode, particlePrefs.particlesEnabled]);
 
-  if (mode !== "cinematic") return null;
+  if (mode !== "cinematic" && !particlePrefs.particlesEnabled) return null;
 
   return (
     <canvas

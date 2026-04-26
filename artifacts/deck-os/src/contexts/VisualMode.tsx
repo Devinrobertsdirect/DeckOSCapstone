@@ -5,9 +5,10 @@ export type VisualMode = "minimal" | "standard" | "cinematic";
 export interface ParticlePrefs {
   density: number;
   speed: number;
+  particlesEnabled: boolean;
 }
 
-const DEFAULT_PREFS: ParticlePrefs = { density: 100, speed: 100 };
+const DEFAULT_PREFS: ParticlePrefs = { density: 100, speed: 100, particlesEnabled: false };
 
 type VisualModeCtx = {
   mode: VisualMode;
@@ -35,8 +36,9 @@ function loadPrefs(): ParticlePrefs {
     if (raw) {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       return {
-        density: clampPref(parsed.density ?? DEFAULT_PREFS.density),
-        speed:   clampPref(parsed.speed   ?? DEFAULT_PREFS.speed),
+        density:         clampPref(parsed.density ?? DEFAULT_PREFS.density),
+        speed:           clampPref(parsed.speed   ?? DEFAULT_PREFS.speed),
+        particlesEnabled: Boolean(parsed.particlesEnabled ?? DEFAULT_PREFS.particlesEnabled),
       };
     }
   } catch {}
