@@ -579,9 +579,9 @@ const INTEGRATIONS: IntegrationDef[] = [
     placeholder: "sk_••••••••••••••••",
     getKeyUrl: "https://elevenlabs.io/app/settings/api-keys",
     getKeyLabel: "Free at elevenlabs.io →",
-    tagline: "AI voice — makes responses sound human",
+    tagline: "Voice output — gives Ollama's responses a real speaking voice",
     description:
-      "When you add this, your AI speaks out loud in a voice that sounds genuinely natural — not robotic. You pick the voice (there are dozens of options). Without this, responses stay silent unless you also add an OpenAI key. Free accounts get 10,000 characters per month, which is plenty for daily use.",
+      "Ollama handles the thinking and decides what to say. ElevenLabs does one job: speaks those words out loud in a voice that sounds genuinely human, not robotic. You choose the voice. Without it, responses are text-only. Free accounts include 10,000 characters per month — more than enough for daily use.",
     extras: "elevenlabs_voice",
   },
   {
@@ -592,9 +592,9 @@ const INTEGRATIONS: IntegrationDef[] = [
     placeholder: "sk-••••••••••••••••",
     getKeyUrl: "https://platform.openai.com/api-keys",
     getKeyLabel: "Get key at openai.com →",
-    tagline: "Speak to your AI + share images + cloud backup",
+    tagline: "Voice input + image vision + cloud backup when Ollama is offline",
     description:
-      "This unlocks three things at once. First, you can talk out loud instead of typing — your microphone captures your voice and your AI understands it. Second, you can share a photo or screenshot and ask your AI what it sees. Third, if your local AI goes offline, your system automatically falls back to GPT-4 so it never goes dark.",
+      "This key handles three specialist jobs, each separate from Ollama's core thinking. First: voice input — OpenAI Whisper listens to your microphone and converts speech to text so Ollama can understand you. Second: image vision — share a photo and Ollama can see and describe it. Third: cloud fallback — if Ollama goes offline, the system quietly routes to GPT-4 and switches back the moment Ollama returns. Your local Ollama always has priority.",
   },
   {
     id: "ANTHROPIC_API_KEY",
@@ -604,9 +604,9 @@ const INTEGRATIONS: IntegrationDef[] = [
     placeholder: "sk-ant-••••••••••••••••",
     getKeyUrl: "https://console.anthropic.com/settings/keys",
     getKeyLabel: "Get key at anthropic.com →",
-    tagline: "Claude as a second AI backup brain",
+    tagline: "Claude as a second cloud backup — alternative style to GPT-4",
     description:
-      "Adds Claude — one of the most capable AI assistants available — as a backup. If your local AI is unavailable and you don't have an OpenAI key (or want a different style of response), your system switches to Claude automatically. This is particularly useful if you travel or work away from your home machine.",
+      "A second cloud backup alongside OpenAI. Ollama always runs first. If Ollama is offline, the system checks for OpenAI, then Anthropic — each as a fallback in sequence. Claude brings a different reasoning style than GPT-4, so having both means you're never without a brain, even away from home. Neither replaces Ollama — they're bench strength.",
   },
 ];
 
@@ -818,9 +818,34 @@ function ApiKeysPhase({ aiName, onNext }: { aiName: string; onNext: () => void }
         <div className="text-center space-y-2">
           <div className="text-primary/40 font-mono text-xs tracking-[0.4em] uppercase">Setup — Integrations</div>
           <div className="text-primary font-mono text-xl tracking-widest">Connect your tools</div>
-          <div className="text-primary/35 font-mono text-xs leading-relaxed max-w-sm mx-auto">
-            None of these are required — {aiName} runs fully offline on your local AI.
-            Add any you have to unlock extra features.
+          <div className="text-primary/40 font-mono text-xs leading-relaxed max-w-sm mx-auto">
+            Ollama is your AI engine — local, private, and always free.
+            Each integration below is a specialist that works alongside it.
+          </div>
+        </div>
+
+        {/* Routing overview */}
+        <div className="border border-primary/12 bg-primary/3 p-4 space-y-2.5">
+          <div className="font-mono text-[9px] text-primary/30 tracking-[0.35em] uppercase">How they work together</div>
+          <div className="space-y-1.5">
+            {[
+              { role: "THINKS",   who: "Ollama (local)",          always: true  },
+              { role: "SPEAKS",   who: "ElevenLabs",              always: false },
+              { role: "LISTENS",  who: "OpenAI Whisper",          always: false },
+              { role: "SEES",     who: "OpenAI Vision",           always: false },
+              { role: "BACKUP",   who: "OpenAI → Anthropic",      always: false },
+            ].map(({ role, who, always }) => (
+              <div key={role} className="flex items-center gap-2">
+                <span className="font-mono text-[9px] text-primary/30 tracking-widest w-14 shrink-0">{role}</span>
+                <span className="w-px h-3 bg-primary/15 shrink-0" />
+                <span className={`font-mono text-[10px] tracking-wide ${always ? "text-primary font-bold" : "text-primary/50"}`}>
+                  {who}
+                </span>
+                {always && (
+                  <span className="font-mono text-[8px] text-primary/30 tracking-widest border border-primary/15 px-1 py-px">ALWAYS ON</span>
+                )}
+              </div>
+            ))}
           </div>
         </div>
 
