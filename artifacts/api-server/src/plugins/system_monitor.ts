@@ -3,20 +3,29 @@ import { statfs } from "fs/promises";
 import { Plugin } from "@workspace/event-bus";
 import type { PluginContext, BusEvent } from "@workspace/event-bus";
 
-const DEFAULT_POLL_INTERVAL_MS = 5_000;
+const DEFAULT_POLL_INTERVAL_MS = 4_000;
 const MEMORY_SNAPSHOT_INTERVAL = 12;
 
-function getCpuUsage(): number {
+type CpuSnapshot = { idle: number; total: number };
+
+function getCpuSnapshot(): CpuSnapshot {
   const cpus = os.cpus();
-  let totalIdle = 0;
-  let totalTick = 0;
+  let idle = 0;
+  let total = 0;
   for (const cpu of cpus) {
     for (const type of Object.keys(cpu.times) as Array<keyof typeof cpu.times>) {
-      totalTick += cpu.times[type];
+      total += cpu.times[type];
     }
-    totalIdle += cpu.times.idle;
+    idle += cpu.times.idle;
   }
-  return parseFloat((100 - (100 * totalIdle) / totalTick).toFixed(2));
+  return { idle, total };
+}
+
+function calcCpuDelta(prev: CpuSnapshot, curr: CpuSnapshot): number {
+  const idleDelta = curr.idle - prev.idle;
+  const totalDelta = curr.total - prev.total;
+  if (totalDelta === 0) return 0;
+  return parseFloat((100 - (100 * idleDelta) / totalDelta).toFixed(2));
 }
 
 function getNetworkInfo() {
@@ -56,7 +65,7 @@ async function getDiskInfo(path = "/") {
   }
 }
 
-async function getMetrics() {
+async function getMetrics(cpuUsage: number) {
   const totalMem = os.totalmem();
   const freeMem = os.freemem();
   const usedMem = totalMem - freeMem;
@@ -64,7 +73,7 @@ async function getMetrics() {
 
   return {
     cpu: {
-      usage: getCpuUsage(),
+      usage: cpuUsage,
       cores: os.cpus().length,
       model: os.cpus()[0]?.model ?? "unknown",
       loadAverage: os.loadavg(),
@@ -95,6 +104,7 @@ export default class SystemMonitorPlugin extends Plugin {
   private timer: NodeJS.Timeout | null = null;
   private pollCount = 0;
   private pollIntervalMs: number = DEFAULT_POLL_INTERVAL_MS;
+  private prevCpuSnapshot: CpuSnapshot = getCpuSnapshot();
 
   async init(context: PluginContext): Promise<void> {
     this.ctx = context;
@@ -106,7 +116,10 @@ export default class SystemMonitorPlugin extends Plugin {
 
     context.subscribe("system.monitor.request", async (event: BusEvent) => {
       if (event.type !== "system.monitor.request") return;
-      const metrics = await getMetrics();
+      const curr = getCpuSnapshot();
+      const cpuUsage = calcCpuDelta(this.prevCpuSnapshot, curr);
+      this.prevCpuSnapshot = curr;
+      const metrics = await getMetrics(cpuUsage);
       context.emit({
         source: this.id,
         target: (event.payload as Record<string, unknown>)?.replyTo as string ?? event.source,
@@ -117,7 +130,11 @@ export default class SystemMonitorPlugin extends Plugin {
 
     this.timer = setInterval(async () => {
       this.pollCount++;
-      const metrics = await getMetrics();
+      const curr = getCpuSnapshot();
+      const cpuUsage = calcCpuDelta(this.prevCpuSnapshot, curr);
+      this.prevCpuSnapshot = curr;
+
+      const metrics = await getMetrics(cpuUsage);
 
       context.emit({
         source: this.id,
@@ -151,7 +168,10 @@ export default class SystemMonitorPlugin extends Plugin {
     const p = payload as Record<string, unknown> | null;
     const command = p?.command as string | undefined;
 
-    const metrics = await getMetrics();
+    const curr = getCpuSnapshot();
+    const cpuUsage = calcCpuDelta(this.prevCpuSnapshot, curr);
+    this.prevCpuSnapshot = curr;
+    const metrics = await getMetrics(cpuUsage);
 
     if (command === "stats" || !command) {
       return metrics;
