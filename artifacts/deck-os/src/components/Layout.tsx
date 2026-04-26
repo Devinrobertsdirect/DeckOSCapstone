@@ -234,7 +234,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }
 
   function commitSavePreset() {
-    const name = presetName.trim().toUpperCase() || `CUSTOM ${customPresets.length + 1}`;
+    if (customPresets.length >= 10) { setSavingPreset(false); setPresetName(""); return; }
+    let name = presetName.trim().toUpperCase() || `CUSTOM ${customPresets.length + 1}`;
+    const existingNames = new Set(customPresets.map((p) => p.name));
+    if (existingNames.has(name)) {
+      let n = 2;
+      while (existingNames.has(`${name} ${n}`)) n++;
+      name = `${name} ${n}`;
+    }
     const next = [...customPresets, {
       name,
       density: clampPresetVal(particlePrefs.density),
@@ -715,7 +722,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
                           )}
 
                           {/* Save current */}
-                          {savingPreset ? (
+                          {customPresets.length >= 10 ? (
+                            <div className="text-[9px] text-primary/20 uppercase tracking-wider">
+                              Max 10 custom presets
+                            </div>
+                          ) : savingPreset ? (
                             <div className="flex items-center gap-1 mt-1">
                               <input
                                 autoFocus
