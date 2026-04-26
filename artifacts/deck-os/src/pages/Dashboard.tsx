@@ -105,6 +105,7 @@ type BriefingStats = {
   autonomyActionsTotal: number;
   memoriesStored: number;
   feedbackSignals: number;
+  devicesOnline: number;
 };
 
 type BriefingData = {
@@ -735,6 +736,7 @@ function BriefingCard({
                 {[
                   { label: "GOALS ACTIVE", value: stats.goalsActive },
                   { label: "COMPLETED", value: stats.goalsCompleted },
+                  { label: "DEVICES ONLINE", value: stats.devicesOnline },
                   { label: "ACTIONS", value: stats.autonomyActionsTotal },
                   { label: "MEMORIES", value: stats.memoriesStored },
                   { label: "FEEDBACK", value: stats.feedbackSignals },

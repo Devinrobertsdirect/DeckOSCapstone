@@ -11,8 +11,7 @@ router.get("/briefings", async (_req, res) => {
     const rows = await db
       .select()
       .from(briefingsTable)
-      .orderBy(desc(briefingsTable.generatedAt))
-      .limit(50);
+      .orderBy(desc(briefingsTable.generatedAt));
     res.json({ briefings: rows, count: rows.length });
   } catch (err) {
     logger.warn({ err }, "GET /briefings failed");

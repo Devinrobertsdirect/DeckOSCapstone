@@ -99,13 +99,8 @@ type ActionParams = Record<string, unknown>;
 async function executeAction(actionType: string, params: ActionParams): Promise<string> {
   switch (actionType) {
     case "generate_briefing": {
-      try {
-        const briefing = await generateBriefing();
-        return `Daily briefing generated (id=${briefing.id}, date=${briefing.date}, model=${briefing.modelUsed})`;
-      } catch (err) {
-        logger.warn({ err }, "RoutineRunner: generate_briefing failed");
-        return `Briefing generation failed: ${err instanceof Error ? err.message : String(err)}`;
-      }
+      const briefing = await generateBriefing();
+      return `Daily briefing generated (id=${briefing.id}, date=${briefing.date}, model=${briefing.modelUsed})`;
     }
 
     case "send_notification": {

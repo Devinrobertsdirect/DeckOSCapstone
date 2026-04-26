@@ -5,6 +5,7 @@ import {
   autonomyLogTable,
   memoryEntriesTable,
   feedbackSignalsTable,
+  deviceProfilesTable,
 } from "@workspace/db";
 import { gte, eq, desc, sql } from "drizzle-orm";
 import { runInference } from "./inference.js";
@@ -17,6 +18,7 @@ export interface BriefingStats {
   autonomyActionsTotal: number;
   memoriesStored: number;
   feedbackSignals: number;
+  devicesOnline: number;
   windowHours: number;
 }
 
@@ -24,12 +26,13 @@ export async function generateBriefing(): Promise<typeof briefingsTable.$inferSe
   const windowStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const today = new Date().toISOString().slice(0, 10);
 
-  const [goalsActive, goalsCompleted, autonomyActionsTotal, memoriesStored, feedbackSignals] = await Promise.all([
+  const [goalsActive, goalsCompleted, autonomyActionsTotal, memoriesStored, feedbackSignals, devicesOnline] = await Promise.all([
     db.select({ n: sql<number>`count(*)` }).from(goalsTable).where(eq(goalsTable.status, "active")).then((r) => Number(r[0]?.n ?? 0)),
     db.select({ n: sql<number>`count(*)` }).from(goalsTable).where(gte(goalsTable.completedAt, windowStart)).then((r) => Number(r[0]?.n ?? 0)),
     db.select({ n: sql<number>`count(*)` }).from(autonomyLogTable).where(gte(autonomyLogTable.createdAt, windowStart)).then((r) => Number(r[0]?.n ?? 0)),
     db.select({ n: sql<number>`count(*)` }).from(memoryEntriesTable).where(gte(memoryEntriesTable.createdAt, windowStart)).then((r) => Number(r[0]?.n ?? 0)),
     db.select({ n: sql<number>`count(*)` }).from(feedbackSignalsTable).where(gte(feedbackSignalsTable.createdAt, windowStart)).then((r) => Number(r[0]?.n ?? 0)),
+    db.select({ n: sql<number>`count(*)` }).from(deviceProfilesTable).then((r) => Number(r[0]?.n ?? 0)),
   ]);
 
   const stats: BriefingStats = {
@@ -38,6 +41,7 @@ export async function generateBriefing(): Promise<typeof briefingsTable.$inferSe
     autonomyActionsTotal,
     memoriesStored,
     feedbackSignals,
+    devicesOnline,
     windowHours: 24,
   };
 
@@ -71,6 +75,7 @@ SYSTEM STATS:
 - Autonomy actions taken (24h): ${stats.autonomyActionsTotal}
 - Memory entries stored (24h): ${stats.memoriesStored}
 - Feedback signals received (24h): ${stats.feedbackSignals}
+- Devices online: ${stats.devicesOnline}
 
 RECENT MEMORY ENTRIES:
 ${memorySnippets}
