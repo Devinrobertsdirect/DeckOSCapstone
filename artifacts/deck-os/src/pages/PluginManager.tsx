@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Settings, Power, ChevronRight, CheckCircle2, XCircle, AlertTriangle, Circle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWebSocket, useLatestPayload, useWsEvents } from "@/contexts/WebSocketContext";
+import { useSearch } from "wouter";
 
 const STATUS_COLORS: Record<string, string> = {
   active: "text-[#22ff44]",
@@ -44,7 +45,9 @@ type PluginExecutedPayload = {
 
 export default function PluginManager() {
   const { sendEvent } = useWebSocket();
-  const [selectedPlugin, setSelectedPlugin] = useState<string | null>(null);
+  const search = useSearch();
+  const preSelected = new URLSearchParams(search).get("selected");
+  const [selectedPlugin, setSelectedPlugin] = useState<string | null>(preSelected);
 
   const pluginList = useLatestPayload<PluginListPayload>("plugin.list.response");
   const pluginEvents = useWsEvents((e) =>

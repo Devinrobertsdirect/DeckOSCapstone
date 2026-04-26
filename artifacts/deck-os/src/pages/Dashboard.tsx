@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { Terminal, Cpu, MemoryStick, Activity, Network, Circle, Radio, Zap, Send, MapPin, Battery, Wifi, Eye } from "lucide-react";
+import { Terminal, Cpu, MemoryStick, Activity, Network, Circle, Radio, Zap, Send, MapPin, Battery, Wifi, Eye, CheckCircle2, AlertTriangle, Power, ChevronRight, X } from "lucide-react";
 import { type LucideIcon } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useWebSocket, useLatestPayload, useWsEvents } from "@/contexts/WebSocketContext";
 import { MiniMap } from "@/components/MiniMap";
 import { HudCorners } from "@/components/HudCorners";
@@ -20,8 +20,16 @@ type AiPayload = {
   totalRequests?: number;
 };
 
+type PluginEntry = {
+  id?: string;
+  name?: string;
+  status?: string;
+  enabled?: boolean;
+  lastActivity?: string | null;
+};
+
 type PluginPayload = {
-  plugins?: Array<{ status?: string }>;
+  plugins?: PluginEntry[];
   count?: number;
 };
 
@@ -188,10 +196,10 @@ export default function Dashboard() {
           highlight
           compact
         />
-        <MetricCard
-          title="PLUGINS.ACT"
-          value={`${activePlugins}/${totalPlugins}`}
-          icon={Network}
+        <PluginsCard
+          plugins={pluginList?.plugins ?? []}
+          activePlugins={activePlugins}
+          totalPlugins={totalPlugins}
           live={!!pluginList}
         />
       </div>
@@ -394,6 +402,128 @@ function StatusDot({ label, active }: { label: string; active: boolean }) {
     <div className="flex items-center gap-2 font-mono text-xs">
       <Circle className={`w-1.5 h-1.5 fill-current ${active ? "text-[#00ff88]" : "text-primary/20"}`} />
       <span className={active ? "text-primary/60" : "text-primary/25"}>{label}</span>
+    </div>
+  );
+}
+
+const PLUGIN_STATUS_COLOR: Record<string, string> = {
+  active: "text-[#00ff88]",
+  error: "text-[#ff3333]",
+  inactive: "text-primary/30",
+  loading: "text-yellow-400",
+};
+
+function PluginStatusIcon({ status }: { status?: string }) {
+  if (status === "active") return <CheckCircle2 className="w-3 h-3 text-[#00ff88]" />;
+  if (status === "error") return <AlertTriangle className="w-3 h-3 text-[#ff3333]" />;
+  return <Power className="w-3 h-3 text-primary/30" />;
+}
+
+function formatLastChecked(iso: string | null | undefined): string {
+  if (!iso) return "never";
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 5) return "just now";
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
+
+function PluginsCard({
+  plugins, activePlugins, totalPlugins, live,
+}: {
+  plugins: PluginEntry[];
+  activePlugins: number;
+  totalPlugins: number;
+  live: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [, navigate] = useLocation();
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full text-left relative border overflow-hidden metric-card-glow border-primary/20 bg-primary/5 hover:border-primary/40 transition-colors"
+        aria-expanded={open}
+      >
+        <HudCorners />
+        <div className="p-4 flex flex-col gap-2 h-full min-h-[100px]">
+          <div className="flex justify-between items-start">
+            <span className="text-xs font-mono text-muted-foreground tracking-wider">PLUGINS.ACT</span>
+            <Network className="w-4 h-4 shrink-0 text-primary/60" />
+          </div>
+          <div className="font-mono font-bold text-3xl text-primary metric-value">
+            {activePlugins}/{totalPlugins}
+          </div>
+          <div className="mt-auto flex items-center gap-1.5">
+            {live && <Circle className="w-1.5 h-1.5 fill-[#00ff88] text-[#00ff88] animate-pulse" />}
+            <span className="font-mono text-[10px] text-primary/30 uppercase tracking-wider">click for details</span>
+          </div>
+        </div>
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 right-0 z-50 mt-1 border border-primary/30 bg-[hsl(var(--background))] shadow-[0_0_20px_rgba(0,212,255,0.15)] min-w-[260px]">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-primary/20 bg-primary/5">
+            <span className="font-mono text-xs text-primary uppercase tracking-wider">PLUGIN STATUS</span>
+            <button onClick={() => setOpen(false)} className="text-primary/40 hover:text-primary transition-colors">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="divide-y divide-primary/10">
+            {plugins.length === 0 && (
+              <div className="px-3 py-3 font-mono text-xs text-primary/30">No plugins loaded yet</div>
+            )}
+            {plugins.map((p) => {
+              const statusColor = PLUGIN_STATUS_COLOR[p.status ?? "inactive"] ?? "text-primary/30";
+              return (
+                <button
+                  key={p.id ?? p.name}
+                  onClick={() => {
+                    setOpen(false);
+                    navigate(`/plugins?selected=${encodeURIComponent(p.id ?? "")}`);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-primary/5 transition-colors text-left group"
+                >
+                  <PluginStatusIcon status={p.status} />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-mono text-xs text-primary/80 truncate group-hover:text-primary transition-colors">
+                      {p.name ?? p.id ?? "Unknown"}
+                    </div>
+                    <div className="font-mono text-[10px] text-primary/30">
+                      checked {formatLastChecked(p.lastActivity)}
+                    </div>
+                  </div>
+                  <div className={`font-mono text-[10px] uppercase tracking-wider shrink-0 ${statusColor}`}>
+                    {p.status === "inactive" || p.enabled === false ? "DISABLED" : (p.status ?? "inactive").toUpperCase()}
+                  </div>
+                  <ChevronRight className="w-3 h-3 text-primary/20 group-hover:text-primary/60 transition-colors shrink-0" />
+                </button>
+              );
+            })}
+          </div>
+          <div className="px-3 py-2 border-t border-primary/10 bg-primary/5">
+            <button
+              onClick={() => { setOpen(false); navigate("/plugins"); }}
+              className="font-mono text-[10px] text-primary/40 hover:text-primary transition-colors uppercase tracking-wider w-full text-left"
+            >
+              View all in Plugin Manager →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
