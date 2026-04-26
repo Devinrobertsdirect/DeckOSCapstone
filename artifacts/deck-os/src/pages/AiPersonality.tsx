@@ -33,6 +33,10 @@ interface AiPersona {
   updatedAt:            string;
 }
 
+// ── Shared event name for cross-tab voice sync ────────────────────────────
+
+export const VOICE_CHANGED_EVENT = "deckos:voiceChanged";
+
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const PRESET_COLORS = [
@@ -61,6 +65,8 @@ const VOICES = [
   { value: "nova",    label: "NOVA",    desc: "Female, energetic",         sample: "Bright and confident" },
   { value: "shimmer", label: "SHIMMER", desc: "Soft female, gentle",       sample: "Smooth and calming" },
 ];
+
+const PERSONA_VALID_VOICES = new Set(VOICES.map((v) => v.value));
 
 const ATTITUDES = [
   { value: "professional", label: "PROFESSIONAL", desc: "Calm, precise, authoritative",    emoji: "🎯" },
@@ -355,6 +361,18 @@ function RecalibrateTab() {
   useEffect(() => () => { audioRef.current?.pause(); }, []);
 
   useEffect(() => {
+    function onVoiceChanged(e: Event) {
+      const detail = (e as CustomEvent<{ voice: string }>).detail;
+      if (detail?.voice && detail.voice !== voice) {
+        setVoiceLocal(detail.voice);
+        localStorage.setItem(VOICE_KEY, detail.voice);
+      }
+    }
+    window.addEventListener(VOICE_CHANGED_EVENT, onVoiceChanged);
+    return () => window.removeEventListener(VOICE_CHANGED_EVENT, onVoiceChanged);
+  }, [voice]);
+
+  useEffect(() => {
     fetch(`${API_BASE}/vision/elevenlabs/voices`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d?.voices) setElVoices(d.voices); })
@@ -381,6 +399,14 @@ function RecalibrateTab() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ data: { voice: v }, merge: true }),
     }).catch(() => {});
+    if (PERSONA_VALID_VOICES.has(v)) {
+      fetch(`${API_BASE}/ai/persona`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voice: v }),
+      }).catch(() => {});
+    }
+    window.dispatchEvent(new CustomEvent(VOICE_CHANGED_EVENT, { detail: { voice: v } }));
     setVoiceSaved(true);
     setTimeout(() => setVoiceSaved(false), 2000);
   }
@@ -927,6 +953,17 @@ export default function AiPersonality() {
     if (saved) setForm(saved);
   }, [saved]);
 
+  useEffect(() => {
+    function onVoiceChanged(e: Event) {
+      const detail = (e as CustomEvent<{ voice: string }>).detail;
+      if (detail?.voice) {
+        setForm(prev => ({ ...prev, voice: detail.voice as AiPersona["voice"] }));
+      }
+    }
+    window.addEventListener(VOICE_CHANGED_EVENT, onVoiceChanged);
+    return () => window.removeEventListener(VOICE_CHANGED_EVENT, onVoiceChanged);
+  }, []);
+
   const set = useCallback((key: keyof AiPersona, value: string | number) => {
     setForm(prev => ({ ...prev, [key]: value }));
   }, []);
@@ -941,6 +978,10 @@ export default function AiPersonality() {
       qc.invalidateQueries({ queryKey: ["ai-persona"] });
       setSavedOk(true);
       setTimeout(() => setSavedOk(false), 2500);
+      if (form.voice) {
+        localStorage.setItem(VOICE_KEY, form.voice);
+        window.dispatchEvent(new CustomEvent(VOICE_CHANGED_EVENT, { detail: { voice: form.voice } }));
+      }
     },
   });
 
