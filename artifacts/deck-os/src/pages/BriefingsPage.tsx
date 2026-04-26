@@ -96,7 +96,7 @@ function BriefingRow({ briefing, isLatest }: { briefing: Briefing; isLatest: boo
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
             <StatBadge label="Goals Active"    value={stats?.goalsActive ?? 0}          icon={Activity} />
             <StatBadge label="Completed"       value={stats?.goalsCompleted ?? 0}        icon={Zap} />
-            <StatBadge label="Devices Online"  value={stats?.devicesOnline ?? 0}         icon={Network} />
+            <StatBadge label="Devices Reg."    value={stats?.devicesOnline ?? 0}         icon={Network} />
             <StatBadge label="Actions"         value={stats?.autonomyActionsTotal ?? 0}  icon={Brain} />
             <StatBadge label="Memories"        value={stats?.memoriesStored ?? 0}        icon={MemoryStick} />
             <StatBadge label="Feedback"        value={stats?.feedbackSignals ?? 0}       icon={Circle} />

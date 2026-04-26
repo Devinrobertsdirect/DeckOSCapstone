@@ -75,7 +75,7 @@ SYSTEM STATS:
 - Autonomy actions taken (24h): ${stats.autonomyActionsTotal}
 - Memory entries stored (24h): ${stats.memoriesStored}
 - Feedback signals received (24h): ${stats.feedbackSignals}
-- Devices online: ${stats.devicesOnline}
+- Devices registered: ${stats.devicesOnline}
 
 RECENT MEMORY ENTRIES:
 ${memorySnippets}
