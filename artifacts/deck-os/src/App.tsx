@@ -5,7 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Layout } from "@/components/Layout";
 import { VisualModeProvider } from "@/contexts/VisualMode";
-import { Onboarding, isInitialized, type UserConfig } from "@/components/Onboarding";
+import { Onboarding, isInitialized, applyColor, getStoredColor } from "@/components/Onboarding";
 import NotFound from "@/pages/not-found";
 
 import Dashboard from "@/pages/Dashboard";
@@ -19,6 +19,9 @@ import GoalManager from "@/pages/GoalManager";
 import FeedbackLoop from "@/pages/FeedbackLoop";
 import AutonomousLayer from "@/pages/AutonomousLayer";
 import CognitivePulse from "@/pages/CognitivePulse";
+
+// Apply stored color immediately before any render
+applyColor(getStoredColor());
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -53,16 +56,12 @@ function Router() {
 function App() {
   const [initialized, setInitialized] = useState(() => isInitialized());
 
-  const handleOnboardingComplete = (_cfg: UserConfig) => {
-    setInitialized(true);
-  };
-
   return (
     <VisualModeProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           {!initialized ? (
-            <Onboarding onComplete={handleOnboardingComplete} />
+            <Onboarding onComplete={() => setInitialized(true)} />
           ) : (
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <Router />

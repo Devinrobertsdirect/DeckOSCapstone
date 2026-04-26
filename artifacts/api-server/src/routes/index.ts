@@ -15,6 +15,7 @@ import autonomyRouter from "./autonomy";
 import traceRouter from "./trace";
 import chatRouter from "./chat";
 import presenceRouter from "./presence";
+import visionRouter from "./vision";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use(predictionsRouter);
 router.use(autonomyRouter);
 router.use(traceRouter);
 router.use("/presence", presenceRouter);
+router.use("/vision", visionRouter);
 
 export default router;

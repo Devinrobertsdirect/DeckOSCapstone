@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { getStoredConfig } from "@/components/Onboarding";
+import { getStoredConfig, applyColor, getStoredColor, type ColorScheme } from "@/components/Onboarding";
 import { Link, useLocation } from "wouter";
 import {
   Activity, HardDrive, Cpu as Microchip, Network, Settings,
@@ -15,12 +15,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { mode, setMode } = useVisualMode();
   const cfg = useMemo(() => getStoredConfig(), []);
-  const systemName = cfg?.systemName ?? "JARVIS";
-  const userName   = cfg?.userName   ?? null;
+  const aiName   = cfg?.aiName ?? cfg?.systemName ?? "JARVIS";
+  const userName = cfg?.userName ?? null;
+  const [activeColor, setActiveColor] = useState<ColorScheme>(getStoredColor());
 
   useEffect(() => {
     document.documentElement.classList.add("dark");
+    applyColor(getStoredColor());
   }, []);
+
+  function changeColor(c: ColorScheme) {
+    setActiveColor(c);
+    applyColor(c);
+    if (cfg) {
+      const updated = { ...cfg, color: c };
+      localStorage.setItem("jarvis.user", JSON.stringify(updated));
+    }
+  }
 
   const { data: health } = useHealthCheck({
     query: {
@@ -67,7 +78,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
           <div>
             <h1 className="text-xl font-bold text-primary tracking-widest uppercase m-0 leading-none">Deck OS</h1>
-            <p className="text-xs text-primary/50 font-mono">SYS.VER.9.4.2 // {systemName}</p>
+            <p className="text-xs text-primary/50 font-mono">SYS.VER.9.4.2 // {aiName}</p>
           </div>
         </div>
 
@@ -87,6 +98,22 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <AlertTriangle className="w-3.5 h-3.5" /> OFFLINE
               </span>
             )}
+          </div>
+          {/* Color switcher */}
+          <div className="hidden sm:flex items-center gap-1.5">
+            {(["blue", "green", "yellow", "red"] as ColorScheme[]).map((c) => {
+              const HEX: Record<ColorScheme, string> = { blue: "#00c8ff", green: "#11d97a", yellow: "#ffc820", red: "#f03248" };
+              return (
+                <button
+                  key={c}
+                  title={c.toUpperCase()}
+                  onClick={() => changeColor(c)}
+                  className={`w-3 h-3 rounded-full transition-all duration-200
+                    ${activeColor === c ? "scale-125 ring-1 ring-white/30" : "opacity-40 hover:opacity-80"}`}
+                  style={{ backgroundColor: HEX[c] }}
+                />
+              );
+            })}
           </div>
           <div className="text-primary tabular-nums">
             {new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}
@@ -170,7 +197,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
             <button
               onClick={() => {
-                if (confirm(`Re-run the ${systemName} setup wizard?`)) {
+                if (confirm(`Re-run the ${aiName} setup wizard?`)) {
                   localStorage.removeItem("jarvis.initialized");
                   window.location.reload();
                 }
