@@ -84,6 +84,7 @@ type DeviceShape = {
 
 type WsDeviceReadingPayload = { deviceId?: string; readings?: DeviceReading[]; status?: string; newStatus?: string };
 type WsDeviceConnPayload = { deviceId?: string; status?: string; newStatus?: string };
+type WsDeviceCommandAckPayload = { deviceId?: string; commandId?: string; success?: boolean; action?: string; error?: string };
 
 type ReadingSnapshot = DeviceReading[];
 
@@ -321,6 +322,8 @@ export default function DeviceControl() {
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [ackFlash, setAckFlash] = useState<Record<string, "success" | "fail">>({});
+  const ackFlashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const { data: profilesData } = useQuery<{ profiles: DeviceProfile[] }>({
     queryKey: ["device-profiles"],
@@ -348,6 +351,8 @@ export default function DeviceControl() {
   const connEvents = useWsEvents((e) => e.type === "device.connected" || e.type === "device.disconnected");
   const stateChangedEvents = useWsEvents((e) => e.type === "device.state.changed");
   const commandEvents = useWsEvents((e) => e.type === "device.command.send" || e.type === "device.command_sent");
+  const ackEvents = useWsEvents((e) => e.type === "device.command.ack");
+  const processedAckCountRef = useRef(0);
 
   useEffect(() => {
     if (dataUpdatedAt) setLastRefresh(new Date(dataUpdatedAt));
@@ -449,6 +454,53 @@ export default function DeviceControl() {
     }
     processedReadingCountRef.current = readingEvents.length;
   }, [readingEvents, activeTab, selectedDevice, appendSnapshot]);
+
+  useEffect(() => {
+    const newAcks = ackEvents.slice(processedAckCountRef.current);
+    processedAckCountRef.current = ackEvents.length;
+    if (newAcks.length === 0) return;
+
+    for (const ev of newAcks) {
+      const p = ev.payload as WsDeviceCommandAckPayload;
+      const deviceId = p.deviceId;
+      if (!deviceId) continue;
+
+      const success = p.success !== false;
+      const commandId = p.commandId ?? "";
+      const action = p.action ?? "ack";
+      const status = success ? "ACK:OK" : "ACK:FAIL";
+
+      setControlLog((prev) => [
+        {
+          deviceId,
+          action: commandId ? `${action} [${commandId.slice(0, 8)}]` : action,
+          status,
+          timestamp: ev.timestamp ?? new Date().toISOString(),
+        },
+        ...prev,
+      ].slice(0, 30));
+
+      if (ackFlashTimers.current[deviceId]) {
+        clearTimeout(ackFlashTimers.current[deviceId]);
+      }
+      setAckFlash((prev) => ({ ...prev, [deviceId]: success ? "success" : "fail" }));
+      ackFlashTimers.current[deviceId] = setTimeout(() => {
+        setAckFlash((prev) => {
+          const next = { ...prev };
+          delete next[deviceId];
+          return next;
+        });
+        delete ackFlashTimers.current[deviceId];
+      }, 1200);
+    }
+  }, [ackEvents]);
+
+  useEffect(() => {
+    const timers = ackFlashTimers.current;
+    return () => {
+      for (const id of Object.values(timers)) clearTimeout(id);
+    };
+  }, []);
 
   const handleControl = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -606,15 +658,22 @@ export default function DeviceControl() {
               .filter((e) => (e.payload as WsDeviceReadingPayload).deviceId === device.id)
               .slice(-5);
 
+            const ackState = ackFlash[device.id];
+
             return (
               <div
                 key={device.id}
                 data-testid={`device-${device.id}`}
                 onClick={() => setSelectedDevice(isSelected ? null : device.id)}
-                className={`border bg-card/40 p-4 cursor-pointer transition-all font-mono
-                  ${isSelected
-                    ? "border-primary shadow-[0_0_15px_rgba(0,212,255,0.15)]"
-                    : `${STATUS_BG[device.status ?? "offline"] ?? "border-primary/20"} hover:border-primary/50`}`}
+                className={`border bg-card/40 p-4 cursor-pointer font-mono
+                  transition-[border-color,box-shadow,background-color] duration-300
+                  ${ackState === "success"
+                    ? "border-[#22ff44] shadow-[0_0_18px_rgba(34,255,68,0.35)] bg-[#22ff44]/5"
+                    : ackState === "fail"
+                      ? "border-[#ff3333] shadow-[0_0_18px_rgba(255,51,51,0.35)] bg-[#ff3333]/5"
+                      : isSelected
+                        ? "border-primary shadow-[0_0_15px_rgba(0,212,255,0.15)]"
+                        : `${STATUS_BG[device.status ?? "offline"] ?? "border-primary/20"} hover:border-primary/50`}`}
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
@@ -642,6 +701,16 @@ export default function DeviceControl() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
+                    {ackState === "success" && (
+                      <span className="flex items-center gap-1 text-[9px] bg-[#22ff44]/15 text-[#22ff44] border border-[#22ff44]/40 px-1.5 py-0.5 uppercase tracking-wider font-bold animate-pulse">
+                        <CheckCircle2 className="w-2.5 h-2.5" /> ACK
+                      </span>
+                    )}
+                    {ackState === "fail" && (
+                      <span className="flex items-center gap-1 text-[9px] bg-[#ff3333]/15 text-[#ff3333] border border-[#ff3333]/40 px-1.5 py-0.5 uppercase tracking-wider font-bold animate-pulse">
+                        <AlertTriangle className="w-2.5 h-2.5" /> FAIL
+                      </span>
+                    )}
                     {isActuator && (
                       <button
                         onClick={(e) => {
@@ -812,15 +881,29 @@ export default function DeviceControl() {
                   </div>
                 )}
 
-                {controlLog.map((log, i) => (
-                  <div key={i} className="border border-primary/20 p-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-primary/40">&gt; [{log.deviceId.slice(0, 12)}] {log.action}</span>
-                      <span className={`text-[10px] font-bold ${log.status === "OK" ? "text-[#22ff44]" : "text-[#ff3333]"}`}>{log.status}</span>
+                {controlLog.map((log, i) => {
+                  const isAck = log.status.startsWith("ACK:");
+                  const isOk = log.status === "OK" || log.status === "ACK:OK";
+                  return (
+                    <div
+                      key={i}
+                      className={`border p-2 ${isAck
+                        ? isOk
+                          ? "border-[#22ff44]/30 bg-[#22ff44]/5"
+                          : "border-[#ff3333]/30 bg-[#ff3333]/5"
+                        : "border-primary/20"}`}
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="text-primary/40 flex items-center gap-1.5">
+                          {isAck && <CheckCircle2 className={`w-3 h-3 shrink-0 ${isOk ? "text-[#22ff44]" : "text-[#ff3333]"}`} />}
+                          &gt; [{log.deviceId.slice(0, 12)}] {log.action}
+                        </span>
+                        <span className={`text-[10px] font-bold ${isOk ? "text-[#22ff44]" : "text-[#ff3333]"}`}>{log.status}</span>
+                      </div>
+                      <div className="text-primary/30 text-[10px]">{new Date(log.timestamp).toLocaleTimeString()}</div>
                     </div>
-                    <div className="text-primary/30 text-[10px]">{new Date(log.timestamp).toLocaleTimeString()}</div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {commandEvents.slice(-5).reverse().map((e, i) => (
                   <div key={i} className="border border-[#22ff44]/20 p-2">
