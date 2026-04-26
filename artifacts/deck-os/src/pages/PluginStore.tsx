@@ -186,6 +186,10 @@ function PluginDetailPanel({
       setDraftRating(existingReview.rating);
       setDraftText(existingReview.review ?? "");
       setReviewEditing(false);
+    } else {
+      setDraftRating(0);
+      setDraftText("");
+      setReviewEditing(true);
     }
   }, [existingReview]);
 
@@ -997,6 +1001,7 @@ export default function PluginStore() {
       <AnimatePresence>
         {syncedSelectedPlugin && (
           <PluginDetailPanel
+            key={syncedSelectedPlugin.id}
             plugin={syncedSelectedPlugin}
             existingReview={reviews[syncedSelectedPlugin.id] ?? null}
             onClose={() => setSelectedPlugin(null)}
