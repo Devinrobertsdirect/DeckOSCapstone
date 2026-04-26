@@ -16,6 +16,7 @@ const ChatRequestSchema = z.object({
   message: z.string().min(1).max(4096),
   channel: z.enum(["web", "mobile", "whatsapp", "voice", "console"]).default("web"),
   sessionId: z.string().default("default"),
+  requestId: z.string().optional(),
 });
 
 const VoiceIdentityUpdateSchema = z.object({
@@ -34,7 +35,7 @@ router.post("/chat", async (req, res) => {
     return;
   }
 
-  const { message, channel, sessionId } = parsed.data;
+  const { message, channel, sessionId, requestId } = parsed.data;
   const startMs = Date.now();
 
   // record user presence
@@ -87,6 +88,14 @@ router.post("/chat", async (req, res) => {
       task:     "chat",
       context:  [{ role: "system", content: systemPrompt }, ...context.slice(-8)],
       useCache: false, // conversations shouldn't be cached
+      onTierResolved: requestId
+        ? (resolvedTier, model) => {
+            broadcast({
+              type: "ai.inference_started",
+              payload: { requestId, tier: resolvedTier, model },
+            });
+          }
+        : undefined,
     });
     response = result.response;
     modelUsed = result.modelUsed;

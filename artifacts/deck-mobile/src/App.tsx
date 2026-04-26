@@ -195,8 +195,13 @@ export default function App() {
   const { recorderState, micDenied, supported: micSupported, startRecording, stopRecording, cancelRecording } = useVoiceRecorder();
   const { speak } = useAudioPlayback();
 
-  const handleWsMessage = useCallback((_data: unknown) => {
-    // WS events are handled server-side; tier arrives via HTTP response
+  const tierByRequestRef = useRef<Map<string, string>>(new Map());
+
+  const handleWsMessage = useCallback((data: unknown) => {
+    const msg = data as { type?: string; payload?: { requestId?: string; tier?: string } };
+    if (msg.type === "ai.inference_started" && msg.payload?.requestId && msg.payload?.tier) {
+      tierByRequestRef.current.set(msg.payload.requestId, msg.payload.tier);
+    }
   }, []);
 
   const { wsState, sendMessage } = useWebSocket(handleWsMessage);
@@ -290,20 +295,23 @@ export default function App() {
     setMessages((prev) => [...prev, userMsg, pendingMsg]);
     setLoading(true);
 
+    const requestId = `mob_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     try {
       const res = await fetch(`${API_BASE}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, channel: "mobile", sessionId: SESSION_ID }),
+        body: JSON.stringify({ message: text, channel: "mobile", sessionId: SESSION_ID, requestId }),
       });
       const data = await res.json() as { response: string; modelUsed: string; latencyMs: number; fromCache: boolean; tier?: string; reasonCode?: string };
+      const tier = tierByRequestRef.current.get(requestId) ?? data.tier;
+      tierByRequestRef.current.delete(requestId);
       const aiMsg: ChatMsg = {
         id: `a_${Date.now()}`,
         role: "assistant",
         content: data.response,
         channel: "mobile",
         modelUsed: data.modelUsed,
-        tier: data.tier,
+        tier,
         latencyMs: data.latencyMs,
         fromCache: data.fromCache,
         reasonCode: data.reasonCode,
@@ -386,19 +394,22 @@ export default function App() {
       setMessages((prev) => [...prev, userMsg, pendingMsg]);
 
       setVoiceState("chatting");
+      const voiceRequestId = `mob_v_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       const chatRes = await fetch(`${API_BASE}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: transcript.trim(), channel: "voice", sessionId: SESSION_ID }),
+        body: JSON.stringify({ message: transcript.trim(), channel: "voice", sessionId: SESSION_ID, requestId: voiceRequestId }),
       });
       const chatData = await chatRes.json() as { response: string; modelUsed?: string; tier?: string; latencyMs?: number };
+      const voiceTier = tierByRequestRef.current.get(voiceRequestId) ?? chatData.tier;
+      tierByRequestRef.current.delete(voiceRequestId);
       const aiMsg: ChatMsg = {
         id: `a_voice_${Date.now()}`,
         role: "assistant",
         content: chatData.response,
         channel: "voice",
         modelUsed: chatData.modelUsed,
-        tier: chatData.tier,
+        tier: voiceTier,
         latencyMs: chatData.latencyMs,
         timestamp: new Date().toISOString(),
       };
