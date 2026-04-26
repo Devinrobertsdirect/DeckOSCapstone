@@ -26,6 +26,7 @@ import briefingsRouter from "./briefings";
 import configRouter from "./config";
 import storeRouter from "./store";
 import channelsRouter from "./channels";
+import adminRouter from "./admin";
 
 const router: IRouter = Router();
 
@@ -56,5 +57,6 @@ router.use(briefingsRouter);
 router.use(configRouter);
 router.use(storeRouter);
 router.use(channelsRouter);
+router.use(adminRouter);
 
 export default router;

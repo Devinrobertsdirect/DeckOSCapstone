@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Settings as SettingsIcon, Wifi, Key, Cpu, CheckCircle2,
   XCircle, Loader2, Eye, EyeOff, Save, AlertTriangle, RotateCcw, Zap,
   Volume2, Mic, Globe, HardDrive, ShieldCheck, RefreshCw, Database, Server,
+  Info, Terminal, Download,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -15,7 +16,7 @@ type FeatureMap = {
   store: FeatureInfo;
 };
 
-type Tab = "connection" | "apikeys" | "models" | "system";
+type Tab = "connection" | "apikeys" | "models" | "system" | "about";
 
 type HealthStatus = {
   ok: boolean | null;
@@ -100,6 +101,13 @@ export default function Settings() {
 
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [healthChecking, setHealthChecking] = useState(false);
+
+  const [version, setVersion]             = useState<string | null>(null);
+  const [updateRunning, setUpdateRunning] = useState(false);
+  const [updateLog, setUpdateLog]         = useState<{ line: string; stderr?: boolean }[]>([]);
+  const [updateDone, setUpdateDone]       = useState<{ success: boolean; version?: string; error?: string } | null>(null);
+  const [useDocker, setUseDocker]         = useState(false);
+  const logEndRef = useRef<HTMLDivElement>(null);
 
   const fetchHealth = useCallback(async () => {
     setHealthChecking(true);
@@ -195,6 +203,19 @@ export default function Settings() {
       fetchHealth();
     }
   }, [tab, health, healthChecking, fetchHealth]);
+
+  useEffect(() => {
+    if (tab === "about" && version === null) {
+      fetch("/api/admin/version")
+        .then((r) => r.json())
+        .then((d: { version: string }) => setVersion(d.version))
+        .catch(() => setVersion("unknown"));
+    }
+  }, [tab, version]);
+
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [updateLog]);
 
   useEffect(() => {
     fetch("/api/features")
@@ -356,11 +377,63 @@ export default function Settings() {
     }
   }
 
+  async function runUpdate() {
+    setUpdateRunning(true);
+    setUpdateLog([]);
+    setUpdateDone(null);
+
+    try {
+      const res = await fetch("/api/admin/update", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ docker: useDocker }),
+      });
+      if (!res.body) throw new Error("No response body");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split("\n\n");
+        buf = parts.pop() ?? "";
+        for (const part of parts) {
+          const dataLine = part.split("\n").find((l) => l.startsWith("data:"));
+          if (!dataLine) continue;
+          try {
+            const json = JSON.parse(dataLine.slice(5).trim()) as {
+              type: string;
+              line?: string;
+              stderr?: boolean;
+              success?: boolean;
+              version?: string;
+              error?: string;
+            };
+            if (json.type === "log" && json.line) {
+              setUpdateLog((prev) => [...prev, { line: json.line!, stderr: json.stderr }]);
+            } else if (json.type === "done") {
+              setUpdateDone({ success: !!json.success, version: json.version, error: json.error });
+              if (json.version) setVersion(json.version);
+            }
+          } catch {}
+        }
+      }
+    } catch (err) {
+      setUpdateDone({ success: false, error: String(err) });
+    } finally {
+      setUpdateRunning(false);
+    }
+  }
+
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: "connection", label: "CONNECTION",  icon: <Wifi className="w-3 h-3" /> },
-    { id: "apikeys",    label: "API KEYS",     icon: <Key className="w-3 h-3" /> },
-    { id: "models",     label: "MODELS",       icon: <Cpu className="w-3 h-3" /> },
+    { id: "connection", label: "CONNECTION",   icon: <Wifi className="w-3 h-3" /> },
+    { id: "apikeys",    label: "API KEYS",      icon: <Key className="w-3 h-3" /> },
+    { id: "models",     label: "MODELS",        icon: <Cpu className="w-3 h-3" /> },
     { id: "system",     label: "SYSTEM HEALTH", icon: <ShieldCheck className="w-3 h-3" /> },
+    { id: "about",      label: "ABOUT & UPDATE",icon: <Info className="w-3 h-3" /> },
   ];
 
   return (
@@ -982,6 +1055,145 @@ export default function Settings() {
               </button>
             </CardContent>
           </Card>
+        </div>
+      )}
+      {/* ABOUT & UPDATE tab */}
+      {tab === "about" && (
+        <div className="grid gap-6 max-w-2xl">
+          {/* Version card */}
+          <Card className="bg-card/40 border-primary/20 rounded-none">
+            <CardHeader className="border-b border-primary/20 p-4">
+              <CardTitle className="font-mono text-xs text-primary flex items-center gap-2">
+                <Info className="w-3.5 h-3.5" />
+                DECK OS — VERSION INFO
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-4">
+              <div className="grid grid-cols-2 gap-px bg-primary/10">
+                <div className="bg-card/60 p-4 space-y-1">
+                  <div className="font-mono text-[10px] text-primary/40 uppercase tracking-widest">SYSTEM</div>
+                  <div className="font-mono text-lg text-primary font-bold">DECK OS</div>
+                  <div className="font-mono text-xs text-primary/40">JARVIS Command Center</div>
+                </div>
+                <div className="bg-card/60 p-4 space-y-1">
+                  <div className="font-mono text-[10px] text-primary/40 uppercase tracking-widest">VERSION</div>
+                  {version === null ? (
+                    <div className="flex items-center gap-2 text-primary/40 font-mono text-sm">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      LOADING...
+                    </div>
+                  ) : (
+                    <div className="font-mono text-lg text-[#11d97a] font-bold">{version}</div>
+                  )}
+                  <div className="font-mono text-xs text-primary/40">git describe --tags</div>
+                </div>
+              </div>
+
+              <div className="p-3 border border-primary/10 bg-primary/5 font-mono text-xs text-primary/40 space-y-1">
+                <div className="text-primary/60 mb-1">STACK</div>
+                <div>• Runtime: <span className="text-primary">Node.js + Express 5 + PostgreSQL + Drizzle</span></div>
+                <div>• Frontend: <span className="text-primary">React + Vite + Tailwind</span></div>
+                <div>• AI: <span className="text-primary">Ollama (local) • OpenAI • Anthropic • ElevenLabs</span></div>
+                <div>• Package manager: <span className="text-primary">pnpm monorepo</span></div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Self-update card */}
+          <Card className="bg-card/40 border-primary/20 rounded-none">
+            <CardHeader className="border-b border-primary/20 p-4">
+              <CardTitle className="font-mono text-xs text-primary flex items-center gap-2">
+                <Download className="w-3.5 h-3.5" />
+                SELF.UPDATE — APPLY LATEST CHANGES
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-4">
+              <p className="font-mono text-xs text-primary/50 leading-relaxed">
+                Runs <code className="bg-primary/10 px-1 text-primary">update.sh --no-pull</code> on the server:
+                reinstalls dependencies and applies any pending database migrations.
+                Git pull is skipped (update the code manually, then click Run Update).
+              </p>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setUseDocker((d) => !d)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 border font-mono text-xs transition-all ${
+                    useDocker
+                      ? "border-primary text-primary bg-primary/10"
+                      : "border-primary/20 text-primary/40 hover:border-primary/50"
+                  }`}
+                >
+                  <HardDrive className="w-3 h-3" />
+                  {useDocker ? "DOCKER MODE" : "BARE-METAL MODE"}
+                </button>
+                <span className="font-mono text-[10px] text-primary/30">
+                  {useDocker ? "Uses docker compose pull + up -d --build" : "Runs pnpm install + db push"}
+                </span>
+              </div>
+
+              <button
+                onClick={runUpdate}
+                disabled={updateRunning}
+                className="flex items-center gap-2 px-5 py-2.5 border border-primary/50 font-mono text-xs text-primary hover:bg-primary/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {updateRunning
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />UPDATING...</>
+                  : <><RefreshCw className="w-3.5 h-3.5" />RUN UPDATE</>
+                }
+              </button>
+
+              {/* Log terminal */}
+              {(updateLog.length > 0 || updateRunning) && (
+                <div className="border border-primary/20 bg-black/40 rounded-none">
+                  <div className="flex items-center gap-2 px-3 py-2 border-b border-primary/20 font-mono text-[10px] text-primary/40">
+                    <Terminal className="w-3 h-3" />
+                    UPDATE LOG
+                    {updateRunning && <Loader2 className="w-2.5 h-2.5 animate-spin ml-auto" />}
+                  </div>
+                  <div className="p-3 max-h-64 overflow-y-auto space-y-0.5 font-mono text-[11px] leading-relaxed">
+                    {updateLog.map((entry, i) => (
+                      <div
+                        key={i}
+                        className={entry.stderr ? "text-[#f03248]/70" : "text-primary/70"}
+                      >
+                        {entry.line}
+                      </div>
+                    ))}
+                    <div ref={logEndRef} />
+                  </div>
+                </div>
+              )}
+
+              {/* Done banner */}
+              {updateDone && (
+                <div className={`p-3 border font-mono text-xs flex items-start gap-2 ${
+                  updateDone.success
+                    ? "border-[#11d97a]/30 bg-[#11d97a]/5 text-[#11d97a]"
+                    : "border-[#f03248]/30 bg-[#f03248]/5 text-[#f03248]"
+                }`}>
+                  {updateDone.success
+                    ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+                    : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                  }
+                  <div>
+                    {updateDone.success
+                      ? <>Update complete — now on <span className="font-bold">{updateDone.version ?? version}</span>. Restart dev servers to apply.</>
+                      : <>Update failed. {updateDone.error ?? "Check the log above for details."}</>
+                    }
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Manual update reference */}
+          <div className="p-3 border border-primary/10 bg-primary/5 font-mono text-xs text-primary/40 space-y-1.5">
+            <div className="text-primary/60 mb-1">MANUAL UPDATE COMMANDS</div>
+            <div>• Bare-metal: <span className="text-primary">bash update.sh</span></div>
+            <div>• Docker: <span className="text-primary">bash update.sh --docker</span></div>
+            <div>• Skip git pull: <span className="text-primary">bash update.sh --no-pull</span></div>
+            <div>• Restart servers: <span className="text-primary">bash setup.sh --start</span></div>
+          </div>
         </div>
       )}
     </div>
