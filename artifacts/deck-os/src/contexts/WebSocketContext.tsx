@@ -170,3 +170,29 @@ export function useLatestPayload<T>(type: string): T | null {
   const event = useLatestEvent(type);
   return event ? (event.payload as T) : null;
 }
+
+/**
+ * Returns a 0–1 activity level based on how many WebSocket events
+ * arrived in the last 3 seconds.  0 = idle, 1 = 15+ events/3 s.
+ *
+ * A 500 ms interval tick forces the memo to recompute even when no new
+ * events arrive, so activity decays naturally after bursts end.
+ */
+export function useActivityLevel(): number {
+  const { events } = useWebSocket();
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 500);
+    return () => clearInterval(id);
+  }, []);
+
+  return useMemo(() => {
+    const cutoff = Date.now() - 3000;
+    const recent = events.filter(
+      (e) => new Date(e.timestamp).getTime() > cutoff,
+    ).length;
+    return Math.min(recent / 15, 1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events, tick]);
+}

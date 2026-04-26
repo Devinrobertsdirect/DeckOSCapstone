@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useVisualMode } from "@/contexts/VisualMode";
+import { useActivityLevel } from "@/contexts/WebSocketContext";
 
 interface Particle {
   x: number;
@@ -41,10 +42,21 @@ function readPrimaryRgb(): string {
 
 export function ParticleOverlay() {
   const { mode } = useVisualMode();
-  const canvasRef   = useRef<HTMLCanvasElement>(null);
-  const rafRef      = useRef<number>(0);
-  const particlesRef = useRef<Particle[]>([]);
-  const streaksRef  = useRef<Streak[]>([]);
+  const activity = useActivityLevel();
+
+  const canvasRef      = useRef<HTMLCanvasElement>(null);
+  const rafRef         = useRef<number>(0);
+  const particlesRef   = useRef<Particle[]>([]);
+  const streaksRef     = useRef<Streak[]>([]);
+  /** Live activity level (0–1) readable inside the animation loop */
+  const activityRef    = useRef<number>(0);
+  /** Smoothed multiplier applied to particle speed */
+  const multiplierRef  = useRef<number>(1);
+
+  // Keep the ref in sync whenever React re-renders with a new activity value
+  useEffect(() => {
+    activityRef.current = activity;
+  }, [activity]);
 
   useEffect(() => {
     if (mode !== "cinematic") return;
@@ -119,19 +131,26 @@ export function ParticleOverlay() {
       if (!canvas || !ctx) return;
       frameCount++;
 
+      // ── Activity multiplier ───────────────────────────────────────────
+      // Target: 1.0 at idle → up to 3.5x at full activity (smoothly lerped)
+      const targetMultiplier = 1 + activityRef.current * 2.5;
+      multiplierRef.current += (targetMultiplier - multiplierRef.current) * 0.04;
+      const mult = multiplierRef.current;
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       const w = canvas.width;
       const h = canvas.height;
       const rgb = cachedRgb;
 
       // ── Horizontal streaks ───────────────────────────────────────────
-      // Spawn a streak every ~180 frames (≈3s at 60fps)
-      if (frameCount % 180 === 0 && Math.random() < 0.7) {
+      // Spawn interval shrinks from 180 frames (idle) down to 60 frames (full activity)
+      const streakInterval = Math.max(60, Math.round(180 - activityRef.current * 120));
+      if (frameCount % streakInterval === 0 && Math.random() < 0.7) {
         streaksRef.current.push(spawnStreak(w, h));
       }
 
       streaksRef.current = streaksRef.current.filter((s) => {
-        s.x += s.speed;
+        s.x += s.speed * mult;
         s.life++;
         const progress = s.life / s.maxLife;
         const fadeOut  = progress > 0.7 ? 1 - (progress - 0.7) / 0.3 : 1;
@@ -159,7 +178,6 @@ export function ParticleOverlay() {
         p.charTimer--;
         if (p.charTimer <= 0) {
           p.char = randomChar(p.tier);
-          // Accent chars refresh slower to feel like coordinate readouts
           p.charTimer = p.tier === "accent"
             ? Math.floor(20 + Math.random() * 40)
             : Math.floor(5  + Math.random() * 25);
@@ -181,7 +199,8 @@ export function ParticleOverlay() {
         }
 
         p.x += p.vx;
-        p.y += p.vy;
+        // Scale vertical speed by the smoothed multiplier
+        p.y += p.vy * mult;
 
         if (p.y - p.trail * p.size * 1.35 > h || p.x < -20 || p.x > w + 20) {
           particles[i] = spawnParticle(w, h, false);
