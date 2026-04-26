@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { Terminal, Cpu, MemoryStick, HardDrive, Activity, Network, Circle, Radio, Zap, Send, MapPin, Battery, Wifi, Eye, CheckCircle2, AlertTriangle, Power, ChevronRight, X, Newspaper, RefreshCw, Loader2, History, RotateCcw } from "lucide-react";
+import { Terminal, Cpu, MemoryStick, HardDrive, Activity, Network, Circle, Radio, Zap, Send, MapPin, Battery, Wifi, Eye, CheckCircle2, AlertTriangle, Power, ChevronRight, X, Newspaper, RefreshCw, Loader2, History, RotateCcw, Trash2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import { VoiceMicButton } from "@/components/VoiceMicButton";
 import { type LucideIcon } from "lucide-react";
 import { Link, useLocation } from "wouter";
@@ -171,6 +172,7 @@ export default function Dashboard() {
     return false;
   }, [events]);
   const { mobile: mobileSnap, vision: cameraSnap } = useFieldSensors();
+  const { toast } = useToast();
 
   const pluginStatusEvents = useWsEvents((e) => e.type === "plugin.status_changed");
   useEffect(() => {
@@ -196,6 +198,19 @@ export default function Dashboard() {
   const savedInputRef = useRef("");
 
   const [showHistory, setShowHistory] = useState(false);
+
+  const handleClearHistory = useCallback(() => {
+    setCmdHistory([]);
+    cmdHistoryRef.current = [];
+    historyIndexRef.current = -1;
+    savedInputRef.current = "";
+    try {
+      sessionStorage.removeItem(CMD_HISTORY_SESSION_KEY);
+    } catch {
+    }
+    setShowHistory(false);
+    toast({ title: "Command history cleared" });
+  }, [toast]);
 
   const [commandList, setCommandList] = useState<CommandEntry[]>([]);
   const [suggestionIndex, setSuggestionIndex] = useState(-1);
@@ -617,6 +632,16 @@ export default function Dashboard() {
                 title="Command history"
               >
                 <History className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleClearHistory}
+                disabled={busy || cmdHistory.length === 0}
+                className="text-primary/40 hover:text-red-400 disabled:opacity-20 transition-colors"
+                aria-label="Clear command history"
+                title="Clear command history"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
               </button>
               <VoiceMicButton
                 onTranscript={handleVoiceTranscript}
