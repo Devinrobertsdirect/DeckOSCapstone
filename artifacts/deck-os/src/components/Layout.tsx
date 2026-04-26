@@ -259,6 +259,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
     const next = customPresets.filter((_, i) => i !== idx);
     setCustomPresets(next);
     saveCustomPresets(next);
+    setRenamingPresetIdx(null);
+    setRenameValue("");
   }
 
   function startRenamePreset(idx: number) {
