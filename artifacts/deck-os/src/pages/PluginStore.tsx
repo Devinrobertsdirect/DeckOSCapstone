@@ -87,7 +87,7 @@ function renderReadme(text: string): string {
     .map((p) => {
       p = p.trim();
       if (!p) return "";
-      if (/^<(h[1-3]|ul|li)/.test(p)) return p;
+      if (/^<(h[1-3]|ul)/.test(p)) return p;
       if (p.startsWith("<li>")) return `<ul>${p}</ul>`;
       return `<p>${p.replace(/\n/g, "<br />")}</p>`;
     })
