@@ -106,15 +106,13 @@ async function executeAction(actionType: string, params: ActionParams): Promise<
     case "send_notification": {
       const title   = (params["title"]   as string) || "JARVIS Notification";
       const message = (params["message"] as string) || "Routine notification fired.";
-      // Store in memory bus so it appears in the memory/event log
-      // Intentionally does NOT emit routine lifecycle events to avoid cross-trigger
       bus.emit({
         source: "routine-runner",
         target: null,
         type: "memory.stored",
         payload: { notificationType: "routine", title, message, layer: "episodic", timestamp: new Date().toISOString() },
       });
-      return `Notification queued: ${title} — ${message}`;
+      return `Notification sent: ${title} — ${message}`;
     }
 
     case "refresh_memory": {

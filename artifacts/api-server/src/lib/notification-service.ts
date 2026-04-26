@@ -141,17 +141,40 @@ class NotificationService {
       });
     }));
 
-    // routine.completed → info
+    // memory.stored with notificationType="routine" → info
+    // Emitted by the send_notification routine action; persisted here so the
+    // notification inbox receives the user-defined title and message.
+    this.subIds.push(bus.subscribe("memory.stored", async (e: BusEvent) => {
+      if (e.type !== "memory.stored") return;
+      const p = e.payload as Record<string, unknown>;
+      if (String(p["notificationType"] ?? "") !== "routine") return;
+      const title   = String(p["title"]   ?? "JARVIS Notification");
+      const message = String(p["message"] ?? "Routine notification fired.");
+      await this.createNotification({
+        type:     "routine.notification",
+        severity: "info",
+        title,
+        message,
+        metadata: p,
+      });
+    }));
+
+    // routine.completed with outcome=error → warning
+    // Successful completions are intentionally omitted here to avoid noise;
+    // send_notification routines create their own inbox entries via the
+    // memory.stored subscription above.
     this.subIds.push(bus.subscribe("routine.completed", async (e: BusEvent) => {
       if (e.type !== "routine.completed") return;
       const p = e.payload as Record<string, unknown>;
-      const name    = String(p["routineName"] ?? p["name"] ?? "A routine");
-      const outcome = String(p["outcome"] ?? "completed");
+      const outcome = String(p["outcome"] ?? "success");
+      if (outcome !== "error") return;
+      const name   = String(p["routineName"] ?? p["name"] ?? "A routine");
+      const result = String(p["result"] ?? "");
       await this.createNotification({
         type:     "routine.completed",
-        severity: outcome === "failure" ? "warning" : "info",
-        title:    `Routine ${outcome === "failure" ? "Failed" : "Completed"}`,
-        message:  `"${name}" finished with outcome: ${outcome}.`,
+        severity: "warning",
+        title:    "Routine Failed",
+        message:  result ? `"${name}" failed: ${result}` : `"${name}" encountered an error.`,
         metadata: p,
       });
     }));
