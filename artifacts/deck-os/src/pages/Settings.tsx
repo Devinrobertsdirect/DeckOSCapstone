@@ -394,7 +394,7 @@ export default function Settings() {
       if (!res.ok) {
         let errMsg = `Server error (${res.status})`;
         try {
-          const j = await res.json() as { error?: string };
+          const j = await res.json() as { error?: string; dockerHint?: boolean };
           if (j.error) errMsg = j.error;
         } catch {}
         setUpdateDone({ success: false, error: errMsg });

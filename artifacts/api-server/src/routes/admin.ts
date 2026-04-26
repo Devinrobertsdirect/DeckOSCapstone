@@ -7,28 +7,16 @@ import os from "os";
 const router: IRouter = Router();
 
 const LOOPBACK = new Set(["::1", "127.0.0.1", "::ffff:127.0.0.1"]);
-const LOCAL_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/;
 
-function requireLocalAccess(req: Request, res: Response, next: NextFunction): void {
-  const socketIp = req.socket?.remoteAddress ?? req.ip ?? "";
-  const origin = req.headers.origin;
-
-  if (origin) {
-    if (!LOCAL_ORIGIN_RE.test(origin)) {
-      res.removeHeader("Access-Control-Allow-Origin");
-      res.removeHeader("Access-Control-Allow-Credentials");
-      res.status(403).json({ error: "Admin endpoints are only accessible from localhost" });
-      return;
-    }
-    next();
+function requireLoopback(req: Request, res: Response, next: NextFunction): void {
+  const ip = req.socket?.remoteAddress ?? req.ip ?? "";
+  if (!LOOPBACK.has(ip)) {
+    res.status(403).json({
+      error: "This admin command requires a local connection. In Docker mode, run: bash update.sh --docker",
+      dockerHint: true,
+    });
     return;
   }
-
-  if (!LOOPBACK.has(socketIp)) {
-    res.status(403).json({ error: "Admin endpoints are only accessible from localhost" });
-    return;
-  }
-
   next();
 }
 
@@ -84,12 +72,12 @@ function findUpdateScript(flags: string[]): ScriptSpec | null {
   return null;
 }
 
-router.get("/admin/version", requireLocalAccess, (_req, res) => {
+router.get("/admin/version", (_req, res) => {
   const version = getVersion();
   res.json({ version });
 });
 
-router.post("/admin/update", requireLocalAccess, (req, res) => {
+router.post("/admin/update", requireLoopback, (req, res) => {
   if (updateInProgress) {
     res.status(409).json({ error: "An update is already in progress — wait for it to finish before starting another." });
     return;
