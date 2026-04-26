@@ -388,6 +388,15 @@ export default function Settings() {
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ docker: useDocker }),
       });
+      if (!res.ok) {
+        let errMsg = `Server error (${res.status})`;
+        try {
+          const j = await res.json() as { error?: string };
+          if (j.error) errMsg = j.error;
+        } catch {}
+        setUpdateDone({ success: false, error: errMsg });
+        return;
+      }
       if (!res.body) throw new Error("No response body");
 
       const reader = res.body.getReader();

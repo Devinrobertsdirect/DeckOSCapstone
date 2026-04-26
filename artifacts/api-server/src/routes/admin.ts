@@ -1,9 +1,22 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { execSync, spawn } from "child_process";
 import path from "path";
 import fs from "fs";
 
 const router: IRouter = Router();
+
+const LOOPBACK = new Set(["::1", "127.0.0.1", "::ffff:127.0.0.1"]);
+
+function requireLoopback(req: Request, res: Response, next: NextFunction) {
+  const ip = req.ip ?? req.socket?.remoteAddress ?? "";
+  if (!LOOPBACK.has(ip)) {
+    res.status(403).json({ error: "Admin endpoints are only accessible from localhost" });
+    return;
+  }
+  next();
+}
+
+let updateInProgress = false;
 
 function getVersion(): string {
   try {
@@ -40,19 +53,26 @@ function findUpdateScript(): string | null {
   return null;
 }
 
-router.get("/admin/version", (_req, res) => {
+router.get("/admin/version", requireLoopback, (_req, res) => {
   const version = getVersion();
   res.json({ version });
 });
 
-router.post("/admin/update", (req, res) => {
+router.post("/admin/update", requireLoopback, (req, res) => {
+  if (updateInProgress) {
+    res.status(409).json({ error: "An update is already in progress — wait for it to finish before starting another." });
+    return;
+  }
+
   const useDocker = (req.body as { docker?: boolean }).docker === true;
 
   const scriptPath = findUpdateScript();
   if (!scriptPath) {
-    res.status(503).json({ error: "update.sh not found — cannot run update from this environment" });
+    res.status(503).json({ error: "update.sh not found — this endpoint is only available in a local bare-metal or Docker installation." });
     return;
   }
+
+  updateInProgress = true;
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -78,18 +98,23 @@ router.post("/admin/update", (req, res) => {
   child.stdout.on("data", (chunk: Buffer) => {
     const lines = stripAnsi(chunk.toString()).split("\n");
     for (const line of lines) {
-      if (line.trim()) send("log", { line: line });
+      if (line.trim()) send("log", { line });
     }
   });
 
   child.stderr.on("data", (chunk: Buffer) => {
     const lines = stripAnsi(chunk.toString()).split("\n");
     for (const line of lines) {
-      if (line.trim()) send("log", { line: line, stderr: true });
+      if (line.trim()) send("log", { line, stderr: true });
     }
   });
 
+  const finish = () => {
+    updateInProgress = false;
+  };
+
   child.on("close", (code) => {
+    finish();
     const version = getVersion();
     if (code === 0) {
       send("done", { success: true, version });
@@ -100,11 +125,13 @@ router.post("/admin/update", (req, res) => {
   });
 
   child.on("error", (err) => {
+    finish();
     send("done", { success: false, error: err.message, version: getVersion() });
     res.end();
   });
 
   req.on("close", () => {
+    finish();
     child.kill();
   });
 });
