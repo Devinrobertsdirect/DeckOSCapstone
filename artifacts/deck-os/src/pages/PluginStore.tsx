@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Store, Download, Trash2, Power, Search, Filter,
   CheckCircle2, Shield, Tag, User, Globe, Loader2, RefreshCw,
+  X, BookOpen, Calendar, Info, ChevronRight,
 } from "lucide-react";
 
 const API_BASE = "/api";
@@ -35,17 +37,17 @@ const CATEGORY_COLORS: Record<string, string> = {
   community: "text-primary/60",
 };
 
-const PERMISSION_LABELS: Record<string, { label: string; risk: "low" | "medium" | "high" }> = {
-  network: { label: "Network access", risk: "medium" },
-  ai_inference: { label: "AI inference", risk: "low" },
-  memory_read: { label: "Read memory", risk: "low" },
-  memory_write: { label: "Write memory", risk: "medium" },
-  device_control: { label: "Device control", risk: "high" },
-  device_read: { label: "Read devices", risk: "low" },
-  system_stats: { label: "System stats", risk: "low" },
-  process_list: { label: "Process list", risk: "low" },
-  tts: { label: "Voice output (TTS)", risk: "low" },
-  notifications: { label: "Send notifications", risk: "low" },
+const PERMISSION_LABELS: Record<string, { label: string; desc: string; risk: "low" | "medium" | "high" }> = {
+  network: { label: "Network access", desc: "Can make outbound HTTP requests to external services.", risk: "medium" },
+  ai_inference: { label: "AI inference", desc: "Can invoke the local AI model for inference.", risk: "low" },
+  memory_read: { label: "Read memory", desc: "Can read entries from the JARVIS memory store.", risk: "low" },
+  memory_write: { label: "Write memory", desc: "Can create and update entries in the JARVIS memory store.", risk: "medium" },
+  device_control: { label: "Device control", desc: "Can send commands to connected IoT devices.", risk: "high" },
+  device_read: { label: "Read devices", desc: "Can read state and sensor data from connected devices.", risk: "low" },
+  system_stats: { label: "System stats", desc: "Can read CPU, memory, disk and network usage.", risk: "low" },
+  process_list: { label: "Process list", desc: "Can enumerate running system processes.", risk: "low" },
+  tts: { label: "Voice output (TTS)", desc: "Can speak through the JARVIS TTS system.", risk: "low" },
+  notifications: { label: "Send notifications", desc: "Can push notifications to the JARVIS inbox.", risk: "low" },
 };
 
 const PERM_RISK_COLORS: Record<string, string> = {
@@ -54,10 +56,351 @@ const PERM_RISK_COLORS: Record<string, string> = {
   high: "border-[#ff3333]/40 text-[#ff3333]/70",
 };
 
+const PERM_RISK_BG: Record<string, string> = {
+  low: "bg-[#22ff44]/5",
+  medium: "bg-[#ffaa00]/5",
+  high: "bg-[#ff3333]/5",
+};
+
 async function fetchRegistry() {
   const res = await fetch(`${API_BASE}/plugins/store/registry`);
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json() as Promise<{ plugins: RegistryPlugin[]; version: string; updatedAt: string }>;
+}
+
+function renderReadme(text: string): string {
+  let html = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
+  html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
+  html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
+  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+  html = html.replace(/^[-*] (.+)$/gm, "<li>$1</li>");
+
+  const paragraphs = html.split(/\n\n+/);
+  html = paragraphs
+    .map((p) => {
+      p = p.trim();
+      if (!p) return "";
+      if (/^<(h[1-3]|ul|li)/.test(p)) return p;
+      if (p.startsWith("<li>")) return `<ul>${p}</ul>`;
+      return `<p>${p.replace(/\n/g, "<br />")}</p>`;
+    })
+    .filter(Boolean)
+    .join("\n");
+
+  return html;
+}
+
+interface DetailPanelProps {
+  plugin: RegistryPlugin;
+  onClose: () => void;
+  onInstall: (pluginId: string, force?: boolean) => void;
+  onUninstall: (pluginId: string) => void;
+  onToggle: (pluginId: string, enabled: boolean) => void;
+  installing: boolean;
+  uninstalling: boolean;
+  toggling: boolean;
+  replaceMode: boolean;
+  confirmUninstall: string | null;
+  setConfirmUninstall: (id: string | null) => void;
+}
+
+function PluginDetailPanel({
+  plugin,
+  onClose,
+  onInstall,
+  onUninstall,
+  onToggle,
+  installing,
+  uninstalling,
+  toggling,
+  replaceMode,
+  confirmUninstall,
+  setConfirmUninstall,
+}: DetailPanelProps) {
+  const isOfficial = plugin.author.startsWith("deck-os/official");
+  const catColor = CATEGORY_COLORS[plugin.category] ?? "text-primary/60";
+  const highRiskPerms = plugin.permissions.filter(
+    (p) => (PERMISSION_LABELS[p]?.risk ?? "low") === "high"
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.15 }}
+        className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
+        onClick={onClose}
+      />
+
+      <motion.div
+        initial={{ x: "100%" }}
+        animate={{ x: 0 }}
+        exit={{ x: "100%" }}
+        transition={{ type: "spring", stiffness: 320, damping: 32 }}
+        className="relative ml-auto w-full max-w-xl h-full bg-background border-l border-primary/30 shadow-[−20px_0_40px_rgba(0,212,255,0.08)] flex flex-col overflow-hidden"
+      >
+        {/* Corner accent */}
+        <div className="absolute top-0 left-0 w-12 h-0.5 bg-primary/40" />
+        <div className="absolute top-0 left-0 w-0.5 h-12 bg-primary/40" />
+
+        {/* Header */}
+        <div className="flex items-start justify-between p-5 border-b border-primary/15 flex-shrink-0">
+          <div className="flex-1 min-w-0 pr-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-mono text-base text-primary font-bold truncate">{plugin.name}</span>
+              {isOfficial && (
+                <span className="font-mono text-[9px] text-[#00d4ff] border border-[#00d4ff]/30 px-1 flex-shrink-0">
+                  OFFICIAL
+                </span>
+              )}
+              {plugin.installed && (
+                <span className="flex items-center gap-0.5 font-mono text-[9px] text-[#22ff44] border border-[#22ff44]/30 px-1 flex-shrink-0">
+                  <CheckCircle2 className="w-2 h-2" />
+                  INSTALLED
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <span className={`font-mono text-[10px] ${catColor}`}>
+                [{plugin.category.toUpperCase()}]
+              </span>
+              <span className="font-mono text-[10px] text-primary/40">v{plugin.version}</span>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-primary/40 hover:text-primary transition-colors flex-shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-6">
+
+          {/* Author & Stats */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="border border-primary/15 p-3 space-y-0.5">
+              <div className="flex items-center gap-1 font-mono text-[9px] text-primary/30 uppercase tracking-widest">
+                <User className="w-2.5 h-2.5" />
+                Author
+              </div>
+              <div className="font-mono text-xs text-primary/70">{plugin.author}</div>
+            </div>
+            <div className="border border-primary/15 p-3 space-y-0.5">
+              <div className="flex items-center gap-1 font-mono text-[9px] text-primary/30 uppercase tracking-widest">
+                <Download className="w-2.5 h-2.5" />
+                Installs
+              </div>
+              <div className="font-mono text-xs text-primary/70">{plugin.installCount.toLocaleString()}</div>
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <div className="flex items-center gap-1 font-mono text-[9px] text-primary/30 uppercase tracking-widest mb-2">
+              <Info className="w-2.5 h-2.5" />
+              Description
+            </div>
+            <p className="font-mono text-xs text-muted-foreground leading-relaxed">{plugin.description}</p>
+          </div>
+
+          {/* Tags */}
+          {plugin.tags.filter((t) => t !== "official").length > 0 && (
+            <div>
+              <div className="flex items-center gap-1 font-mono text-[9px] text-primary/30 uppercase tracking-widest mb-2">
+                <Tag className="w-2.5 h-2.5" />
+                Tags
+              </div>
+              <div className="flex items-center gap-1 flex-wrap">
+                {plugin.tags.filter((t) => t !== "official").map((tag) => (
+                  <span
+                    key={tag}
+                    className="font-mono text-[9px] text-primary/40 border border-primary/15 px-1.5 py-0.5"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* README */}
+          <div>
+            <div className="flex items-center gap-1 font-mono text-[9px] text-primary/30 uppercase tracking-widest mb-3">
+              <BookOpen className="w-2.5 h-2.5" />
+              README
+            </div>
+            <div
+              className="font-mono text-xs text-primary/60 leading-relaxed readme-content border border-primary/10 p-3 bg-primary/[0.02]
+                [&_h1]:text-primary [&_h1]:text-sm [&_h1]:font-bold [&_h1]:mb-2 [&_h1]:mt-3
+                [&_h2]:text-primary/80 [&_h2]:text-xs [&_h2]:font-bold [&_h2]:mb-1.5 [&_h2]:mt-2
+                [&_h3]:text-primary/70 [&_h3]:text-[11px] [&_h3]:font-semibold [&_h3]:mb-1 [&_h3]:mt-2
+                [&_p]:mb-2 [&_p:last-child]:mb-0
+                [&_ul]:mb-2 [&_ul]:pl-3
+                [&_li]:list-disc [&_li]:mb-0.5
+                [&_strong]:text-primary/80 [&_strong]:font-semibold
+                [&_em]:italic [&_em]:text-primary/50
+                [&_code]:bg-primary/10 [&_code]:text-primary/70 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[10px]"
+              dangerouslySetInnerHTML={{ __html: renderReadme(plugin.readme) }}
+            />
+          </div>
+
+          {/* Permissions */}
+          {plugin.permissions.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1 font-mono text-[9px] text-primary/30 uppercase tracking-widest mb-2">
+                <Shield className="w-2.5 h-2.5" />
+                Permissions
+                {highRiskPerms.length > 0 && (
+                  <span className="text-[#ff3333]/60 ml-1">• {highRiskPerms.length} high-risk</span>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                {plugin.permissions.map((perm) => {
+                  const info = PERMISSION_LABELS[perm];
+                  const risk = info?.risk ?? "low";
+                  return (
+                    <div
+                      key={perm}
+                      className={`border px-3 py-2 ${PERM_RISK_COLORS[risk]} ${PERM_RISK_BG[risk]}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[10px] font-semibold">
+                          {info?.label ?? perm}
+                        </span>
+                        <span className={`font-mono text-[9px] uppercase tracking-wider ${PERM_RISK_COLORS[risk]}`}>
+                          {risk} risk
+                        </span>
+                      </div>
+                      {info?.desc && (
+                        <p className="font-mono text-[9px] text-primary/40 mt-0.5 leading-relaxed">
+                          {info.desc}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Release info */}
+          <div>
+            <div className="flex items-center gap-1 font-mono text-[9px] text-primary/30 uppercase tracking-widest mb-2">
+              <Calendar className="w-2.5 h-2.5" />
+              Release Info
+            </div>
+            <div className="border border-primary/10 p-3 space-y-1.5">
+              <div className="flex items-center justify-between font-mono text-[10px]">
+                <span className="text-primary/40">Current version</span>
+                <span className="text-primary/70">v{plugin.version}</span>
+              </div>
+              {plugin.entrypointUrl && (
+                <div className="flex items-center justify-between font-mono text-[10px]">
+                  <span className="text-primary/40">Distribution</span>
+                  <span className="flex items-center gap-1 text-primary/50">
+                    <Globe className="w-2.5 h-2.5" />
+                    Remote
+                  </span>
+                </div>
+              )}
+              {!plugin.entrypointUrl && (
+                <div className="flex items-center justify-between font-mono text-[10px]">
+                  <span className="text-primary/40">Distribution</span>
+                  <span className="text-primary/50">Built-in</span>
+                </div>
+              )}
+              {plugin.installed && plugin.installedAt && (
+                <div className="flex items-center justify-between font-mono text-[10px]">
+                  <span className="text-primary/40">Installed at</span>
+                  <span className="text-primary/50">
+                    {new Date(plugin.installedAt).toLocaleDateString()}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Action bar */}
+        <div className="flex-shrink-0 border-t border-primary/15 p-4 flex items-center gap-2">
+          {!plugin.installed ? (
+            <button
+              onClick={() => {
+                onInstall(plugin.id, replaceMode);
+                onClose();
+              }}
+              disabled={installing}
+              className="flex items-center gap-1.5 font-mono text-xs text-primary/60 hover:text-primary border border-primary/30 hover:border-primary/60 px-4 py-2 transition-all disabled:opacity-40 flex-1 justify-center"
+            >
+              {installing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              {installing ? "INSTALLING..." : "INSTALL PLUGIN"}
+            </button>
+          ) : (
+            <>
+              {!isOfficial && (
+                <button
+                  onClick={() => onToggle(plugin.id, !plugin.enabled)}
+                  disabled={toggling}
+                  className={`flex items-center gap-1.5 font-mono text-xs border px-3 py-2 transition-all disabled:opacity-40 flex-1 justify-center ${
+                    plugin.enabled
+                      ? "text-primary/60 hover:text-primary border-primary/30 hover:border-primary/60"
+                      : "text-primary/30 hover:text-primary/60 border-primary/15 hover:border-primary/30"
+                  }`}
+                >
+                  <Power className="w-3.5 h-3.5" />
+                  {plugin.enabled ? "DISABLE" : "ENABLE"}
+                </button>
+              )}
+
+              {!isOfficial && (
+                confirmUninstall === plugin.id ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-[10px] text-[#ff3333]/70">Confirm?</span>
+                    <button
+                      onClick={() => { onUninstall(plugin.id); onClose(); }}
+                      disabled={uninstalling}
+                      className="font-mono text-[10px] text-[#ff3333] border border-[#ff3333]/40 px-2 py-1.5 hover:bg-[#ff3333]/10 transition-all"
+                    >
+                      {uninstalling ? <Loader2 className="w-3 h-3 animate-spin inline" /> : "YES, UNINSTALL"}
+                    </button>
+                    <button
+                      onClick={() => setConfirmUninstall(null)}
+                      className="font-mono text-[10px] text-primary/40 border border-primary/20 px-2 py-1.5 hover:text-primary transition-all"
+                    >
+                      NO
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmUninstall(plugin.id)}
+                    className="flex items-center gap-1.5 font-mono text-xs text-[#ff3333]/40 hover:text-[#ff3333] border border-[#ff3333]/20 hover:border-[#ff3333]/40 px-3 py-2 transition-all"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    UNINSTALL
+                  </button>
+                )
+              )}
+
+              {isOfficial && (
+                <span className="font-mono text-[10px] text-primary/30">// built-in — cannot be removed</span>
+              )}
+            </>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
 }
 
 export default function PluginStore() {
@@ -66,6 +409,7 @@ export default function PluginStore() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
   const [replaceMode, setReplaceMode] = useState(false);
+  const [selectedPlugin, setSelectedPlugin] = useState<RegistryPlugin | null>(null);
   const qc = useQueryClient();
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -130,6 +474,10 @@ export default function PluginStore() {
   });
 
   const installedCount = allPlugins.filter((p) => p.installed).length;
+
+  const syncedSelectedPlugin = selectedPlugin
+    ? (allPlugins.find((p) => p.id === selectedPlugin.id) ?? selectedPlugin)
+    : null;
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -238,7 +586,8 @@ export default function PluginStore() {
             return (
               <div
                 key={plugin.id}
-                className={`border ${plugin.installed ? "border-primary/40 shadow-[0_0_10px_rgba(0,212,255,0.1)]" : "border-primary/20"} p-4 flex flex-col gap-3 bg-card/30 relative`}
+                onClick={() => setSelectedPlugin(plugin)}
+                className={`border ${plugin.installed ? "border-primary/40 shadow-[0_0_10px_rgba(0,212,255,0.1)]" : "border-primary/20"} p-4 flex flex-col gap-3 bg-card/30 relative cursor-pointer hover:border-primary/50 hover:bg-primary/[0.03] transition-all group`}
               >
                 {/* Installed badge */}
                 {plugin.installed && (
@@ -265,7 +614,7 @@ export default function PluginStore() {
                 </div>
 
                 {/* Description */}
-                <p className="font-mono text-xs text-muted-foreground leading-relaxed">
+                <p className="font-mono text-xs text-muted-foreground leading-relaxed line-clamp-2">
                   {plugin.description}
                 </p>
 
@@ -302,7 +651,7 @@ export default function PluginStore() {
                   </div>
                 )}
 
-                {/* Permissions */}
+                {/* Permissions summary */}
                 {plugin.permissions.length > 0 && (
                   <div>
                     <div className="flex items-center gap-1 font-mono text-[9px] text-primary/30 mb-1">
@@ -331,7 +680,10 @@ export default function PluginStore() {
                 )}
 
                 {/* Actions */}
-                <div className="flex items-center gap-2 mt-auto pt-2 border-t border-primary/10">
+                <div
+                  className="flex items-center gap-2 mt-auto pt-2 border-t border-primary/10"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   {!plugin.installed ? (
                     <button
                       onClick={() => installMut.mutate({ pluginId: plugin.id, force: replaceMode })}
@@ -343,7 +695,6 @@ export default function PluginStore() {
                     </button>
                   ) : (
                     <>
-                      {/* Enable/Disable toggle (for non-official installed plugins) */}
                       {!isOfficial && (
                         <button
                           onClick={() => toggleMut.mutate({ pluginId: plugin.id, enabled: !plugin.enabled })}
@@ -359,7 +710,6 @@ export default function PluginStore() {
                         </button>
                       )}
 
-                      {/* Uninstall (with confirmation) */}
                       {!isOfficial && (
                         confirmUninstall === plugin.id ? (
                           <div className="flex items-center gap-1">
@@ -389,12 +739,17 @@ export default function PluginStore() {
                         )
                       )}
 
-                      {/* Official plugins just show installed state */}
                       {isOfficial && (
                         <span className="font-mono text-[10px] text-primary/30">// built-in — cannot be removed</span>
                       )}
                     </>
                   )}
+
+                  {/* Details hint */}
+                  <span className="ml-auto flex items-center gap-0.5 font-mono text-[9px] text-primary/20 group-hover:text-primary/40 transition-colors">
+                    DETAILS
+                    <ChevronRight className="w-2.5 h-2.5" />
+                  </span>
                 </div>
               </div>
             );
@@ -411,6 +766,25 @@ export default function PluginStore() {
           </span>
         </div>
       )}
+
+      {/* Detail panel overlay */}
+      <AnimatePresence>
+        {syncedSelectedPlugin && (
+          <PluginDetailPanel
+            plugin={syncedSelectedPlugin}
+            onClose={() => setSelectedPlugin(null)}
+            onInstall={(pluginId, force) => installMut.mutate({ pluginId, force })}
+            onUninstall={(pluginId) => uninstallMut.mutate(pluginId)}
+            onToggle={(pluginId, enabled) => toggleMut.mutate({ pluginId, enabled })}
+            installing={installMut.isPending && installMut.variables?.pluginId === syncedSelectedPlugin.id}
+            uninstalling={uninstallMut.isPending && uninstallMut.variables === syncedSelectedPlugin.id}
+            toggling={toggleMut.isPending}
+            replaceMode={replaceMode}
+            confirmUninstall={confirmUninstall}
+            setConfirmUninstall={setConfirmUninstall}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

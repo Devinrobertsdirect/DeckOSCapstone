@@ -214,6 +214,43 @@ export async function loadEnabledCommunityPlugins(): Promise<void> {
   }
 }
 
+router.get("/plugins/store/registry/:pluginId", async (req, res) => {
+  const { pluginId } = req.params;
+
+  if (!SAFE_PLUGIN_ID_RE.test(pluginId)) {
+    res.status(400).json({ error: "Invalid plugin ID format" });
+    return;
+  }
+
+  try {
+    const storeRegistry = await fetchRegistry();
+    const entry = storeRegistry.plugins.find((p) => p.id === pluginId);
+    if (!entry) {
+      res.status(404).json({ error: `Plugin '${pluginId}' not found in registry` });
+      return;
+    }
+
+    const installed = await db.select().from(communityPluginsTable);
+    const { registry: runtimeRegistry } = await import("../lib/bootstrap.js").catch(() => ({ registry: null }));
+    const runtimePluginIds = new Set(runtimeRegistry?.listPlugins().map((p) => p.plugin.id) ?? []);
+
+    const dbRow = installed.find((i) => i.pluginId === entry.id);
+    const isInRuntime = runtimePluginIds.has(entry.id);
+    const isOfficialBuiltin = entry.author.startsWith("deck-os/official");
+
+    res.json({
+      ...entry,
+      installed: dbRow != null || (isOfficialBuiltin && isInRuntime),
+      enabled: dbRow?.enabled ?? (isOfficialBuiltin && isInRuntime),
+      installedAt: dbRow?.installedAt?.toISOString() ?? null,
+      official: isOfficialBuiltin,
+    });
+  } catch (err) {
+    logger.error({ err, pluginId }, "Failed to fetch plugin detail");
+    res.status(500).json({ error: "Failed to load plugin detail" });
+  }
+});
+
 router.get("/plugins/store/registry", async (_req, res) => {
   try {
     const storeRegistry = await fetchRegistry();
