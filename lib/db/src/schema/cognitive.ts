@@ -85,9 +85,10 @@ export const routinesTable = pgTable("routines", {
   triggerType:  text("trigger_type").notNull().default("cron"),
   triggerValue: text("trigger_value").notNull(),
   actionType:   text("action_type").notNull(),
-  actionParams: jsonb("action_params").notNull().default({}),
-  lastRunAt:    timestamp("last_run_at", { withTimezone: true }),
-  nextRunAt:    timestamp("next_run_at", { withTimezone: true }),
+  actionParams:     jsonb("action_params").notNull().default({}),
+  notifyOnComplete: boolean("notify_on_complete").notNull().default(false),
+  lastRunAt:        timestamp("last_run_at", { withTimezone: true }),
+  nextRunAt:        timestamp("next_run_at", { withTimezone: true }),
   createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt:    timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

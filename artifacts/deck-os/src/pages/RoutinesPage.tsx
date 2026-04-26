@@ -4,7 +4,7 @@ import {
   Clock, Plus, Trash2, Play, ToggleLeft, ToggleRight,
   ChevronDown, ChevronRight, Loader2, AlertTriangle,
   CheckCircle2, XCircle, RefreshCw, Calendar, Zap, ListOrdered,
-  History
+  History, Bell
 } from "lucide-react";
 
 const API = "/api";
@@ -22,6 +22,7 @@ type Routine = {
   id: number; name: string; enabled: boolean;
   triggerType: TriggerType; triggerValue: string;
   actionType: ActionType; actionParams: Record<string, unknown>;
+  notifyOnComplete: boolean;
   lastRunAt: string | null; nextRunAt: string | null;
   createdAt: string; updatedAt: string;
 };
@@ -109,8 +110,9 @@ function RoutineForm({ onSave, onCancel, initial }: {
   const [cronCustom,   setCronCustom]   = useState(initial?.triggerValue ?? "0 7 * * *");
   const [eventType,    setEventType]    = useState(initial?.triggerValue ?? "device.disconnected");
   const [actionType,   setActionType]   = useState<ActionType>(initial?.actionType ?? "run_health_check");
-  const [paramsJson,   setParamsJson]   = useState(() => JSON.stringify(initial?.actionParams ?? {}, null, 2));
-  const [paramsErr,    setParamsErr]    = useState("");
+  const [paramsJson,       setParamsJson]       = useState(() => JSON.stringify(initial?.actionParams ?? {}, null, 2));
+  const [paramsErr,        setParamsErr]        = useState("");
+  const [notifyOnComplete, setNotifyOnComplete] = useState(initial?.notifyOnComplete ?? false);
 
   const triggerValue = triggerType === "cron"
     ? (cronPreset === "__custom__" ? cronCustom : cronPreset)
@@ -121,7 +123,7 @@ function RoutineForm({ onSave, onCancel, initial }: {
     let actionParams: Record<string, unknown> = {};
     try { actionParams = JSON.parse(paramsJson) as Record<string, unknown>; setParamsErr(""); }
     catch { setParamsErr("Invalid JSON"); return; }
-    onSave({ name, enabled: initial?.enabled ?? true, triggerType, triggerValue, actionType, actionParams });
+    onSave({ name, enabled: initial?.enabled ?? true, triggerType, triggerValue, actionType, actionParams, notifyOnComplete });
   }
 
   const inputCls = "w-full bg-background/50 border border-primary/20 px-3 py-2 font-mono text-sm text-primary focus:outline-none focus:border-primary/60 transition-colors";
@@ -195,6 +197,18 @@ function RoutineForm({ onSave, onCancel, initial }: {
           </div>
         )}
       </div>
+
+      <label className="flex items-center gap-3 cursor-pointer select-none group w-fit">
+        <div
+          onClick={() => setNotifyOnComplete(v => !v)}
+          className={`relative w-8 h-4 rounded-full transition-colors cursor-pointer ${notifyOnComplete ? "bg-primary/60" : "bg-primary/15"}`}
+        >
+          <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-all ${notifyOnComplete ? "left-4 bg-primary" : "left-0.5 bg-primary/40"}`} />
+        </div>
+        <span className="font-mono text-xs text-primary/50 group-hover:text-primary/70 transition-colors flex items-center gap-1.5">
+          <Bell className="w-3 h-3" /> Notify on completion
+        </span>
+      </label>
 
       <div className="flex gap-3 pt-1">
         <button type="submit"
@@ -291,6 +305,9 @@ function RoutineRow({ routine, onToggle, onDelete, onTrigger, onEdit }: {
             }`}>
               {routine.triggerType === "cron" ? "CRON" : "EVENT"}
             </span>
+            {routine.notifyOnComplete && (
+              <Bell className="w-3 h-3 shrink-0 text-primary/40" title="Notifies on completion" />
+            )}
           </div>
           <div className="flex items-center gap-3 mt-0.5">
             <span className="font-mono text-[11px] text-primary/35">{routine.triggerValue}</span>
@@ -551,7 +568,7 @@ export default function RoutinesPage() {
   }
 
   function handleEdit(r: Routine) {
-    updateMut.mutate({ id: r.id, name: r.name, triggerType: r.triggerType, triggerValue: r.triggerValue, actionType: r.actionType, actionParams: r.actionParams });
+    updateMut.mutate({ id: r.id, name: r.name, triggerType: r.triggerType, triggerValue: r.triggerValue, actionType: r.actionType, actionParams: r.actionParams, notifyOnComplete: r.notifyOnComplete });
   }
 
   const routines = data?.routines ?? [];

@@ -178,24 +178,36 @@ class NotificationService {
       });
     }));
 
-    // routine.completed with outcome=error → warning
-    // Successful completions are intentionally omitted here to avoid noise;
-    // send_notification routines create their own inbox entries via the
-    // memory.stored subscription above.
+    // routine.completed → error: warning notification always
+    //                    → success: info notification only when notifyOnComplete=true
     this.subIds.push(bus.subscribe("routine.completed", async (e: BusEvent) => {
       if (e.type !== "routine.completed") return;
       const p = e.payload as Record<string, unknown>;
-      const outcome = String(p["outcome"] ?? "success");
-      if (outcome !== "error") return;
-      const name   = String(p["routineName"] ?? p["name"] ?? "A routine");
-      const result = String(p["result"] ?? "");
-      await this.createNotification({
-        type:     "routine.completed",
-        severity: "warning",
-        title:    "Routine Failed",
-        message:  result ? `"${name}" failed: ${result}` : `"${name}" encountered an error.`,
-        metadata: p,
-      });
+      const outcome          = String(p["outcome"] ?? "success");
+      const name             = String(p["routineName"] ?? p["name"] ?? "A routine");
+      const result           = String(p["result"] ?? "");
+      const notifyOnComplete = Boolean(p["notifyOnComplete"] ?? false);
+
+      if (outcome === "error") {
+        await this.createNotification({
+          type:     "routine.completed",
+          severity: "warning",
+          title:    "Routine Failed",
+          message:  result ? `"${name}" failed: ${result}` : `"${name}" encountered an error.`,
+          metadata: p,
+        });
+        return;
+      }
+
+      if (outcome === "success" && notifyOnComplete) {
+        await this.createNotification({
+          type:     "routine.completed",
+          severity: "info",
+          title:    "Routine Completed",
+          message:  result ? `"${name}" finished: ${result}` : `"${name}" completed successfully.`,
+          metadata: p,
+        });
+      }
     }));
 
     // briefing.generated → info

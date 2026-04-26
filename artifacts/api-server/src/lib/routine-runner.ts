@@ -315,11 +315,12 @@ export class RoutineRunner {
       target: null,
       type: "routine.completed",
       payload: {
-        routineId: r.id,
-        routineName: r.name,
+        routineId:        r.id,
+        routineName:      r.name,
         outcome,
         result,
-        timestamp: new Date().toISOString(),
+        notifyOnComplete: r.notifyOnComplete,
+        timestamp:        new Date().toISOString(),
       },
     });
 
