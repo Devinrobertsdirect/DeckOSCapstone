@@ -38,7 +38,7 @@ function loadPrefs(): ParticlePrefs {
       return {
         density:         clampPref(parsed.density ?? DEFAULT_PREFS.density),
         speed:           clampPref(parsed.speed   ?? DEFAULT_PREFS.speed),
-        particlesEnabled: Boolean(parsed.particlesEnabled ?? DEFAULT_PREFS.particlesEnabled),
+        particlesEnabled: parsed.particlesEnabled === true,
       };
     }
   } catch {}

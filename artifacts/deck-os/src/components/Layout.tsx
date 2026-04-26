@@ -585,7 +585,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                               onClick={() => setParticlePrefs({ density: 100, speed: 100 })}
                               className="text-[10px] uppercase tracking-wider text-primary/40 hover:text-primary/80 transition-colors"
                             >
-                              ↺ Reset to defaults
+                              ↺ Reset sliders
                             </button>
                           </div>
                         )}
