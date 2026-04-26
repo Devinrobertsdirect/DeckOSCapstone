@@ -502,11 +502,11 @@ function VoiceStep({ aiName, onComplete }: { aiName: string; onComplete: (voice:
         body: JSON.stringify({ text: sample, voice: voiceId }),
       });
       if (!res.ok) throw new Error("TTS unavailable");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      const data = await res.json() as { audio?: string; format?: string };
+      if (!data.audio) throw new Error("No audio in response");
+      const url = `data:audio/${data.format ?? "mp3"};base64,${data.audio}`;
       if (audioRef.current) {
         audioRef.current.pause();
-        URL.revokeObjectURL(audioRef.current.src);
       }
       const audio = new Audio(url);
       audioRef.current = audio;
@@ -797,8 +797,9 @@ function FirstContactStep({
           body: JSON.stringify({ text: text.slice(0, 500), voice }),
         });
         if (!res.ok) throw new Error("TTS unavailable");
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
+        const data = await res.json() as { audio?: string; format?: string };
+        if (!data.audio) throw new Error("No audio in response");
+        const url = `data:audio/${data.format ?? "mp3"};base64,${data.audio}`;
         const audio = new Audio(url);
         audioRef.current = audio;
         audio.onended = () => { if (!cancelled) { setSpeaking(false); setDone(true); } };
