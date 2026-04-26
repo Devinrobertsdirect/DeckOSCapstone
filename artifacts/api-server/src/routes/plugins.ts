@@ -136,7 +136,8 @@ async function pingPlugin(plugin: Plugin): Promise<void> {
   try {
     await handler({});
     plugin.lastActivity = new Date().toISOString();
-    if (plugin.status === "error") plugin.status = "active";
+    plugin.status = "active";
+    plugin.errorMessage = null;
   } catch {
     plugin.status = "error";
     plugin.errorMessage = "Health check failed";
@@ -248,7 +249,9 @@ router.post("/plugins/:pluginId/execute", async (req, res) => {
     success = false;
   }
 
-  plugin.lastActivity = new Date().toISOString();
+  if (success) {
+    plugin.lastActivity = new Date().toISOString();
+  }
 
   const response = ExecutePluginCommandResponse.parse({
     success,
