@@ -2,7 +2,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Deck OS — Local Setup Script
 # Supports Linux and macOS (bash 4+)
-# Usage: bash setup.sh [--start]   (--start also starts the dev servers)
+#
+# Usage:
+#   bash setup.sh              — bare-metal setup (Node + pnpm + Postgres)
+#   bash setup.sh --start      — bare-metal setup then start dev servers
+#   bash setup.sh --docker     — Docker Compose setup (recommended, easiest)
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -14,8 +18,10 @@ warn() { echo -e "${YELLOW}  ⚠${RESET} $*"; }
 fail() { echo -e "${RED}  ✗ ERROR:${RESET} $*" >&2; exit 1; }
 
 START_SERVERS=false
+USE_DOCKER=false
 for arg in "$@"; do
-  [[ "$arg" == "--start" ]] && START_SERVERS=true
+  [[ "$arg" == "--start"  ]] && START_SERVERS=true
+  [[ "$arg" == "--docker" ]] && USE_DOCKER=true
 done
 
 echo ""
@@ -30,16 +36,58 @@ log "JARVIS Command Center — Local Setup"
 echo ""
 
 # ─────────────────────────────────────
+# Docker Compose fast-path
+# ─────────────────────────────────────
+if [[ "$USE_DOCKER" == true ]]; then
+  log "Docker Compose mode selected"
+
+  if ! command -v docker &>/dev/null; then
+    fail "Docker not found. Install Docker Desktop from https://www.docker.com/products/docker-desktop"
+  fi
+  ok "Docker found: $(docker --version | head -1)"
+
+  if ! docker info &>/dev/null; then
+    fail "Docker daemon is not running. Start Docker Desktop and try again."
+  fi
+  ok "Docker daemon is running"
+
+  if [[ ! -f .env ]]; then
+    cp .env.example .env
+    ok "Created .env from .env.example"
+    warn "Edit .env to add optional API keys (Ollama is auto-detected on the host)."
+    echo ""
+    read -r -p "  Press ENTER to continue, or Ctrl+C to edit .env first: "
+  else
+    ok ".env already exists (skipping copy)"
+  fi
+
+  log "Starting all services via Docker Compose..."
+  echo "  (Building images on first run — this may take a few minutes)"
+  echo ""
+  docker compose up -d --build
+
+  echo ""
+  echo -e "${GREEN}${BOLD}  ✓ Deck OS is running!${RESET}"
+  echo ""
+  echo "  Frontend   →  http://localhost:3000"
+  echo "  API server →  http://localhost:8080"
+  echo "  Logs:          docker compose logs -f"
+  echo "  Stop:          docker compose down"
+  echo ""
+  exit 0
+fi
+
+# ─────────────────────────────────────
 # 1. Node.js
 # ─────────────────────────────────────
 log "Checking Node.js..."
 if ! command -v node &>/dev/null; then
-  fail "Node.js not found. Install Node.js 18+ from https://nodejs.org"
+  fail "Node.js not found. Install Node.js 20+ from https://nodejs.org"
 fi
 NODE_VERSION=$(node --version | sed 's/v//')
 NODE_MAJOR=$(echo "$NODE_VERSION" | cut -d. -f1)
-if [[ "$NODE_MAJOR" -lt 18 ]]; then
-  fail "Node.js 18+ required (found v${NODE_VERSION}). Upgrade from https://nodejs.org"
+if [[ "$NODE_MAJOR" -lt 20 ]]; then
+  fail "Node.js 20+ required (found v${NODE_VERSION}). Upgrade from https://nodejs.org"
 fi
 ok "Node.js v${NODE_VERSION}"
 

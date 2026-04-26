@@ -87,6 +87,17 @@ Analyzes recent memory entries to update the UCM's `preferences` and `behaviorPa
 
 Includes `.env.example`, `docker-compose.yml` for a full local stack, and Dockerfiles for production images, along with Nginx configuration for the web application.
 
+## Export / Self-Hosting
+
+Two one-command setup scripts are provided for running Deck OS on your own hardware:
+
+- `setup.sh` — Linux and macOS (bash 4+). Flags: `--docker` (Docker Compose path), `--start` (bare-metal + start dev servers).
+- `setup.ps1` — Windows PowerShell. Flags: `-Docker`, `-Start`.
+
+Both scripts: check Node.js 20+ and pnpm (auto-installing pnpm via corepack if missing), detect a running PostgreSQL instance, detect Ollama, copy `.env.example` → `.env` with a pause for editing, run `pnpm install --frozen-lockfile`, and run DB migrations. The Docker path uses `docker compose up -d --build` and skips all Node/Postgres steps.
+
+See `README.md` for full setup instructions and environment variable reference.
+
 # External Dependencies
 
 - **pnpm**: Monorepo package manager.
