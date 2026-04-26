@@ -122,9 +122,12 @@ async function loadCommunityPlugin(entry: RegistryPlugin): Promise<{ loaded: boo
   try {
     const { registry } = await import("../lib/bootstrap.js");
     if (registry) {
-      await registry.loadCommunityPlugin(localPath, entry.id);
-      logger.info({ pluginId: entry.id, localPath }, "Store: community plugin loaded into sandboxed worker");
-      return { loaded: true };
+      const loaded = await registry.loadCommunityPlugin(localPath, entry.id);
+      if (loaded) {
+        logger.info({ pluginId: entry.id, localPath }, "Store: community plugin loaded into sandboxed worker");
+        return { loaded: true };
+      }
+      return { loaded: false, warning: "Worker sandbox failed to initialise plugin — check server logs" };
     }
     return { loaded: false, warning: "Runtime registry not yet initialised" };
   } catch (err) {
@@ -148,18 +151,65 @@ export async function loadEnabledCommunityPlugins(): Promise<void> {
 
   for (const row of installed) {
     const localPath = communityPluginLocalPath(row.pluginId);
-    if (existsSync(localPath)) {
-      try {
-        const { registry } = await import("../lib/bootstrap.js");
-        if (registry) {
-          await registry.loadCommunityPlugin(localPath, row.pluginId);
-          logger.info({ pluginId: row.pluginId }, "Store: restored community plugin into sandboxed worker");
-        }
-      } catch (err) {
-        logger.warn({ err, pluginId: row.pluginId }, "Store: failed to restore community plugin at startup");
+
+    if (!existsSync(localPath)) {
+      if (!row.entrypointUrl) {
+        logger.info(
+          { pluginId: row.pluginId },
+          "Store: community plugin file missing and no entrypointUrl — skipping restore",
+        );
+        continue;
       }
-    } else {
-      logger.info({ pluginId: row.pluginId }, "Store: community plugin file missing on disk — skipping runtime restore");
+
+      // Validate the URL against the allowlist before fetching
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(row.entrypointUrl);
+      } catch {
+        logger.warn({ pluginId: row.pluginId, url: row.entrypointUrl }, "Store: malformed entrypointUrl — skipping restore");
+        continue;
+      }
+
+      if (parsedUrl.protocol !== "https:") {
+        logger.warn({ pluginId: row.pluginId }, "Store: non-HTTPS entrypointUrl — skipping restore");
+        continue;
+      }
+
+      const origin = `${parsedUrl.protocol}//${parsedUrl.hostname}`;
+      if (!APPROVED_ENTRYPOINT_ORIGINS.has(origin)) {
+        logger.warn({ pluginId: row.pluginId, hostname: parsedUrl.hostname }, "Store: unapproved entrypointUrl domain — skipping restore");
+        continue;
+      }
+
+      try {
+        logger.info({ pluginId: row.pluginId, url: row.entrypointUrl }, "Store: re-downloading missing community plugin at startup");
+        const res = await fetch(row.entrypointUrl, { signal: AbortSignal.timeout(15_000) });
+        if (!res.ok) {
+          logger.warn({ pluginId: row.pluginId, status: res.status }, "Store: startup re-download failed — skipping restore");
+          continue;
+        }
+        const text = await res.text();
+        mkdirSync(COMMUNITY_PLUGINS_DIR, { recursive: true });
+        writeFileSync(localPath, text, "utf-8");
+        logger.info({ pluginId: row.pluginId }, "Store: plugin file re-downloaded successfully");
+      } catch (err) {
+        logger.warn({ err, pluginId: row.pluginId }, "Store: startup re-download failed — skipping restore");
+        continue;
+      }
+    }
+
+    try {
+      const { registry } = await import("../lib/bootstrap.js");
+      if (registry) {
+        const loaded = await registry.loadCommunityPlugin(localPath, row.pluginId);
+        if (loaded) {
+          logger.info({ pluginId: row.pluginId }, "Store: restored community plugin into sandboxed worker");
+        } else {
+          logger.warn({ pluginId: row.pluginId }, "Store: community plugin restore failed — worker did not initialise");
+        }
+      }
+    } catch (err) {
+      logger.warn({ err, pluginId: row.pluginId }, "Store: failed to restore community plugin at startup");
     }
   }
 }

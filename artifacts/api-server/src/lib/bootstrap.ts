@@ -1,3 +1,5 @@
+import { existsSync } from "fs";
+import path from "path";
 import { bus } from "./bus.js";
 import { PluginRegistry } from "./plugin-registry.js";
 import { memoryService } from "./memory-service.js";
@@ -133,6 +135,48 @@ function registerQueryHandlers(deviceManager: DeviceManager): void {
     const enabled = Boolean(p?.["enabled"] ?? false);
     if (!pluginId) return;
     registry.setEnabled(pluginId, enabled);
+  });
+
+  // ── Community Plugin Hot-Reload ───────────────────────────────────────────
+  // WS or bus clients emit plugin.reload to trigger unload + reload from disk.
+  // Useful when a plugin's entrypoint file has been updated without reinstalling.
+  bus.subscribe("plugin.reload", async (event: BusEvent) => {
+    if (event.type !== "plugin.reload") return;
+    const p = event.payload as Record<string, unknown>;
+    const pluginId = String(p?.["pluginId"] ?? "");
+    if (!pluginId) return;
+
+    logger.info({ pluginId }, "Bootstrap: plugin.reload received — hot-reloading community plugin");
+
+    const existing = registry.getPlugin(pluginId);
+    if (existing) {
+      await registry.unloadPlugin(pluginId).catch((err) =>
+        logger.warn({ err, pluginId }, "Bootstrap: hot-reload unload failed"),
+      );
+    }
+
+    // Re-load from disk if the local file exists
+    const { COMMUNITY_PLUGINS_DIR } = await import("../routes/store.js");
+    const localPath = path.join(COMMUNITY_PLUGINS_DIR, `${pluginId}.mjs`);
+
+    if (existsSync(localPath)) {
+      const loaded = await registry.loadCommunityPlugin(localPath, pluginId).catch(() => false);
+      bus.emit({
+        source: "plugin-registry",
+        target: null,
+        type: "plugin.status_changed",
+        payload: { pluginId, reloaded: true, loaded },
+      });
+      logger.info({ pluginId, loaded }, "Bootstrap: community plugin hot-reload complete");
+    } else {
+      logger.warn({ pluginId, localPath }, "Bootstrap: plugin.reload — local file not found, cannot reload");
+      bus.emit({
+        source: "plugin-registry",
+        target: null,
+        type: "plugin.error",
+        payload: { pluginId, error: "hot-reload failed — plugin file not found on disk" },
+      });
+    }
   });
 
   // ── WS Chat Handler: ai.chat.request → streaming inference ────────────────

@@ -134,7 +134,7 @@ export class PluginRegistry {
     }
   }
 
-  async loadCommunityPlugin(filePath: string, pluginId: string): Promise<void> {
+  async loadCommunityPlugin(filePath: string, pluginId: string): Promise<boolean> {
     const __dirname = fileURLToPath(new URL(".", import.meta.url));
     const candidateWorkerPaths = [
       path.resolve(__dirname, "community-plugin-worker.mjs"),
@@ -158,7 +158,8 @@ export class PluginRegistry {
         { pluginId, candidateWorkerPaths },
         "PluginRegistry: community-plugin-worker.mjs not found — falling back to direct import (no sandbox)",
       );
-      return this.loadPlugin(filePath);
+      await this.loadPlugin(filePath);
+      return !!this.plugins.get(pluginId);
     }
 
     logger.info({ pluginId, workerPath }, "PluginRegistry: spawning community plugin in worker sandbox");
@@ -171,11 +172,11 @@ export class PluginRegistry {
       { resolve: (r: unknown) => void; reject: (e: Error) => void }
     >();
 
-    await new Promise<void>((resolve) => {
+    return new Promise<boolean>((resolve) => {
       const initTimeout = setTimeout(() => {
         logger.error({ pluginId }, "PluginRegistry: community plugin worker init timeout");
         void worker.terminate();
-        resolve();
+        resolve(false);
       }, 30_000);
 
       let proxyPlugin: Plugin | null = null;
@@ -266,7 +267,7 @@ export class PluginRegistry {
               payload: { pluginId: pluginIdFromWorker, name, version, sandboxed: true },
             });
 
-            resolve();
+            resolve(true);
             break;
           }
 
@@ -344,7 +345,7 @@ export class PluginRegistry {
               payload: { pluginId, error: msg["error"] },
             });
             void worker.terminate();
-            resolve();
+            resolve(false);
             break;
           }
 
@@ -373,7 +374,7 @@ export class PluginRegistry {
         clearTimeout(initTimeout);
         logger.error({ err, pluginId }, "PluginRegistry: community plugin worker thread error");
         void worker.terminate();
-        resolve();
+        resolve(false);
       });
 
       worker.on("exit", (code) => {
