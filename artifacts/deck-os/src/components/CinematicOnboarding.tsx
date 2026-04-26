@@ -10,7 +10,15 @@ export const VOICE_KEY      = "deckos_voice";
 export const AI_NAME_KEY    = "deckos_ai_name";
 
 export function isCinematicDone(): boolean {
-  try { return localStorage.getItem(CINEMATIC_KEY) === "true"; } catch { return false; }
+  try {
+    if (localStorage.getItem(CINEMATIC_KEY) === "true") return true;
+    const alreadyInitialized = localStorage.getItem("jarvis.initialized") === "true";
+    if (alreadyInitialized) {
+      localStorage.setItem(CINEMATIC_KEY, "true");
+      return true;
+    }
+    return false;
+  } catch { return false; }
 }
 
 interface Props {
@@ -385,6 +393,7 @@ function QuizStep({ aiName, onComplete }: { aiName: string; onComplete: (answers
     setTimeout(() => {
       setTransitioning(true);
       const newAnswers = { ...answers, [q.id]: q.options[idx]!.value };
+      setAnswers(newAnswers);
       setTimeout(() => {
         if (currentQ + 1 < QUIZ_QUESTIONS.length) {
           setCurrentQ((c) => c + 1);
