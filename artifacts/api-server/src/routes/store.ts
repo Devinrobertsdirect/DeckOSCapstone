@@ -568,6 +568,22 @@ router.post("/plugins/store/:pluginId/review", async (req, res) => {
   const { rating, review } = parsed.data;
 
   try {
+    // Guard: only installed plugins may be reviewed
+    const [communityRow] = await db
+      .select({ pluginId: communityPluginsTable.pluginId })
+      .from(communityPluginsTable)
+      .where(eq(communityPluginsTable.pluginId, pluginId))
+      .limit(1);
+    if (!communityRow) {
+      const { registry: runtimeRegistry } = await import("../lib/bootstrap.js").catch(
+        () => ({ registry: null as import("../lib/plugin-registry.js").PluginRegistry | null }),
+      );
+      const isBuiltIn = runtimeRegistry?.getPlugin(pluginId) != null;
+      if (!isBuiltIn) {
+        res.status(403).json({ error: "Plugin must be installed before it can be reviewed" });
+        return;
+      }
+    }
     const [row] = await db
       .insert(pluginReviewsTable)
       .values({ pluginId, rating, review: review ?? null })
