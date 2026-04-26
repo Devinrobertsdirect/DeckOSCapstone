@@ -11,8 +11,10 @@ import { MqttTransport } from "./mqtt-transport.js";
 import { WsDeviceTransport } from "./ws-device-transport.js";
 import { startSimulatedDevices } from "./simulated-devices.js";
 import type { BusEvent } from "@workspace/event-bus";
-import { db, deviceLocationsTable, deviceProfilesTable } from "@workspace/db";
+import { db, deviceLocationsTable, deviceProfilesTable, autonomyConfigTable, autonomyLogTable } from "@workspace/db";
 import { generateDeviceProfile } from "./profile-generator.js";
+import { cognitiveLoop } from "./cognitive-loop.js";
+import { memoryEnricher } from "./memory-enricher.js";
 import { eq } from "drizzle-orm";
 
 export let registry: PluginRegistry;
@@ -287,6 +289,72 @@ export async function bootstrap(): Promise<void> {
     }
   });
 
+  // ── Autonomy Pipeline: bus-driven action execution ────────────────────────
+  // Listens for autonomy.action.request events (emitted by cognitive-loop or
+  // other sources) and processes them through the autonomy controller logic.
+  bus.subscribe("autonomy.action.request", async (event: BusEvent) => {
+    if (event.type !== "autonomy.action.request") return;
+    const p = event.payload as Record<string, unknown>;
+    const action      = typeof p["action"]      === "string" ? p["action"]      : "";
+    const parameters  = typeof p["parameters"]  === "object" ? (p["parameters"] as Record<string, unknown>) : {};
+    const requestedBy = typeof p["requestedBy"] === "string" ? p["requestedBy"] : "system";
+    const reason      = typeof p["reason"]      === "string" ? p["reason"]      : "";
+    if (!action) return;
+
+    try {
+      const configRows = await db.select().from(autonomyConfigTable).limit(1);
+      const config = configRows[0];
+      if (!config || !config.enabled) {
+        bus.emit({ source: "autonomy-controller", target: null, type: "autonomy.action.skipped",
+          payload: { action, reason: "autonomy disabled", requestedBy } });
+        return;
+      }
+
+      const allowed  = (config.allowedActions as string[]) ?? [];
+      const blocked  = (config.blockedActions as string[]) ?? [];
+      const isBlocked   = blocked.includes(action);
+      const isAllowed   = allowed.includes(action);
+      const safetyLevel = config.safetyLevel;
+
+      if (isBlocked) {
+        bus.emit({ source: "autonomy-controller", target: null, type: "autonomy.action.blocked",
+          payload: { action, requestedBy, reason: "action blocked by config" } });
+        return;
+      }
+
+      // Permissive mode with allowed action: auto-execute
+      if (safetyLevel === "permissive" || (safetyLevel !== "strict" && isAllowed && !config.confirmationRequired)) {
+        const outcome = "success";
+        const result  = `Auto-executed: ${action}${reason ? ` — ${reason}` : ""}`;
+
+        await db.insert(autonomyLogTable).values({
+          action,
+          actionType: isAllowed ? "allowed" : "unlisted",
+          parameters,
+          outcome,
+          reason: reason || "cognitive-loop initiated",
+        });
+
+        bus.emit({ source: "autonomy-controller", target: null, type: "autonomy.action.executed",
+          payload: { action, requestedBy, outcome, result, automated: true } });
+        logger.info({ action, requestedBy }, "Autonomy: auto-executed action");
+      } else {
+        // Needs user confirmation
+        bus.emit({ source: "autonomy-controller", target: null, type: "autonomy.confirmation.required",
+          payload: { action, parameters, requestedBy, reason, safetyLevel } });
+        logger.info({ action, safetyLevel }, "Autonomy: confirmation required");
+      }
+    } catch (err) {
+      logger.warn({ err, action }, "Autonomy pipeline error");
+    }
+  });
+
+  // ── Cognitive Loop (persistent background thinking) ───────────────────────
+  cognitiveLoop.start();
+
+  // ── Memory Enricher (background UCM auto-enrichment) ─────────────────────
+  memoryEnricher.start();
+
   logger.info("EventBus, PluginRegistry, DeviceManager, and transports bootstrapped");
 }
 
@@ -301,6 +369,8 @@ export async function teardown(): Promise<void> {
   memoryService.stop();
   presenceManager.stop();
   initiativeEngine.stop();
+  cognitiveLoop.stop();
+  memoryEnricher.stop();
 
   if (stopSimDevices) {
     stopSimDevices();

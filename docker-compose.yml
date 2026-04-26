@@ -1,0 +1,82 @@
+version: "3.9"
+
+# ────────────────────────────────────────────────────────────────────────────
+# DeckOS — Local Docker Compose
+#
+# Usage:
+#   docker-compose up -d           # start all services
+#   docker-compose logs -f api     # stream API server logs
+#   docker-compose down            # stop everything
+#
+# Prerequisites:
+#   - Docker Desktop ≥ 4.x
+#   - Copy .env.example → .env and fill in API keys
+# ────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: deckos
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── API Server ──────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: artifacts/api-server/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/deckos
+      AI_INTEGRATIONS_OPENAI_API_KEY: ${AI_INTEGRATIONS_OPENAI_API_KEY}
+      AI_INTEGRATIONS_OPENAI_BASE_URL: ${AI_INTEGRATIONS_OPENAI_BASE_URL:-https://api.openai.com/v1}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM:-}
+      MQTT_BROKER_URL: ${MQTT_BROKER_URL:-}
+      WS_DEVICE_PORT: ${WS_DEVICE_PORT:-}
+      SESSION_SECRET: ${SESSION_SECRET:-change-me}
+      TRACE_MODE: ${TRACE_MODE:-false}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  # ── Web UI (Deck OS) ─────────────────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: artifacts/deck-os/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      VITE_API_BASE: http://localhost:8080
+    ports:
+      - "3000:80"
+
+volumes:
+  postgres_data:

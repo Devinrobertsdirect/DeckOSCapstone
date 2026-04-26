@@ -19,6 +19,8 @@ export const SystemEventTypeSchema = z.enum([
   "system.config_changed",
   "system.monitor.metrics",
   "system.monitor.request",
+  "system.cognitive_tick",
+  "system.maintenance",
 ]);
 
 export const PluginEventTypeSchema = z.enum([
@@ -70,6 +72,19 @@ export const MemoryEventTypeSchema = z.enum([
   "memory.search.response",
   "memory.recent.request",
   "memory.recent.response",
+  "memory.ucm_enriched",
+]);
+
+export const AutonomyEventTypeSchema = z.enum([
+  "autonomy.action.request",
+  "autonomy.action.executed",
+  "autonomy.action.blocked",
+  "autonomy.action.skipped",
+  "autonomy.confirmation.required",
+  "prediction.generated",
+  "goal.created",
+  "goal.completed",
+  "goal.stale",
 ]);
 
 export const ClientEventTypeSchema = z.enum([
@@ -83,6 +98,7 @@ export const EventTypeSchema = z.union([
   DeviceEventTypeSchema,
   AiEventTypeSchema,
   MemoryEventTypeSchema,
+  AutonomyEventTypeSchema,
   ClientEventTypeSchema,
 ]);
 

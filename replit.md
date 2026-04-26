@@ -34,7 +34,7 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - Full Iron Man JARVIS-style cyberdeck dashboard
 - React + Vite + TailwindCSS, dark-only, JetBrains Mono font
 - Pages: Dashboard HUD, AI Router, Plugins, Memory Bank, Cognitive Model, Goal Manager, Feedback Loop, Autonomous Layer, Devices, Command Console, **Spatial Map** (`/map`)
-- Nav sections: SYSTEM (6 pages) | SPATIAL (1 page — Map) | Visual Mode selector (sidebar footer)
+- Nav sections: SYSTEM (6 pages) | SPATIAL (1 page — Map) | AI PERSONALITY page | Visual Mode selector (sidebar footer)
 - **Spatial Awareness Layer**: Leaflet + OpenStreetMap map at `/map` — live device markers (colored per device), movement trails (polyline), geofence circles, geofence CRUD panel, device info popups, pending-zone placement mode (click-to-place)
 - Dashboard SPATIAL.TRACKER widget: `MiniMap` component shows tracker positions; click opens full `/map` page
 - Header: active tracker count badge (`N TRACKERS`) appears when devices reported GPS in last 5 min
@@ -190,7 +190,31 @@ Structured identity layer — a continuously-updatable model of the user stored 
 - `autonomy_log` — full log of every attempted autonomous action and its outcome
 
 ## Shared Packages
-- `lib/event-bus` — shared event types, EventBus class, Plugin base class
+- `lib/event-bus` — shared event types, EventBus class, Plugin base class; event categories: system, plugin, device, ai, memory, autonomy, client
 - `lib/api-zod` — generated Zod validators from OpenAPI spec
 - `lib/api-client-react` — generated React Query hooks from OpenAPI spec
 - `lib/db` — Drizzle ORM client and schema
+
+## System Finalization (Completed)
+
+### Persistent Cognitive Loop (`artifacts/api-server/src/lib/cognitive-loop.ts`)
+- 10s tick emitting `system.cognitive_tick` bus events with system state snapshot
+- Auto-generates predictions every 5 min from active goals + feedback signals
+- Routes `autonomy.action.request` events for permissive-mode goals hourly
+- Stale goal decay: marks goals older than 72h without update as `stale`
+- Daily prediction pruning: deletes executed/rejected predictions > 7 days old
+
+### Memory Enricher (`artifacts/api-server/src/lib/memory-enricher.ts`)
+- Runs every 5 min; analyzes recent memory entries for keyword patterns
+- Updates UCM `preferences` layer from recurring memory topics
+- Reads feedback signals to update UCM `behaviorPatterns` layer
+
+### Autonomy Pipeline Wiring (`bootstrap.ts`)
+- Bus subscriber for `autonomy.action.request` events wired in bootstrap
+- Permissive mode → auto-executes + logs to `autonomy_log`; strict/moderate → emits `autonomy.confirmation.required`
+
+### Local-First Export
+- `.env.example` — all environment variables documented at repo root
+- `docker-compose.yml` — full local stack (postgres + api + web) at repo root
+- `artifacts/api-server/Dockerfile` and `artifacts/deck-os/Dockerfile` — production images
+- `artifacts/deck-os/nginx.conf` — nginx with `/api/` proxy + SPA fallback
