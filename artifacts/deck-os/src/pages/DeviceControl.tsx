@@ -1,8 +1,22 @@
 import { useState, useEffect, useMemo } from "react";
-import { Network, Cpu, Thermometer, Wifi, Monitor, Zap, AlertTriangle, CheckCircle2, Moon, Send } from "lucide-react";
+import { Network, Cpu, Thermometer, Wifi, Monitor, Zap, AlertTriangle, CheckCircle2, Moon, Send, Sparkles, BookOpen } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWebSocket, useWsEvents } from "@/contexts/WebSocketContext";
+import { useQuery } from "@tanstack/react-query";
+
+interface DeviceProfile {
+  deviceId:     string;
+  displayName:  string;
+  icon:         string;
+  description:  string;
+  protocol:     string;
+  deviceType:   string;
+  capabilities: string[];
+  eventSchema:  Record<string, unknown>;
+  controlStubs: { action: string; label: string; description: string; params: Record<string, string>; example?: string }[];
+  initialized:  boolean;
+}
 
 const STATUS_COLORS: Record<string, string> = {
   online: "text-[#22ff44]",
@@ -62,6 +76,14 @@ export default function DeviceControl() {
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   const [action, setAction] = useState("");
   const [controlLog, setControlLog] = useState<Array<{ deviceId: string; action: string; timestamp: string }>>([]);
+
+  const { data: profilesData } = useQuery<{ profiles: DeviceProfile[] }>({
+    queryKey: ["device-profiles"],
+    queryFn:  () => fetch(`${import.meta.env.BASE_URL}api/devices/profiles`).then(r => r.json()),
+    refetchInterval: 30_000,
+  });
+  const profiles = profilesData?.profiles ?? [];
+  const profileMap = Object.fromEntries(profiles.map(p => [p.deviceId, p]));
 
   const deviceListEvents = useWsEvents((e) => e.type === "device.registry.snapshot");
   const readingEvents = useWsEvents((e) => e.type === "device.reading");
@@ -173,6 +195,7 @@ export default function DeviceControl() {
             const TypeIcon = TYPE_ICONS[device.type ?? "simulated"] ?? Cpu;
             const isSelected = selectedDevice === device.id;
             const isActuator = device.type === "actuator" || device.capabilities?.includes("toggle");
+            const profile  = profileMap[device.id];
 
             const recentReadings = readingEvents
               .filter((e) => (e.payload as DeviceReadingPayload).deviceId === device.id)
@@ -192,11 +215,26 @@ export default function DeviceControl() {
                       <TypeIcon className={`w-4 h-4 ${TYPE_COLORS[device.type ?? "simulated"] ?? "text-primary"}`} />
                     </div>
                     <div>
-                      <div className="text-sm text-primary font-bold">{device.name}</div>
+                      <div className="text-sm text-primary font-bold flex items-center gap-2">
+                        {profile?.displayName ?? device.name}
+                        {profile?.initialized && (
+                          <span className="flex items-center gap-1 text-[9px] bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 rounded px-1.5 py-0.5 uppercase tracking-wider font-bold">
+                            <Sparkles className="w-2.5 h-2.5" /> PROFILED
+                          </span>
+                        )}
+                        {!profile && device.protocol !== "simulated" && (
+                          <span className="flex items-center gap-1 text-[9px] bg-amber-500/15 text-amber-400 border border-amber-500/25 rounded px-1.5 py-0.5 uppercase tracking-wider font-bold">
+                            UNINITIALIZED
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         [{(device.type ?? "device").toUpperCase()}] // {(device.protocol ?? "WS").toUpperCase()}
                         {device.location && ` // ${device.location}`}
                       </div>
+                      {profile?.description && (
+                        <div className="text-[10px] text-primary/30 mt-0.5 leading-snug max-w-xs">{profile.description}</div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -272,13 +310,46 @@ export default function DeviceControl() {
             </CardTitle>
           </CardHeader>
           <div className="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs min-h-0">
-            {selected && (
-              <div className="mb-3 text-primary/40 space-y-1">
-                <div>CAPABILITIES:</div>
-                {(selected.capabilities ?? []).map((c) => <div key={c} className="pl-2 text-primary/60">// {c}</div>)}
-                {(selected.capabilities ?? []).length === 0 && <div className="pl-2 text-primary/20">none listed</div>}
-              </div>
-            )}
+            {selected && (() => {
+              const sp = profileMap[selected.id];
+              if (sp?.initialized) return (
+                <div className="mb-3 space-y-3">
+                  <div className="flex items-center gap-2 text-emerald-400/70 text-[10px]">
+                    <Sparkles className="w-3 h-3" />
+                    <span className="uppercase tracking-wider">Profile: {sp.displayName}</span>
+                  </div>
+                  {sp.description && (
+                    <div className="text-primary/30 leading-relaxed">{sp.description}</div>
+                  )}
+                  {sp.controlStubs.length > 0 && (
+                    <div>
+                      <div className="text-primary/40 mb-1.5 flex items-center gap-1.5"><BookOpen className="w-2.5 h-2.5" /> CONTROL STUBS:</div>
+                      <div className="space-y-1.5">
+                        {sp.controlStubs.map(stub => (
+                          <button
+                            key={stub.action}
+                            onClick={() => {
+                              sendEvent({ type: "device.command.send", payload: { deviceId: selected.id, action: stub.action, parameters: {} } });
+                            }}
+                            className="w-full text-left flex items-start gap-2 border border-primary/15 hover:border-primary/40 bg-primary/5 hover:bg-primary/10 px-2.5 py-2 rounded transition-all"
+                          >
+                            <span className="bg-primary/20 text-primary font-bold rounded px-1.5 py-0.5 text-[9px] uppercase shrink-0">{stub.label}</span>
+                            <span className="text-primary/50 text-[10px]">{stub.description}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+              return (
+                <div className="mb-3 text-primary/40 space-y-1">
+                  <div>CAPABILITIES:</div>
+                  {(selected.capabilities ?? []).map((c) => <div key={c} className="pl-2 text-primary/60">// {c}</div>)}
+                  {(selected.capabilities ?? []).length === 0 && <div className="pl-2 text-primary/20">none listed</div>}
+                </div>
+              );
+            })()}
             {selected && recentDeviceReadings.length > 0 && (
               <div className="mb-3">
                 <div className="text-primary/40 mb-1">RECENT READINGS:</div>

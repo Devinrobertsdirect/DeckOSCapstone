@@ -18,6 +18,7 @@ import presenceRouter from "./presence";
 import visionRouter from "./vision";
 import whatsappRouter from "./whatsapp";
 import locationRouter from "./location";
+import discoveryRouter from "./discovery";
 
 const router: IRouter = Router();
 
@@ -28,6 +29,7 @@ router.use(pluginsRouter);
 router.use(memoryRouter);
 router.use(systemRouter);
 router.use(commandsRouter);
+router.use(discoveryRouter);
 router.use(devicesRouter);
 router.use(eventsRouter);
 router.use(ucmRouter);

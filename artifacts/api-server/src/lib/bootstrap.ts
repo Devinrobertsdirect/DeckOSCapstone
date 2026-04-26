@@ -11,7 +11,9 @@ import { MqttTransport } from "./mqtt-transport.js";
 import { WsDeviceTransport } from "./ws-device-transport.js";
 import { startSimulatedDevices } from "./simulated-devices.js";
 import type { BusEvent } from "@workspace/event-bus";
-import { db, deviceLocationsTable } from "@workspace/db";
+import { db, deviceLocationsTable, deviceProfilesTable } from "@workspace/db";
+import { generateDeviceProfile } from "./profile-generator.js";
+import { eq } from "drizzle-orm";
 
 export let registry: PluginRegistry;
 
@@ -228,6 +230,60 @@ export async function bootstrap(): Promise<void> {
       });
     } catch (err) {
       logger.debug({ err, deviceId }, "GPS persistence skipped");
+    }
+  });
+
+  // ── Device Discovery ──────────────────────────────────────────────────────
+  // When any non-simulated device connects for the first time (no existing profile
+  // in device_profiles), emit device.discovery.new with a generated suggestion.
+  bus.subscribe("device.connected", async (event: BusEvent) => {
+    if (event.type !== "device.connected") return;
+
+    const p = event.payload as Record<string, unknown>;
+    const deviceId = typeof p["deviceId"] === "string" ? p["deviceId"] : null;
+    if (!deviceId) return;
+
+    // Skip simulated devices — they're always present and don't need onboarding
+    const protocol = typeof p["protocol"] === "string" ? p["protocol"] : "";
+    if (protocol === "simulated") return;
+
+    try {
+      const [existing] = await db
+        .select({ deviceId: deviceProfilesTable.deviceId })
+        .from(deviceProfilesTable)
+        .where(eq(deviceProfilesTable.deviceId, deviceId))
+        .limit(1);
+
+      if (existing) return; // Already profiled — silent reconnect
+
+      // Build suggestion from event payload
+      const suggestion = generateDeviceProfile({
+        id:           deviceId,
+        name:         typeof p["name"]     === "string" ? p["name"]     : deviceId,
+        type:         typeof p["type"]     === "string" ? p["type"]     : "unknown",
+        category:     typeof p["category"] === "string" ? p["category"] : "sensor",
+        protocol,
+        capabilities: Array.isArray(p["capabilities"]) ? p["capabilities"] as string[] : [],
+      });
+
+      bus.emit({
+        source: `device.${deviceId}`,
+        target: null,
+        type:   "device.discovery.new",
+        payload: {
+          deviceId,
+          protocol,
+          deviceType:  typeof p["type"]     === "string" ? p["type"]     : "unknown",
+          deviceName:  typeof p["name"]      === "string" ? p["name"]     : deviceId,
+          capabilities: Array.isArray(p["capabilities"]) ? p["capabilities"] : [],
+          suggestion,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      logger.info({ deviceId, protocol }, "Device Discovery: new device detected");
+    } catch (err) {
+      logger.debug({ err, deviceId }, "Device discovery check failed");
     }
   });
 

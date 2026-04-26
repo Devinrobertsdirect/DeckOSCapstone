@@ -14,6 +14,7 @@ import { useWebSocket } from "@/contexts/WebSocketContext";
 import { EventLogPanel } from "@/components/EventLogPanel";
 import { ParticleOverlay } from "@/components/ParticleOverlay";
 import { useQuery } from "@tanstack/react-query";
+import { DeviceDiscovery } from "@/components/DeviceDiscovery";
 
 interface AutonomyConfig {
   enabled: boolean;
@@ -191,6 +192,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col overflow-hidden relative">
       <div className="scanline z-50" />
+
+      {/* Device Discovery — fixed overlay, mounts above content */}
+      <DeviceDiscovery />
 
       {/* HEADER */}
       <header className="h-14 border-b border-primary/30 flex items-center px-5 justify-between bg-card/80 backdrop-blur shrink-0 relative z-40">

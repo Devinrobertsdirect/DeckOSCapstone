@@ -46,6 +46,8 @@ export const DeviceEventTypeSchema = z.enum([
   "device.location.updated",
   "device.geofence.triggered",
   "device.status.updated",
+  "device.discovery.new",
+  "device.discovery.initialized",
 ]);
 
 export const AiEventTypeSchema = z.enum([
