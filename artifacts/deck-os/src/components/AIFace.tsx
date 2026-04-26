@@ -17,8 +17,7 @@ function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
-// ── Web Audio API Amplitude Analyzer (module-level singleton) ─────────────
-
+// Module-level Web Audio analyzer singleton
 let _audioCtx: AudioContext | null = null;
 let _analyser: AnalyserNode | null = null;
 let _dataArr: Uint8Array | null = null;
@@ -62,8 +61,6 @@ function readAmplitude(): number {
   return sum / (_dataArr.length * 255);
 }
 
-// ── Animation loop helper ─────────────────────────────────────────────────
-
 function useAnimLoop(cb: (t: number) => void, active = true) {
   const rafRef = useRef<number>(0);
   const startRef = useRef<number>(0);
@@ -81,8 +78,6 @@ function useAnimLoop(cb: (t: number) => void, active = true) {
     return () => cancelAnimationFrame(rafRef.current);
   }, [active]);
 }
-
-// ── Vocoder face: 12 horizontal bars ────────────────────────────────────
 
 function VocoderFace({ speaking, size, color }: { speaking: boolean; size: number; color: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -123,14 +118,12 @@ function VocoderFace({ speaking, size, color }: { speaking: boolean; size: numbe
       }
     } else {
       for (let i = 0; i < bars.length; i++) {
-        const idle = 0.08 + 0.06 * Math.abs(Math.sin(now * 0.7 + i * 0.5));
-        targets[i] = idle;
+        targets[i] = 0.08 + 0.06 * Math.abs(Math.sin(now * 0.7 + i * 0.5));
       }
     }
 
     for (let i = 0; i < bars.length; i++) {
-      const spd = isActive ? 0.22 : 0.08;
-      bars[i] = lerp(bars[i]!, targets[i]!, spd);
+      bars[i] = lerp(bars[i]!, targets[i]!, isActive ? 0.22 : 0.08);
     }
 
     const barW = Math.floor((W - 8) / bars.length) - 2;
@@ -146,7 +139,6 @@ function VocoderFace({ speaking, size, color }: { speaking: boolean; size: numbe
       const x = startX + i * (barW + gap);
       const y = (H - barH) / 2;
       const cornerR = Math.min(2, barW / 2);
-
       ctx.beginPath();
       ctx.roundRect(x, y, barW, barH, cornerR);
       ctx.fill();
@@ -164,8 +156,6 @@ function VocoderFace({ speaking, size, color }: { speaking: boolean; size: numbe
     />
   );
 }
-
-// ── Oscilloscope face: sine wave ──────────────────────────────────────────
 
 function OscilloscopeFace({ speaking, size, color }: { speaking: boolean; size: number; color: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -232,8 +222,6 @@ function OscilloscopeFace({ speaking, size, color }: { speaking: boolean; size: 
     />
   );
 }
-
-// ── Iris face: aperture dilation ─────────────────────────────────────────
 
 function IrisFace({ speaking, size, color }: { speaking: boolean; size: number; color: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -319,8 +307,6 @@ function IrisFace({ speaking, size, color }: { speaking: boolean; size: number; 
   );
 }
 
-// ── Spectrum face: 24 vertical frequency bars ────────────────────────────
-
 function SpectrumFace({ speaking, size, color }: { speaking: boolean; size: number; color: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const barsRef = useRef<number[]>(Array.from({ length: 24 }, () => 0.05));
@@ -366,14 +352,9 @@ function SpectrumFace({ speaking, size, color }: { speaking: boolean; size: numb
       const x = startX + i * (barW + 2);
       const y = H - barH;
 
-      const alpha = isActive
-        ? 0.4 + 0.6 * bars[i]!
-        : 0.3 + 0.3 * bars[i]!;
-
-      ctx.globalAlpha = alpha;
+      ctx.globalAlpha = isActive ? 0.4 + 0.6 * bars[i]! : 0.3 + 0.3 * bars[i]!;
       ctx.shadowBlur = isActive ? 6 : 0;
       ctx.shadowColor = color;
-      ctx.fillStyle = color;
 
       const grad = ctx.createLinearGradient(x, y, x, H);
       grad.addColorStop(0, color);
@@ -397,22 +378,18 @@ function SpectrumFace({ speaking, size, color }: { speaking: boolean; size: numb
   );
 }
 
-// ── Public AIFace component ──────────────────────────────────────────────
-
 export function AIFace({ style, speaking = false, size = 120, color = "#3f84f3", className = "" }: Props) {
   const isSquare = style === "iris";
 
   return (
     <div className={className} style={{ width: size, height: isSquare ? size : Math.round(size * 0.55) }}>
-      {style === "vocoder"      && <VocoderFace     speaking={speaking} size={size} color={color} />}
+      {style === "vocoder" && <VocoderFace speaking={speaking} size={size} color={color} />}
       {style === "oscilloscope" && <OscilloscopeFace speaking={speaking} size={size} color={color} />}
-      {style === "iris"         && <IrisFace         speaking={speaking} size={size} color={color} />}
-      {style === "spectrum"     && <SpectrumFace     speaking={speaking} size={size} color={color} />}
+      {style === "iris" && <IrisFace speaking={speaking} size={size} color={color} />}
+      {style === "spectrum" && <SpectrumFace speaking={speaking} size={size} color={color} />}
     </div>
   );
 }
-
-// ── Face style persistence with live updates ─────────────────────────────
 
 const VALID_FACE_STYLES: FaceStyle[] = ["vocoder", "oscilloscope", "iris", "spectrum"];
 
