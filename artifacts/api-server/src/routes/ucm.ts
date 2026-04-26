@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { db, userCognitiveModelTable, ucmSettingsTable, behaviorProfileTable, goalsTable, memoryEntriesTable, UCM_LAYERS } from "@workspace/db";
+import { db, userCognitiveModelTable, ucmSettingsTable, behaviorProfileTable, goalsTable, memoryEntriesTable, feedbackSignalsTable, UCM_LAYERS } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { bus } from "../lib/bus.js";
 
@@ -161,10 +161,11 @@ router.get("/ucm/export", async (req, res) => {
     getOrCreateSettings(),
   ]);
 
-  const [profileRows, goals, memories] = await Promise.all([
+  const [profileRows, goals, memories, feedbackSignals] = await Promise.all([
     db.select().from(behaviorProfileTable).limit(1),
-    db.select().from(goalsTable).orderBy(desc(goalsTable.createdAt)).limit(100),
-    db.select().from(memoryEntriesTable).orderBy(desc(memoryEntriesTable.createdAt)).limit(200),
+    db.select().from(goalsTable).orderBy(desc(goalsTable.createdAt)),
+    db.select().from(memoryEntriesTable).orderBy(desc(memoryEntriesTable.createdAt)),
+    db.select().from(feedbackSignalsTable).orderBy(desc(feedbackSignalsTable.createdAt)),
   ]);
 
   const profile = profileRows[0] ?? null;
@@ -210,6 +211,11 @@ router.get("/ucm/export", async (req, res) => {
       keywords:  m.keywords ?? [],
       source:    m.source,
     })),
+    feedbackSignals: feedbackSignals.map((f) => ({
+      signalType: f.signalType,
+      context:    f.context,
+      weight:     f.weight,
+    })),
   };
 
   res.setHeader("Content-Disposition", `attachment; filename="deckos-profile-${Date.now()}.json"`);
@@ -219,6 +225,7 @@ router.get("/ucm/export", async (req, res) => {
 
 const ImportBody = z.object({
   exportVersion: z.number().optional(),
+  replace: z.boolean().optional().default(false),
   ucm: z.object({
     identity:         z.record(z.unknown()).optional().default({}),
     preferences:      z.record(z.unknown()).optional().default({}),
@@ -257,6 +264,11 @@ const ImportBody = z.object({
     keywords: z.array(z.string()).optional().default([]),
     source:   z.string().optional().default("import"),
   })).optional(),
+  feedbackSignals: z.array(z.object({
+    signalType: z.string(),
+    context:    z.record(z.unknown()).optional().default({}),
+    weight:     z.number().optional().default(1.0),
+  })).optional(),
 });
 
 router.post("/ucm/import", async (req, res) => {
@@ -266,8 +278,17 @@ router.post("/ucm/import", async (req, res) => {
     return;
   }
 
-  const { ucm, settings, behaviorProfile, goals, memories } = parsed.data;
+  const { ucm, settings, behaviorProfile, goals, memories, feedbackSignals, replace } = parsed.data;
   const results: string[] = [];
+
+  if (replace) {
+    await Promise.all([
+      goals     && goals.length > 0     ? db.delete(goalsTable) : Promise.resolve(),
+      memories  && memories.length > 0  ? db.delete(memoryEntriesTable) : Promise.resolve(),
+      feedbackSignals && feedbackSignals.length > 0 ? db.delete(feedbackSignalsTable) : Promise.resolve(),
+    ]);
+    results.push("cleared_existing");
+  }
 
   if (ucm) {
     const model = await getOrCreateModel();
@@ -344,6 +365,16 @@ router.post("/ucm/import", async (req, res) => {
     }));
     await db.insert(memoryEntriesTable).values(rows);
     results.push(`memories(${rows.length})`);
+  }
+
+  if (feedbackSignals && feedbackSignals.length > 0) {
+    const rows = feedbackSignals.map((f) => ({
+      signalType: f.signalType,
+      context:    f.context as Record<string, unknown>,
+      weight:     f.weight ?? 1.0,
+    }));
+    await db.insert(feedbackSignalsTable).values(rows);
+    results.push(`feedback_signals(${rows.length})`);
   }
 
   bus.emit({
