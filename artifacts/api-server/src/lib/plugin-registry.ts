@@ -158,12 +158,11 @@ export class PluginRegistry {
     }
 
     if (!workerPath) {
-      logger.warn(
+      logger.error(
         { pluginId, candidateWorkerPaths },
-        "PluginRegistry: community-plugin-worker.mjs not found — falling back to direct import (no sandbox)",
+        "PluginRegistry: community-plugin-worker.mjs not found — refusing to load community plugin without sandbox isolation",
       );
-      await this.loadPlugin(filePath);
-      return !!this.plugins.get(pluginId);
+      return false;
     }
 
     logger.info({ pluginId, workerPath }, "PluginRegistry: spawning community plugin in worker sandbox");
@@ -173,7 +172,7 @@ export class PluginRegistry {
     const subscribedTypes = new Set<string>();
     const pendingExecutions = new Map<
       string,
-      { resolve: (r: unknown) => void; reject: (e: Error) => void }
+      { resolve: (r: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
     >();
 
     return new Promise<boolean>((resolve) => {
@@ -229,15 +228,14 @@ export class PluginRegistry {
               async execute(payload: unknown): Promise<unknown> {
                 const execId = `exec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
                 return new Promise<unknown>((res, rej) => {
-                  pendingExecutions.set(execId, { resolve: res, reject: rej });
-                  const execTimeout = setTimeout(() => {
+                  const timer = setTimeout(() => {
                     if (pendingExecutions.has(execId)) {
                       pendingExecutions.delete(execId);
                       rej(new Error("Community plugin execute timeout"));
                     }
                   }, 10_000);
+                  pendingExecutions.set(execId, { resolve: res, reject: rej, timer });
                   worker.postMessage({ type: "execute", id: execId, payload });
-                  execTimeout; // referenced to silence lint
                 });
               },
               async shutdown(): Promise<void> {
@@ -323,6 +321,7 @@ export class PluginRegistry {
             const pending = pendingExecutions.get(msg["id"] as string);
             if (pending) {
               pendingExecutions.delete(msg["id"] as string);
+              clearTimeout(pending.timer);
               pending.resolve(msg["result"]);
             }
             break;
