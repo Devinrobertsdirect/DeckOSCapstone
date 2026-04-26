@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { attachAmplitudeAnalyser, readAmplitude } from "@/lib/audioAnalyser";
 
 export type FaceStyle = "vocoder" | "oscilloscope" | "iris" | "spectrum";
@@ -17,6 +17,66 @@ const AMPLITUDE_THRESHOLD = 0.015;
 
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
+}
+
+// ─── Canvas color utilities ───────────────────────────────────────────────────
+// Canvas 2D cannot parse CSS variables — we must resolve them first.
+
+function readPrimaryRgb(): string {
+  return (
+    getComputedStyle(document.documentElement)
+      .getPropertyValue("--primary-rgb")
+      .trim() || "63, 132, 243"
+  );
+}
+
+function resolveCanvasColor(color: string): string {
+  if (!color.includes("var(")) return color;
+  const rgb = readPrimaryRgb();
+  // Preserve alpha from patterns like rgba(var(--primary-rgb), 0.3)
+  const alphaMatch = color.match(/rgba\s*\(\s*var\([^)]+\)\s*,\s*([\d.]+)\s*\)/);
+  if (alphaMatch) return `rgba(${rgb},${alphaMatch[1]})`;
+  return `rgb(${rgb})`;
+}
+
+function dimCanvasColor(color: string, alpha: number): string {
+  const c = resolveCanvasColor(color);
+  if (c.startsWith("rgb(")) {
+    return c.replace("rgb(", "rgba(").replace(")", `,${alpha})`);
+  }
+  if (c.startsWith("#") && c.length === 7) {
+    const a = Math.round(alpha * 255)
+      .toString(16)
+      .padStart(2, "0");
+    return c + a;
+  }
+  return c;
+}
+
+/**
+ * Returns the current accent colour as a stable hex string and updates
+ * whenever the user changes the colour scheme.
+ */
+export function useAccentHex(): string {
+  const rgbToHex = () => {
+    const rgb = readPrimaryRgb();
+    const parts = rgb.split(",").map((s) => parseInt(s.trim(), 10));
+    const [r = 63, g = 132, b = 243] = parts;
+    return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+  };
+
+  const [hex, setHex] = useState<string>(rgbToHex);
+
+  useEffect(() => {
+    const obs = new MutationObserver(() => setHex(rgbToHex()));
+    obs.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-color"],
+    });
+    return () => obs.disconnect();
+  }, []);
+
+  return hex;
 }
 
 function useAnimLoop(cb: (t: number) => void, active = true) {
@@ -316,7 +376,7 @@ function SpectrumFace({ speaking, size, color }: { speaking: boolean; size: numb
 
       const grad = ctx.createLinearGradient(x, y, x, H);
       grad.addColorStop(0, color);
-      grad.addColorStop(1, color + "44");
+      grad.addColorStop(1, dimCanvasColor(color, 0.267));
       ctx.fillStyle = grad;
       ctx.fillRect(Math.round(x), y, Math.max(1, Math.round(barW)), barH);
     }
@@ -338,13 +398,14 @@ function SpectrumFace({ speaking, size, color }: { speaking: boolean; size: numb
 
 export function AIFace({ style, speaking = false, size = 120, color = "#3f84f3", className = "" }: Props) {
   const isSquare = style === "iris";
+  const resolvedColor = useMemo(() => resolveCanvasColor(color), [color]);
 
   return (
     <div className={className} style={{ width: size, height: isSquare ? size : Math.round(size * 0.55) }}>
-      {style === "vocoder" && <VocoderFace speaking={speaking} size={size} color={color} />}
-      {style === "oscilloscope" && <OscilloscopeFace speaking={speaking} size={size} color={color} />}
-      {style === "iris" && <IrisFace speaking={speaking} size={size} color={color} />}
-      {style === "spectrum" && <SpectrumFace speaking={speaking} size={size} color={color} />}
+      {style === "vocoder" && <VocoderFace speaking={speaking} size={size} color={resolvedColor} />}
+      {style === "oscilloscope" && <OscilloscopeFace speaking={speaking} size={size} color={resolvedColor} />}
+      {style === "iris" && <IrisFace speaking={speaking} size={size} color={resolvedColor} />}
+      {style === "spectrum" && <SpectrumFace speaking={speaking} size={size} color={resolvedColor} />}
     </div>
   );
 }

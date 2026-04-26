@@ -490,13 +490,32 @@ function QuizStep({ aiName, onComplete }: { aiName: string; onComplete: (answers
   );
 }
 
+type ElevenLabsVoice = { id: string; name: string; category: string };
+
+function useElevenLabsVoices() {
+  const [voices, setVoices] = useState<ElevenLabsVoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch(`${API_BASE}/vision/elevenlabs/voices`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.voices) setVoices(d.voices); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+  return { voices, loading };
+}
+
+const SAMPLE_TEXT = "Systems online. Voice synthesis module calibrated and ready for command.";
+
 function VoiceStep({ aiName, onComplete }: { aiName: string; onComplete: (voice: string) => void }) {
   const [selected, setSelected] = useState<string>("onyx");
   const [playing, setPlaying] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const { voices: elVoices, loading: elLoading } = useElevenLabsVoices();
+  const hasElevenLabs = elVoices.length > 0;
 
-  async function playSample(voiceId: string, sample: string) {
+  async function playSample(voiceId: string, sampleText: string) {
     if (playing === voiceId) {
       audioRef.current?.pause();
       setPlaying(null);
@@ -508,15 +527,13 @@ function VoiceStep({ aiName, onComplete }: { aiName: string; onComplete: (voice:
       const res = await fetch(`${API_BASE}/vision/tts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: sample, voice: voiceId }),
+        body: JSON.stringify({ text: sampleText, voice: voiceId }),
       });
       if (!res.ok) throw new Error("TTS unavailable");
       const data = await res.json() as { audio?: string; format?: string };
       if (!data.audio) throw new Error("No audio in response");
       const url = `data:audio/${data.format ?? "mp3"};base64,${data.audio}`;
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
+      if (audioRef.current) audioRef.current.pause();
       const audio = new Audio(url);
       audioRef.current = audio;
       const { attachAmplitudeAnalyser } = await import("@/lib/audioAnalyser");
@@ -530,14 +547,67 @@ function VoiceStep({ aiName, onComplete }: { aiName: string; onComplete: (voice:
     }
   }
 
-  useEffect(() => {
-    return () => {
-      audioRef.current?.pause();
-    };
-  }, []);
+  useEffect(() => { return () => { audioRef.current?.pause(); }; }, []);
+
+  function VoiceRow({ id, label, description, sample }: { id: string; label: string; description: string; sample: string }) {
+    const isPlaying = playing === id;
+    const isSelected = selected === id;
+    return (
+      <div
+        className="border p-4 cursor-pointer transition-all"
+        style={{
+          borderColor: isSelected ? "var(--color-primary)" : "rgba(var(--primary-rgb),0.15)",
+          background: isSelected ? "rgba(var(--primary-rgb),0.07)" : "rgba(var(--primary-rgb),0.02)",
+          boxShadow: isSelected ? "0 0 20px rgba(var(--primary-rgb),0.12)" : "none",
+        }}
+        onClick={() => setSelected(id)}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex-1 min-w-0">
+            <div
+              className="font-mono font-bold text-sm tracking-widest mb-0.5"
+              style={{ color: isSelected ? "var(--color-primary)" : "var(--color-foreground)" }}
+            >
+              {label}
+            </div>
+            <div className="font-mono text-xs" style={{ color: "rgba(var(--primary-rgb),0.5)" }}>
+              {description}
+            </div>
+          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); playSample(id, sample); }}
+            className="flex-shrink-0 ml-4 font-mono text-xs tracking-widest px-3 py-2 border transition-all"
+            style={{
+              borderColor: isPlaying ? "#11d97a" : "rgba(var(--primary-rgb),0.25)",
+              color: isPlaying ? "#11d97a" : "rgba(var(--primary-rgb),0.6)",
+              background: isPlaying ? "rgba(17,217,122,0.08)" : "transparent",
+            }}
+          >
+            {isPlaying ? "■ STOP" : "▶ PLAY"}
+          </button>
+        </div>
+        {isPlaying && (
+          <div className="mt-3 flex items-center gap-1 h-4">
+            {Array.from({ length: 24 }).map((_, i) => (
+              <div
+                key={i}
+                className="flex-1 rounded-sm"
+                style={{
+                  background: "var(--color-primary)",
+                  height: `${20 + Math.random() * 80}%`,
+                  animation: `voiceBar ${0.4 + Math.random() * 0.4}s ease-in-out infinite alternate`,
+                  animationDelay: `${i * 0.04}s`,
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div className="relative w-full h-full flex flex-col items-center justify-center px-8">
+    <div className="relative w-full h-full flex flex-col items-center justify-center px-8 overflow-y-auto py-8">
       <div className="w-full max-w-xl">
         <div className="font-mono text-xs tracking-widest mb-1" style={{ color: "rgba(63,132,243,0.5)" }}>
           CALIBRATION — STEP 3 OF 5
@@ -545,10 +615,7 @@ function VoiceStep({ aiName, onComplete }: { aiName: string; onComplete: (voice:
         <div className="font-mono text-xs tracking-widest uppercase mb-2" style={{ color: "#ffc820" }}>
           VOICE SYNTHESIS MODULE
         </div>
-        <h2
-          className="text-2xl font-bold mb-2"
-          style={{ fontFamily: "var(--font-sans)", color: "var(--color-foreground)" }}
-        >
+        <h2 className="text-2xl font-bold mb-2" style={{ fontFamily: "var(--font-sans)", color: "var(--color-foreground)" }}>
           Select {aiName}'s voice
         </h2>
         <p className="text-xs mb-6 font-mono" style={{ color: "rgba(var(--primary-rgb),0.5)" }}>
@@ -561,70 +628,43 @@ function VoiceStep({ aiName, onComplete }: { aiName: string; onComplete: (voice:
           </div>
         )}
 
-        <div className="space-y-3 mb-6">
-          {VOICE_OPTIONS.map((v) => {
-            const isPlaying = playing === v.id;
-            const isSelected = selected === v.id;
-            return (
-              <div
-                key={v.id}
-                className="border p-4 cursor-pointer transition-all"
-                style={{
-                  borderColor: isSelected ? "var(--color-primary)" : "rgba(var(--primary-rgb),0.15)",
-                  background: isSelected ? "rgba(var(--primary-rgb),0.07)" : "rgba(var(--primary-rgb),0.02)",
-                  boxShadow: isSelected ? "0 0 20px rgba(var(--primary-rgb),0.12)" : "none",
-                }}
-                onClick={() => setSelected(v.id)}
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div
-                      className="font-mono font-bold text-sm tracking-widest mb-1"
-                      style={{ color: isSelected ? "var(--color-primary)" : "var(--color-foreground)" }}
-                    >
-                      {v.label}
-                    </div>
-                    <div className="font-mono text-xs" style={{ color: "rgba(var(--primary-rgb),0.5)" }}>
-                      {v.description}
-                    </div>
-                  </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); playSample(v.id, v.sample); }}
-                    className="flex-shrink-0 ml-4 font-mono text-xs tracking-widest px-3 py-2 border transition-all"
-                    style={{
-                      borderColor: isPlaying ? "#11d97a" : "rgba(var(--primary-rgb),0.25)",
-                      color: isPlaying ? "#11d97a" : "rgba(var(--primary-rgb),0.6)",
-                      background: isPlaying ? "rgba(17,217,122,0.08)" : "transparent",
-                    }}
-                  >
-                    {isPlaying ? "■ STOP" : "▶ PLAY"}
-                  </button>
-                </div>
+        {!elLoading && hasElevenLabs && (
+          <div className="mb-4">
+            <div className="font-mono text-[9px] tracking-widest uppercase mb-2 flex items-center gap-2" style={{ color: "rgba(var(--primary-rgb),0.4)" }}>
+              <span className="px-1.5 py-0.5 border text-[8px]" style={{ borderColor: "rgba(var(--primary-rgb),0.3)", color: "rgba(var(--primary-rgb),0.6)" }}>ELEVENLABS</span>
+              Your connected voices
+            </div>
+            <div className="space-y-2">
+              {elVoices.map((v) => (
+                <VoiceRow
+                  key={v.id}
+                  id={v.id}
+                  label={v.name.toUpperCase()}
+                  description={v.category === "premade" ? "ElevenLabs premade voice" : v.category === "cloned" ? "Voice clone" : v.category}
+                  sample={SAMPLE_TEXT}
+                />
+              ))}
+            </div>
+          </div>
+        )}
 
-                {isPlaying && (
-                  <div className="mt-3 flex items-center gap-1 h-4">
-                    {Array.from({ length: 24 }).map((_, i) => (
-                      <div
-                        key={i}
-                        className="flex-1 rounded-sm"
-                        style={{
-                          background: "var(--color-primary)",
-                          height: `${20 + Math.random() * 80}%`,
-                          animation: `voiceBar ${0.4 + Math.random() * 0.4}s ease-in-out infinite alternate`,
-                          animationDelay: `${i * 0.04}s`,
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+        <div>
+          {hasElevenLabs && (
+            <div className="font-mono text-[9px] tracking-widest uppercase mb-2 flex items-center gap-2" style={{ color: "rgba(var(--primary-rgb),0.4)" }}>
+              <span className="px-1.5 py-0.5 border text-[8px]" style={{ borderColor: "rgba(var(--primary-rgb),0.2)", color: "rgba(var(--primary-rgb),0.4)" }}>OPENAI</span>
+              Standard voices
+            </div>
+          )}
+          <div className="space-y-3">
+            {VOICE_OPTIONS.map((v) => (
+              <VoiceRow key={v.id} id={v.id} label={v.label} description={v.description} sample={v.sample} />
+            ))}
+          </div>
         </div>
 
         <button
           onClick={() => onComplete(selected)}
-          className="w-full py-3 font-mono font-bold tracking-widest uppercase text-sm border transition-all"
+          className="w-full mt-6 py-3 font-mono font-bold tracking-widest uppercase text-sm border transition-all"
           style={{
             borderColor: "var(--color-primary)",
             color: "var(--color-primary)",

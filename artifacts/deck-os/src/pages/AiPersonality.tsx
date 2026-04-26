@@ -253,9 +253,18 @@ function RecalibrateTab() {
   const [faceSaved, setFaceSaved]   = useState(false);
   const [voiceSaved, setVoiceSaved] = useState(false);
 
+  const [elVoices, setElVoices] = useState<{ id: string; name: string; category: string }[]>([]);
+
   const q = QUIZ_QUESTIONS[quizQ]!;
 
   useEffect(() => () => { audioRef.current?.pause(); }, []);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/vision/elevenlabs/voices`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.voices) setElVoices(d.voices); })
+      .catch(() => {});
+  }, []);
 
   function applyFace(f: FaceStyle) {
     setFaceLocal(f);
@@ -434,6 +443,59 @@ function RecalibrateTab() {
           <div className="mb-4 px-3 py-2 font-mono text-[10px] border"
                style={{ borderColor: "#ffc82050", color: "#ffc820", background: "rgba(255,200,32,0.05)" }}>
             {ttsError}
+          </div>
+        )}
+        {elVoices.length > 0 && (
+          <div className="mb-3">
+            <div className="font-mono text-[9px] tracking-widest uppercase mb-2 flex items-center gap-2" style={{ color: "rgba(var(--primary-rgb),0.4)" }}>
+              <span className="px-1.5 py-0.5 border text-[8px]" style={{ borderColor: "rgba(var(--primary-rgb),0.3)", color: "rgba(var(--primary-rgb),0.6)" }}>ELEVENLABS</span>
+              Your connected voices
+            </div>
+            <div className="space-y-2">
+              {elVoices.map((v) => {
+                const active = voice === v.id;
+                const isPlaying = playing === v.id;
+                const sampleTxt = "Systems online. Voice synthesis module calibrated and ready for command.";
+                return (
+                  <div
+                    key={v.id}
+                    onClick={() => applyVoice(v.id)}
+                    className="flex items-center gap-3 p-3 border cursor-pointer transition-all"
+                    style={{
+                      borderColor: active ? "hsl(var(--primary))" : "rgba(var(--primary-rgb),0.15)",
+                      background: active ? "rgba(var(--primary-rgb),0.07)" : "transparent",
+                    }}
+                  >
+                    <button
+                      onClick={(e) => { e.stopPropagation(); playSample(v.id, sampleTxt); }}
+                      className="shrink-0 w-7 h-7 border flex items-center justify-center transition-all hover:bg-primary/10"
+                      style={{ borderColor: active ? "hsl(var(--primary))" : "rgba(var(--primary-rgb),0.3)" }}
+                      title={isPlaying ? "Stop" : "Play sample"}
+                    >
+                      {isPlaying
+                        ? <Square className="w-2.5 h-2.5 text-primary" />
+                        : <Play className="w-2.5 h-2.5" style={{ color: active ? "hsl(var(--primary))" : "rgba(var(--primary-rgb),0.5)" }} />
+                      }
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-mono font-bold text-[10px] tracking-widest ${active ? "text-primary" : "text-primary/50"}`}>
+                        {v.name.toUpperCase()}
+                      </div>
+                      <div className="font-mono text-[9px] text-primary/30 truncate">
+                        {v.category === "premade" ? "ElevenLabs premade" : v.category === "cloned" ? "Voice clone" : v.category}
+                      </div>
+                    </div>
+                    {active && <Check className="w-3 h-3 text-primary shrink-0" />}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {elVoices.length > 0 && (
+          <div className="font-mono text-[9px] tracking-widest uppercase mb-2 flex items-center gap-2" style={{ color: "rgba(var(--primary-rgb),0.4)" }}>
+            <span className="px-1.5 py-0.5 border text-[8px]" style={{ borderColor: "rgba(var(--primary-rgb),0.2)", color: "rgba(var(--primary-rgb),0.4)" }}>OPENAI</span>
+            Standard voices
           </div>
         )}
         <div className="space-y-2">
