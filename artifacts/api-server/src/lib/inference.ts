@@ -1,12 +1,35 @@
 import os from "os";
 
+// ── Task types ─────────────────────────────────────────────────────────────
+// Callers declare what they're asking for — the gateway picks the right model.
+export type TaskType =
+  // Gemma (Cortex / Thinking layer) — reasoning-intensive
+  | "chat"          // user conversation
+  | "reasoning"     // complex analysis / multi-step thinking
+  | "planning"      // goal breakdown, strategy
+  | "summarization" // memory/log summarization
+  | "prediction"    // predictions requiring inference
+  | "briefing"      // daily briefing synthesis
+  // phi3 (Reflex layer) — fast lightweight responses
+  | "classification"// intent classification, label extraction
+  | "routing"       // deciding which action to take
+  | "command"       // parsing a user command
+  | "lightweight"   // any quick-response task
+  // Rule engine (Autopilot layer) — deterministic, no LLM
+  | "system"        // system status checks
+  | "device"        // device polling / state commands
+  | "monitor"       // health/uptime checks
+  | "fallback";     // explicit fallback
+
 export type InferenceMode = "fast" | "deep" | "none";
 
 export type InferenceOptions = {
   prompt: string;
   mode: InferenceMode;
+  task?: TaskType;
   context?: Array<{ role: string; content: string }>;
   useCache?: boolean;
+  latencyBudgetMs?: number; // if set and < 200, forces fast model
 };
 
 export type InferenceResult = {
@@ -14,26 +37,50 @@ export type InferenceResult = {
   modelUsed: string;
   latencyMs: number;
   fromCache: boolean;
+  tier: "cortex" | "reflex" | "autopilot";
 };
 
+// ── Model name config (env-driven so users can change without code edits) ──
+export const MODEL_CONFIG = {
+  // Gemma — "Cortex / Thinking layer"
+  // Handles: chat, planning, reasoning, goal breakdown, summarization, predictions
+  REASONING: process.env["REASONING_MODEL"] ?? "gemma3:9b",
+
+  // phi3 — "Reflex layer"
+  // Handles: quick responses, classification, routing, lightweight commands
+  FAST: process.env["FAST_MODEL"] ?? "phi3",
+
+  // Rule engine — "Autopilot layer"
+  // Handles: system commands, device polling, deterministic actions, fallback
+  RULE_ENGINE: "rule-engine-v1",
+} as const;
+
+// ── Inference state ─────────────────────────────────────────────────────────
 const inferenceState: {
   totalRequests: number;
   cacheHits: number;
-  cache: Map<string, { response: string; model: string; timestamp: number }>;
+  cortexRequests: number;
+  reflexRequests: number;
+  autopilotRequests: number;
+  cache: Map<string, { response: string; model: string; tier: string; timestamp: number }>;
   ollamaAvailable: boolean | null;
   lastDetected: Date;
 } = {
-  totalRequests: 0,
-  cacheHits: 0,
-  cache: new Map(),
-  ollamaAvailable: null,
-  lastDetected: new Date(),
+  totalRequests:     0,
+  cacheHits:         0,
+  cortexRequests:    0,
+  reflexRequests:    0,
+  autopilotRequests: 0,
+  cache:             new Map(),
+  ollamaAvailable:   null,
+  lastDetected:      new Date(),
 };
 
 export function getInferenceState() {
   return inferenceState;
 }
 
+// ── Ollama detection ────────────────────────────────────────────────────────
 export async function detectOllama(): Promise<boolean> {
   try {
     const controller = new AbortController();
@@ -53,12 +100,73 @@ export async function refreshOllamaDetection(): Promise<void> {
   inferenceState.lastDetected = new Date();
 }
 
-export function selectModel(mode: InferenceMode): string {
-  if (mode === "none" || !inferenceState.ollamaAvailable) return "rule-engine-v1";
-  if (mode === "fast") return "phi-3-mini";
-  return "llama3:8b";
+// ── MODEL ROUTING GATEWAY ───────────────────────────────────────────────────
+//
+// Priority: RULE ENGINE → FAST (phi3) → CORTEX (Gemma) → Cloud
+//
+//  Tier        Model       When to use
+//  ──────────  ──────────  ─────────────────────────────────────────
+//  autopilot   rule-engine system checks, device polling, safety fallback
+//  reflex      phi3        classification, routing, commands, <200ms budget
+//  cortex      gemma3:9b   chat, planning, reasoning, summarization, briefing
+//
+type Tier = "cortex" | "reflex" | "autopilot";
+
+function resolveGateway(task: TaskType | undefined, mode: InferenceMode, latencyBudgetMs?: number): Tier {
+  // Explicit "none" mode or no Ollama → autopilot (rule engine)
+  if (mode === "none" || !inferenceState.ollamaAvailable) return "autopilot";
+
+  // Strict latency budget under 200ms → reflex
+  if (latencyBudgetMs !== undefined && latencyBudgetMs < 200) return "reflex";
+
+  // Route by task type
+  switch (task) {
+    // ── Cortex tasks (Gemma) ──────────────────────────────────────────────
+    case "chat":
+    case "reasoning":
+    case "planning":
+    case "summarization":
+    case "prediction":
+    case "briefing":
+      return "cortex";
+
+    // ── Reflex tasks (phi3) ───────────────────────────────────────────────
+    case "classification":
+    case "routing":
+    case "command":
+    case "lightweight":
+      return "reflex";
+
+    // ── Autopilot tasks (rule engine) ─────────────────────────────────────
+    case "system":
+    case "device":
+    case "monitor":
+    case "fallback":
+      return "autopilot";
+
+    // ── Legacy mode fallback (no task specified) ──────────────────────────
+    default:
+      // "deep" maps to cortex, "fast" maps to reflex
+      return mode === "deep" ? "cortex" : "reflex";
+  }
 }
 
+function tierToModel(tier: Tier): string {
+  switch (tier) {
+    case "cortex":    return MODEL_CONFIG.REASONING;
+    case "reflex":    return MODEL_CONFIG.FAST;
+    case "autopilot": return MODEL_CONFIG.RULE_ENGINE;
+  }
+}
+
+// ── Legacy helper kept for backward-compat callers ─────────────────────────
+export function selectModel(mode: InferenceMode): string {
+  if (mode === "none" || !inferenceState.ollamaAvailable) return MODEL_CONFIG.RULE_ENGINE;
+  if (mode === "fast") return MODEL_CONFIG.FAST;
+  return MODEL_CONFIG.REASONING;
+}
+
+// ── Rule engine ─────────────────────────────────────────────────────────────
 export function generateRuleBasedResponse(prompt: string): string {
   const p = prompt.toLowerCase();
   if (p.includes("status") || p.includes("health")) {
@@ -66,7 +174,7 @@ export function generateRuleBasedResponse(prompt: string): string {
   }
   if (p.includes("cpu") || p.includes("memory") || p.includes("ram")) {
     const mem = os.totalmem() - os.freemem();
-    return `[RULE ENGINE] CPU Load: ${os.loadavg()[0].toFixed(2)}. Memory used: ${Math.round(mem / 1024 / 1024)}MB / ${Math.round(os.totalmem() / 1024 / 1024)}MB.`;
+    return `[RULE ENGINE] CPU Load: ${os.loadavg()[0]!.toFixed(2)}. Memory used: ${Math.round(mem / 1024 / 1024)}MB / ${Math.round(os.totalmem() / 1024 / 1024)}MB.`;
   }
   if (p.includes("help") || p.includes("commands")) {
     return `[RULE ENGINE] Available commands: status, monitor, plugins list, devices list, memory search <query>, infer <prompt>.`;
@@ -77,13 +185,12 @@ export function generateRuleBasedResponse(prompt: string): string {
   return `[RULE ENGINE] Command processed. No LLM available — operating in deterministic fallback mode. Input received: "${prompt.substring(0, 80)}"`;
 }
 
+// ── Ollama caller ───────────────────────────────────────────────────────────
 export async function callOllama(
   prompt: string,
   model: string,
   context: Array<{ role: string; content: string }>,
 ): Promise<string> {
-  // Use the system message already present in context (personalized via UCM).
-  // Fall back to a generic system message only if none was provided.
   const hasSystemMsg = context.some((m) => m.role === "system");
   const messages = [
     ...(!hasSystemMsg
@@ -94,52 +201,78 @@ export async function callOllama(
   ];
 
   const res = await fetch("http://localhost:11434/api/chat", {
-    method: "POST",
+    method:  "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages, stream: false }),
-    signal: AbortSignal.timeout(30000),
+    body:    JSON.stringify({ model, messages, stream: false }),
+    signal:  AbortSignal.timeout(60_000), // 60s for larger models (Gemma 9B)
   });
 
-  if (!res.ok) throw new Error(`Ollama error: ${res.status}`);
+  if (!res.ok) throw new Error(`Ollama error ${res.status} for model ${model}`);
   const data = (await res.json()) as { message?: { content?: string } };
   return data.message?.content ?? "[No response from model]";
 }
 
+// ── Primary inference entry point ───────────────────────────────────────────
 export async function runInference(opts: InferenceOptions): Promise<InferenceResult> {
-  const { prompt, mode, context = [], useCache = true } = opts;
+  const { prompt, mode, task, context = [], useCache = true, latencyBudgetMs } = opts;
   inferenceState.totalRequests++;
 
-  const cacheKey = `${mode}:${prompt}`;
+  const tier  = resolveGateway(task, mode, latencyBudgetMs);
+  const model = tierToModel(tier);
+
+  const cacheKey = `${tier}:${prompt}`;
   if (useCache && inferenceState.cache.has(cacheKey)) {
     const cached = inferenceState.cache.get(cacheKey)!;
     if (Date.now() - cached.timestamp < 300_000) {
       inferenceState.cacheHits++;
       return {
-        response: cached.response,
+        response:  cached.response,
         modelUsed: cached.model,
         latencyMs: 0,
         fromCache: true,
+        tier:      cached.tier as Tier,
       };
     }
   }
 
   const start = Date.now();
   let response = "";
-  let modelUsed = "rule-engine-v1";
+  let modelUsed = MODEL_CONFIG.RULE_ENGINE;
+  let usedTier: Tier = "autopilot";
 
   try {
-    const targetModel = selectModel(mode);
-    modelUsed = targetModel;
-
-    if (targetModel === "rule-engine-v1" || !inferenceState.ollamaAvailable) {
-      response = generateRuleBasedResponse(prompt);
-      modelUsed = "rule-engine-v1";
+    if (tier === "autopilot" || !inferenceState.ollamaAvailable) {
+      response  = generateRuleBasedResponse(prompt);
+      modelUsed = MODEL_CONFIG.RULE_ENGINE;
+      usedTier  = "autopilot";
+      inferenceState.autopilotRequests++;
     } else {
-      response = await callOllama(prompt, targetModel, context);
+      response  = await callOllama(prompt, model, context);
+      modelUsed = model;
+      usedTier  = tier;
+      if (tier === "cortex")  inferenceState.cortexRequests++;
+      if (tier === "reflex")  inferenceState.reflexRequests++;
     }
   } catch {
-    response = generateRuleBasedResponse(prompt);
-    modelUsed = "rule-engine-v1";
+    // Graceful degradation: cortex fails → try reflex, reflex fails → autopilot
+    if (tier === "cortex") {
+      try {
+        response  = await callOllama(prompt, MODEL_CONFIG.FAST, context);
+        modelUsed = MODEL_CONFIG.FAST;
+        usedTier  = "reflex";
+        inferenceState.reflexRequests++;
+      } catch {
+        response  = generateRuleBasedResponse(prompt);
+        modelUsed = MODEL_CONFIG.RULE_ENGINE;
+        usedTier  = "autopilot";
+        inferenceState.autopilotRequests++;
+      }
+    } else {
+      response  = generateRuleBasedResponse(prompt);
+      modelUsed = MODEL_CONFIG.RULE_ENGINE;
+      usedTier  = "autopilot";
+      inferenceState.autopilotRequests++;
+    }
   }
 
   const latencyMs = Date.now() - start;
@@ -148,6 +281,7 @@ export async function runInference(opts: InferenceOptions): Promise<InferenceRes
     inferenceState.cache.set(cacheKey, {
       response,
       model: modelUsed,
+      tier: usedTier,
       timestamp: Date.now(),
     });
     if (inferenceState.cache.size > 200) {
@@ -156,5 +290,5 @@ export async function runInference(opts: InferenceOptions): Promise<InferenceRes
     }
   }
 
-  return { response, modelUsed, latencyMs, fromCache: false };
+  return { response, modelUsed, latencyMs, fromCache: false, tier: usedTier };
 }

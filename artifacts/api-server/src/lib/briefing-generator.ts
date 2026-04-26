@@ -85,7 +85,7 @@ ${actionSnippets}
 
 Write a 3-5 sentence professional briefing summary. Start with "Good morning." Mention key metrics, highlight any notable activity, and close with a readiness statement. Do not use bullet points or headers — write it as flowing prose.`;
 
-  const result = await runInference({ prompt, mode: "fast", useCache: false });
+  const result = await runInference({ prompt, mode: "deep", task: "briefing", useCache: false });
 
   const [row] = await db.insert(briefingsTable).values({
     date:      today,

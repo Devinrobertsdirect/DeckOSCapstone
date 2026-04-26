@@ -29,6 +29,8 @@ type RouterStatusPayload = {
   cacheHitRate?: number;
   lastDetectedAt?: string;
   timestamp?: string;
+  models?: { cortex?: string; reflex?: string; autopilot?: string };
+  tierStats?: { cortexRequests?: number; reflexRequests?: number; autopilotRequests?: number };
 };
 
 type ChatResponsePayload = {
@@ -41,12 +43,47 @@ type ChatResponsePayload = {
   requestId?: string;
 };
 
+type TierStatus = {
+  cortex:    string;
+  reflex:    string;
+  autopilot: string;
+  tierStats: { cortexRequests: number; reflexRequests: number; autopilotRequests: number };
+  ollamaAvailable: boolean;
+};
+
 export default function AiControl() {
   const { sendEvent } = useWebSocket();
   const [prompt, setPrompt] = useState("");
   const [currentMode, setCurrentMode] = useState<Mode>("DIRECT_EXECUTION");
   const [sending, setSending] = useState(false);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
+  const [tierStatus, setTierStatus] = useState<TierStatus | null>(null);
+
+  useEffect(() => {
+    const fetchTiers = () => {
+      fetch(`${import.meta.env.BASE_URL}api/ai-router/status`)
+        .then(r => r.json())
+        .then((data: RouterStatusPayload & { models?: { cortex?: string; reflex?: string; autopilot?: string }; tierStats?: { cortexRequests?: number; reflexRequests?: number; autopilotRequests?: number } }) => {
+          if (data.models) {
+            setTierStatus({
+              cortex:    data.models.cortex    ?? "gemma3:9b",
+              reflex:    data.models.reflex    ?? "phi3",
+              autopilot: data.models.autopilot ?? "rule-engine-v1",
+              tierStats: {
+                cortexRequests:    data.tierStats?.cortexRequests    ?? 0,
+                reflexRequests:    data.tierStats?.reflexRequests    ?? 0,
+                autopilotRequests: data.tierStats?.autopilotRequests ?? 0,
+              },
+              ollamaAvailable: data.ollamaAvailable ?? false,
+            });
+          }
+        })
+        .catch(() => {});
+    };
+    fetchTiers();
+    const id = setInterval(fetchTiers, 10_000);
+    return () => clearInterval(id);
+  }, []);
 
   const routerStatus = useLatestPayload<RouterStatusPayload>("ai.router.status");
   const latestChatResponse = useLatestPayload<ChatResponsePayload>("ai.chat.response");
@@ -111,6 +148,59 @@ export default function AiControl() {
         <StatusTile label="OLLAMA.LOCAL" value={ollamaOk ? "CONNECTED" : "OFFLINE"} ok={ollamaOk} />
         <StatusTile label="CLOUD.API" value={cloudOk ? "AVAILABLE" : "UNAVAILABLE"} ok={cloudOk} />
         <StatusTile label="AI.EVENTS" value={`${aiEvents.length} EVENTS`} ok={aiEvents.length > 0} />
+      </div>
+
+      {/* ── 3-Tier Model Routing Gateway ─────────────────────────────────── */}
+      <div className="border border-primary/20 bg-card/40 p-5 font-mono">
+        <div className="text-primary/50 text-[10px] uppercase tracking-widest mb-4">MODEL.ROUTING.GATEWAY</div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {[
+            {
+              tier:    "CORTEX",
+              model:   tierStatus?.cortex ?? "gemma3:9b",
+              role:    "Thinking Layer",
+              desc:    "chat · reasoning · planning · briefings · predictions",
+              color:   "#3f84f3",
+              reqs:    tierStatus?.tierStats.cortexRequests ?? 0,
+              active:  tierStatus?.ollamaAvailable ?? false,
+            },
+            {
+              tier:    "REFLEX",
+              model:   tierStatus?.reflex ?? "phi3",
+              role:    "Fast Layer",
+              desc:    "classification · routing · commands · quick responses",
+              color:   "#ffc820",
+              reqs:    tierStatus?.tierStats.reflexRequests ?? 0,
+              active:  tierStatus?.ollamaAvailable ?? false,
+            },
+            {
+              tier:    "AUTOPILOT",
+              model:   "rule-engine-v1",
+              role:    "Deterministic Layer",
+              desc:    "system · devices · safety · fallback",
+              color:   "#11d97a",
+              reqs:    tierStatus?.tierStats.autopilotRequests ?? 0,
+              active:  true,
+            },
+          ].map(({ tier, model, role, desc, color, reqs, active }) => (
+            <div key={tier} className="border border-primary/10 bg-card/20 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] font-bold" style={{ color }}>{tier}</div>
+                <div className={`w-1.5 h-1.5 rounded-full ${active ? "bg-emerald-400" : "bg-red-500/50"}`} />
+              </div>
+              <div className="text-[11px] text-primary/70 font-bold truncate">{model}</div>
+              <div className="text-[9px] text-primary/40 uppercase tracking-wider">{role}</div>
+              <div className="text-[9px] text-primary/25 leading-snug">{desc}</div>
+              <div className="pt-1 border-t border-primary/10 flex justify-between text-[9px]">
+                <span className="text-primary/30">REQUESTS</span>
+                <span style={{ color }}>{reqs}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 text-primary/20 text-[9px]">
+          Task routing: chat/reasoning → CORTEX (Gemma) · classification/commands → REFLEX (phi3) · system/devices → AUTOPILOT (rule engine)
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

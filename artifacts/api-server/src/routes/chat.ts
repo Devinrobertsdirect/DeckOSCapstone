@@ -6,7 +6,9 @@ import { runInference } from "../lib/inference.js";
 import { bus } from "../lib/bus.js";
 import { broadcast } from "../lib/ws-server.js";
 import { presenceManager } from "../lib/presence-manager.js";
-import { buildPersonalizedPrompt } from "../lib/system-prompt.js";
+import { buildPersonalizedPrompt, extractSelfUpdate } from "../lib/system-prompt.js";
+import { aiPersonaTable } from "@workspace/db";
+import { eq as drEq } from "drizzle-orm";
 
 const router = Router();
 
@@ -79,10 +81,11 @@ router.post("/chat", async (req, res) => {
 
   try {
     const result = await runInference({
-      prompt: message,
-      mode: "fast",
-      context: [{ role: "system", content: systemPrompt }, ...context.slice(-8)],
-      useCache: true,
+      prompt:   message,
+      mode:     "deep",
+      task:     "chat",
+      context:  [{ role: "system", content: systemPrompt }, ...context.slice(-8)],
+      useCache: false, // conversations shouldn't be cached
     });
     response = result.response;
     modelUsed = result.modelUsed;
@@ -95,6 +98,26 @@ router.post("/chat", async (req, res) => {
   }
 
   const latencyMs = Date.now() - startMs;
+
+  // ── Self-upgrade: detect and apply persona directives ───────────────────
+  let personaUpdated: Record<string, number> | null = null;
+  const { clean: cleanResponse, update: personaUpdate } = extractSelfUpdate(response);
+  response = cleanResponse;
+  if (personaUpdate) {
+    try {
+      const rows = await db.select().from(aiPersonaTable).limit(1);
+      if (rows.length > 0) {
+        await db.update(aiPersonaTable).set(personaUpdate).where(drEq(aiPersonaTable.id, rows[0]!.id));
+        personaUpdated = personaUpdate as Record<string, number>;
+        bus.emit({
+          source: "self-upgrade",
+          target: null,
+          type:   "system.config_changed",
+          payload: { component: "ai_persona", changes: personaUpdate, origin: "self_upgrade" },
+        });
+      }
+    } catch { /* non-fatal */ }
+  }
 
   // store AI response
   await db.insert(chatMessagesTable).values({
@@ -136,7 +159,7 @@ router.post("/chat", async (req, res) => {
       ? "rule-engine"
       : "ai-inference";
 
-  res.json({ response, channel, sessionId, latencyMs, modelUsed, fromCache, reasonCode });
+  res.json({ response, channel, sessionId, latencyMs, modelUsed, fromCache, reasonCode, personaUpdated });
 });
 
 // ── GET /api/chat/history ──────────────────────────────────────────────────

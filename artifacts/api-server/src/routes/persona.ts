@@ -13,13 +13,16 @@ const VALID_DEPTHS    = ["quick", "standard", "detailed"] as const;
 const VALID_LENGTHS   = ["brief", "balanced", "thorough", "comprehensive"] as const;
 
 const PersonaBody = z.object({
-  aiName:         z.string().min(1).max(32).optional(),
-  gender:         z.enum(VALID_GENDERS).optional(),
-  voice:          z.enum(VALID_VOICES).optional(),
-  attitude:       z.enum(VALID_ATTITUDES).optional(),
-  thinkingDepth:  z.enum(VALID_DEPTHS).optional(),
-  responseLength: z.enum(VALID_LENGTHS).optional(),
-  textColor:      z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  aiName:               z.string().min(1).max(32).optional(),
+  gender:               z.enum(VALID_GENDERS).optional(),
+  voice:                z.enum(VALID_VOICES).optional(),
+  attitude:             z.enum(VALID_ATTITUDES).optional(),
+  thinkingDepth:        z.enum(VALID_DEPTHS).optional(),
+  responseLength:       z.enum(VALID_LENGTHS).optional(),
+  textColor:            z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  gravityLevel:         z.number().int().min(0).max(100).optional(),
+  snarkinessLevel:      z.number().int().min(0).max(100).optional(),
+  flirtatiousnessLevel: z.number().int().min(0).max(100).optional(),
 });
 
 async function getOrCreate() {
@@ -45,13 +48,16 @@ router.put("/ai/persona", async (req, res) => {
   const updates: Partial<typeof aiPersonaTable.$inferInsert> = {};
   const d = parsed.data;
 
-  if (d.aiName         !== undefined) updates.aiName         = d.aiName;
-  if (d.gender         !== undefined) updates.gender         = d.gender;
-  if (d.voice          !== undefined) updates.voice          = d.voice;
-  if (d.attitude       !== undefined) updates.attitude       = d.attitude;
-  if (d.thinkingDepth  !== undefined) updates.thinkingDepth  = d.thinkingDepth;
-  if (d.responseLength !== undefined) updates.responseLength = d.responseLength;
-  if (d.textColor      !== undefined) updates.textColor      = d.textColor;
+  if (d.aiName               !== undefined) updates.aiName               = d.aiName;
+  if (d.gender               !== undefined) updates.gender               = d.gender;
+  if (d.voice                !== undefined) updates.voice                = d.voice;
+  if (d.attitude             !== undefined) updates.attitude             = d.attitude;
+  if (d.thinkingDepth        !== undefined) updates.thinkingDepth        = d.thinkingDepth;
+  if (d.responseLength       !== undefined) updates.responseLength       = d.responseLength;
+  if (d.textColor            !== undefined) updates.textColor            = d.textColor;
+  if (d.gravityLevel         !== undefined) updates.gravityLevel         = d.gravityLevel;
+  if (d.snarkinessLevel      !== undefined) updates.snarkinessLevel      = d.snarkinessLevel;
+  if (d.flirtatiousnessLevel !== undefined) updates.flirtatiousnessLevel = d.flirtatiousnessLevel;
 
   const [updated] = await db
     .update(aiPersonaTable)

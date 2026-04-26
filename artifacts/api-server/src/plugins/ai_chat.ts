@@ -81,16 +81,18 @@ export default class AiChatPlugin extends Plugin {
 
       if (context.infer) {
         result = await context.infer({
-          prompt: enrichedPrompt,
+          prompt:   enrichedPrompt,
           mode,
-          context: extraContext,
+          task:     "chat",
+          context:  extraContext,
           useCache: false,
         });
       } else {
         result = await runInference({
-          prompt: enrichedPrompt,
+          prompt:   enrichedPrompt,
           mode,
-          context: extraContext,
+          task:     "chat",
+          context:  extraContext,
           useCache: false,
         });
       }
@@ -151,7 +153,7 @@ export default class AiChatPlugin extends Plugin {
       };
     }
 
-    const result = await runInference({ prompt, mode });
+    const result = await runInference({ prompt, mode, task: "chat" });
     return result;
   }
 

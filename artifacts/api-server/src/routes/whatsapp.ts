@@ -70,10 +70,11 @@ router.post(
 
     try {
       const result = await runInference({
-        prompt: message,
-        mode: "fast",
-        context: [{ role: "system", content: systemPrompt }, ...context.slice(-8)],
-        useCache: true,
+        prompt:   message,
+        mode:     "deep",
+        task:     "chat",
+        context:  [{ role: "system", content: systemPrompt }, ...context.slice(-8)],
+        useCache: false,
       });
       response  = result.response;
       modelUsed = result.modelUsed;

@@ -12,6 +12,7 @@ import {
   runInference,
   refreshOllamaDetection,
   getInferenceState,
+  MODEL_CONFIG,
 } from "../lib/inference.js";
 import { bus } from "../lib/bus.js";
 
@@ -36,41 +37,41 @@ setInterval(() => {
 }, 30_000);
 
 const MODELS = [
+  // ── Cortex / Thinking layer ────────────────────────────────────────────
+  // Chat, planning, reasoning, summarization, predictions, briefings
   {
-    id: "mistral:instruct",
-    name: "Mistral Instruct",
-    type: "local_ollama",
+    id:            MODEL_CONFIG.REASONING,
+    name:          `${MODEL_CONFIG.REASONING} (Cortex)`,
+    type:          "local_ollama",
     contextLength: 8192,
-    speed: "medium",
-    tier: "light",
-    endpoint: "http://localhost:11434",
+    speed:         "thoughtful",
+    tier:          "cortex",
+    role:          "Reasoning: chat · planning · summarization · predictions",
+    endpoint:      "http://localhost:11434",
   },
+  // ── Reflex layer ───────────────────────────────────────────────────────
+  // Classification, routing, quick commands, UI interactions
   {
-    id: "llama3:8b",
-    name: "Llama 3 8B",
-    type: "local_ollama",
-    contextLength: 8192,
-    speed: "medium",
-    tier: "deep",
-    endpoint: "http://localhost:11434",
-  },
-  {
-    id: "phi-3-mini",
-    name: "Phi-3 Mini",
-    type: "local_ollama",
+    id:            MODEL_CONFIG.FAST,
+    name:          `${MODEL_CONFIG.FAST} (Reflex)`,
+    type:          "local_ollama",
     contextLength: 4096,
-    speed: "fast",
-    tier: "light",
-    endpoint: "http://localhost:11434",
+    speed:         "fast",
+    tier:          "reflex",
+    role:          "Reflex: classification · routing · commands · quick responses",
+    endpoint:      "http://localhost:11434",
   },
+  // ── Autopilot layer ────────────────────────────────────────────────────
+  // System commands, device polling, deterministic actions, fallback
   {
-    id: "rule-engine-v1",
-    name: "Rule Engine",
-    type: "rule_engine",
+    id:            "rule-engine-v1",
+    name:          "Rule Engine (Autopilot)",
+    type:          "rule_engine",
     contextLength: 0,
-    speed: "fast",
-    tier: "fallback",
-    endpoint: null,
+    speed:         "instant",
+    tier:          "autopilot",
+    role:          "Autopilot: system · devices · deterministic actions · fallback",
+    endpoint:      null,
   },
 ];
 
@@ -84,7 +85,7 @@ const MODE_DESCRIPTIONS: Record<IntelligenceMode, string> = {
 router.get("/ai-router/status", async (req, res) => {
   const cloudAvailable = await detectCloud();
   const state = getInferenceState();
-  const activeModel = state.ollamaAvailable ? "mistral:instruct" : null;
+  const activeModel = state.ollamaAvailable ? MODEL_CONFIG.REASONING : null;
 
   const body = GetAiRouterStatusResponse.parse({
     mode: routerState.mode,
@@ -97,7 +98,20 @@ router.get("/ai-router/status", async (req, res) => {
     lastDetectedAt: state.lastDetected.toISOString(),
   });
 
-  res.json(body);
+  // Attach extended tier stats alongside standard shape
+  res.json({
+    ...body,
+    models: {
+      cortex:    MODEL_CONFIG.REASONING,
+      reflex:    MODEL_CONFIG.FAST,
+      autopilot: MODEL_CONFIG.RULE_ENGINE,
+    },
+    tierStats: {
+      cortexRequests:    state.cortexRequests,
+      reflexRequests:    state.reflexRequests,
+      autopilotRequests: state.autopilotRequests,
+    },
+  });
 });
 
 router.get("/ai-router/models", async (req, res) => {
