@@ -200,7 +200,11 @@ export default function App() {
   const handleWsMessage = useCallback((data: unknown) => {
     const msg = data as { type?: string; payload?: { requestId?: string; tier?: string } };
     if (msg.type === "ai.inference_started" && msg.payload?.requestId && msg.payload?.tier) {
-      tierByRequestRef.current.set(msg.payload.requestId, msg.payload.tier);
+      const map = tierByRequestRef.current;
+      map.set(msg.payload.requestId, msg.payload.tier);
+      if (map.size > 50) {
+        map.delete(map.keys().next().value!);
+      }
     }
   }, []);
 
