@@ -77,7 +77,9 @@ function useFieldSensors() {
   }, [deviceEvents]);
 }
 
-const CONSOLE_SESSION_KEY = "deckos.console.history";
+const CONSOLE_SESSION_KEY    = "deckos.console.history";
+const CMD_HISTORY_SESSION_KEY = "deckos.cmd.history";
+const CMD_HISTORY_MAX         = 100;
 
 const BOOT_LINES: ConsoleLine[] = [
   { id: 0, kind: "system", text: "> System initialized — SYS.VER.9.4.2" },
@@ -96,6 +98,22 @@ function loadHistory(): ConsoleLine[] {
 function saveHistory(lines: ConsoleLine[]) {
   try {
     sessionStorage.setItem(CONSOLE_SESSION_KEY, JSON.stringify(lines));
+  } catch {
+  }
+}
+
+function loadCmdHistory(): string[] {
+  try {
+    const raw = sessionStorage.getItem(CMD_HISTORY_SESSION_KEY);
+    if (raw) return JSON.parse(raw) as string[];
+  } catch {
+  }
+  return [];
+}
+
+function saveCmdHistory(history: string[]) {
+  try {
+    sessionStorage.setItem(CMD_HISTORY_SESSION_KEY, JSON.stringify(history));
   } catch {
   }
 }
@@ -171,8 +189,8 @@ export default function Dashboard() {
   const consoleEndRef = useRef<HTMLDivElement>(null);
   const lineIdRef = useRef(0);
 
-  const [cmdHistory, setCmdHistory] = useState<string[]>([]);
-  const cmdHistoryRef = useRef<string[]>([]);
+  const [cmdHistory, setCmdHistory] = useState<string[]>(loadCmdHistory);
+  const cmdHistoryRef = useRef<string[]>(loadCmdHistory());
   const historyIndexRef = useRef(-1);
   const savedInputRef = useRef("");
 
@@ -312,8 +330,9 @@ export default function Dashboard() {
       historyIndexRef.current = -1;
       savedInputRef.current = "";
       setCmdHistory((prev) => {
-        const next = [...prev, cmd];
+        const next = [...prev, cmd].slice(-CMD_HISTORY_MAX);
         cmdHistoryRef.current = next;
+        saveCmdHistory(next);
         return next;
       });
       await runCommand(cmd);
