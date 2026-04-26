@@ -313,6 +313,7 @@ function RecalibrateTab() {
           setQuizTransition(false);
         } else {
           setQuizDone(true);
+          saveQuizToUCM(newAnswers);
         }
       }, 350);
     }, 250);
@@ -327,22 +328,24 @@ function RecalibrateTab() {
     setQuizSaved(false);
   }
 
-  async function saveQuizToUCM() {
+  async function saveQuizToUCM(answers?: Record<string, number>) {
+    const a = answers ?? quizAnswers;
     try {
-      await fetch(`${API_BASE}/ucm/preferences`, {
+      const res = await fetch(`${API_BASE}/ucm/preferences`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           data: {
-            verbosity:      quizAnswers["verbosity"]      ?? 0.5,
-            formality:      quizAnswers["formality"]      ?? 0.5,
-            humor:          quizAnswers["humor"]          ?? 0.4,
-            autonomy:       quizAnswers["autonomy"]       ?? 0.5,
-            analyticalDepth: quizAnswers["analyticalDepth"] ?? 0.5,
+            verbosityLevel:  a["verbosity"]      ?? 0.5,
+            humorLevel:      a["humor"]          ?? 0.4,
+            proactivityLevel: a["proactivity"]   ?? 0.5,
+            toneFormality:   a["formality"]      ?? 0.5,
+            analyticalDepth: a["analyticalDepth"] ?? 0.5,
           },
           merge: true,
         }),
       });
+      if (!res.ok) throw new Error(`UCM PATCH failed: ${res.status}`);
       setQuizSaved(true);
     } catch {
       setQuizSaved(false);
@@ -478,17 +481,22 @@ function RecalibrateTab() {
               {QUIZ_QUESTIONS.length} diagnostics recorded
             </div>
             {quizSaved ? (
-              <div className="flex items-center justify-center gap-2 text-emerald-400 font-mono text-xs">
-                <Check className="w-4 h-4" /> SAVED TO AI PROFILE
+              <div className="flex flex-col items-center gap-4">
+                <div className="flex items-center justify-center gap-2 text-emerald-400 font-mono text-xs">
+                  <Check className="w-4 h-4" /> SAVED TO AI PROFILE
+                </div>
+                <button
+                  onClick={resetQuiz}
+                  className="flex items-center gap-2 px-4 py-2 border border-primary/20 font-mono text-[10px] text-primary/40 hover:text-primary/70 transition-all"
+                >
+                  <RefreshCw className="w-3 h-3" /> RECALIBRATE AGAIN
+                </button>
               </div>
             ) : (
-              <div className="flex gap-3 justify-center">
-                <button
-                  onClick={saveQuizToUCM}
-                  className="flex items-center gap-2 px-5 py-2.5 border border-primary/60 font-mono text-[10px] text-primary hover:bg-primary/10 transition-all tracking-widest"
-                >
-                  <Check className="w-3 h-3" /> SAVE CALIBRATION
-                </button>
+              <div className="flex flex-col items-center gap-4">
+                <div className="flex items-center justify-center gap-2 text-primary/50 font-mono text-xs">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" /> SAVING TO AI PROFILE...
+                </div>
                 <button
                   onClick={resetQuiz}
                   className="flex items-center gap-2 px-4 py-2.5 border border-primary/20 font-mono text-[10px] text-primary/40 hover:text-primary/70 transition-all"
