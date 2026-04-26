@@ -224,6 +224,24 @@ class NotificationService {
       });
     }));
 
+    // system.resource.alert → warning / critical
+    this.subIds.push(bus.subscribe("system.resource.alert", async (e: BusEvent) => {
+      if (e.type !== "system.resource.alert") return;
+      const p = e.payload as Record<string, unknown>;
+      const resource  = String(p["resource"] ?? "unknown").toUpperCase();
+      const value     = typeof p["value"]     === "number" ? p["value"].toFixed(1)  : String(p["value"]  ?? "?");
+      const threshold = typeof p["threshold"] === "number" ? p["threshold"].toFixed(0) : String(p["threshold"] ?? "?");
+      const isCritical = (p["resource"] === "cpu"    && (p["value"] as number) > 90)
+                      || (p["resource"] === "memory" && (p["value"] as number) > 95);
+      await this.createNotification({
+        type:     "system.resource.alert",
+        severity: isCritical ? "critical" : "warning",
+        title:    `High ${resource} Usage`,
+        message:  String(p["message"] ?? `${resource} is at ${value}% (threshold: ${threshold}%)`),
+        metadata: p,
+      });
+    }));
+
     // system.error → critical
     this.subIds.push(bus.subscribe("system.error", async (e: BusEvent) => {
       if (e.type !== "system.error") return;

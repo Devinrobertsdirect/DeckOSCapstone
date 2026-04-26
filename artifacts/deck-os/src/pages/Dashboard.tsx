@@ -125,11 +125,31 @@ type CommandEntry = {
 };
 
 export default function Dashboard() {
-  const { sendEvent } = useWebSocket();
+  const { sendEvent, events } = useWebSocket();
 
   const metrics = useLatestPayload<MetricsPayload>("system.monitor.metrics");
   const aiInferred = useLatestPayload<AiPayload>("ai.router.status");
   const pluginList = useLatestPayload<PluginPayload>("plugin.list.response");
+
+  const cpuAlerted = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i]!;
+      if (e.type !== "system.resource.alert" && e.type !== "system.resource.clear") continue;
+      if ((e.payload as Record<string, unknown>)?.["resource"] !== "cpu") continue;
+      return e.type === "system.resource.alert";
+    }
+    return false;
+  }, [events]);
+
+  const memAlerted = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i]!;
+      if (e.type !== "system.resource.alert" && e.type !== "system.resource.clear") continue;
+      if ((e.payload as Record<string, unknown>)?.["resource"] !== "memory") continue;
+      return e.type === "system.resource.alert";
+    }
+    return false;
+  }, [events]);
   const { mobile: mobileSnap, vision: cameraSnap } = useFieldSensors();
 
   const pluginStatusEvents = useWsEvents((e) => e.type === "plugin.status_changed");
@@ -373,12 +393,14 @@ export default function Dashboard() {
           value={`${(metrics?.cpu?.usage ?? 0).toFixed(1)}%`}
           icon={Cpu}
           live={!!metrics}
+          alert={cpuAlerted}
         />
         <MetricCard
           title="MEM.USAGE"
           value={`${(metrics?.memory?.percentage ?? 0).toFixed(1)}%`}
           icon={MemoryStick}
           live={!!metrics}
+          alert={memAlerted}
         />
         <MetricCard
           title="AI.MODE"
@@ -788,7 +810,7 @@ function PluginsCard({
 }
 
 function MetricCard({
-  title, value, icon: Icon, highlight = false, live = false, compact = false,
+  title, value, icon: Icon, highlight = false, live = false, compact = false, alert = false,
 }: {
   title: string;
   value: string | number;
@@ -796,6 +818,7 @@ function MetricCard({
   highlight?: boolean;
   live?: boolean;
   compact?: boolean;
+  alert?: boolean;
 }) {
   const str   = String(value);
   const isLong = str.length > 10;
@@ -805,15 +828,28 @@ function MetricCard({
     return m ? Math.min(100, parseFloat(m[1])) : null;
   })();
 
+  const borderCls = alert     ? "border-red-500/50 bg-red-500/5"
+                  : highlight ? "border-yellow-400/40 bg-yellow-400/5"
+                  :             "border-primary/20 bg-primary/5";
+  const iconCls   = alert     ? "text-red-400 animate-pulse"
+                  : highlight ? "text-yellow-400"
+                  :             "text-primary/60";
+  const valueCls  = alert     ? "text-red-400"
+                  : highlight ? "text-yellow-400"
+                  :             "text-primary";
+
   return (
-    <div className={`relative border overflow-hidden metric-card-glow ${highlight ? "border-yellow-400/40 bg-yellow-400/5" : "border-primary/20 bg-primary/5"}`}>
+    <div className={`relative border overflow-hidden metric-card-glow ${borderCls}`}>
       <HudCorners />
       <div className="p-4 flex flex-col gap-2 h-full min-h-[100px]">
         <div className="flex justify-between items-start">
           <span className="text-xs font-mono text-muted-foreground tracking-wider">{title}</span>
-          <Icon className={`w-4 h-4 shrink-0 ${highlight ? "text-yellow-400" : "text-primary/60"}`} />
+          <div className="flex items-center gap-1">
+            {alert && <AlertTriangle className="w-3 h-3 text-red-400 animate-pulse" />}
+            <Icon className={`w-4 h-4 shrink-0 ${iconCls}`} />
+          </div>
         </div>
-        <div className={`font-mono font-bold truncate metric-value ${textSize} ${highlight ? "text-yellow-400" : "text-primary"}`} title={str}>
+        <div className={`font-mono font-bold truncate metric-value ${textSize} ${valueCls}`} title={str}>
           {str}
         </div>
         {pct !== null && (
@@ -829,7 +865,9 @@ function MetricCard({
           </div>
         )}
         <div className="mt-auto flex items-center gap-1.5">
-          {live ? (
+          {alert ? (
+            <span className="font-mono text-[10px] text-red-400 tracking-widest">THRESHOLD EXCEEDED</span>
+          ) : live ? (
             <Circle className="w-1.5 h-1.5 fill-[#00ff88] text-[#00ff88] animate-pulse" />
           ) : compact ? (
             <span className="font-mono text-xs text-primary/20">ON-DEMAND</span>

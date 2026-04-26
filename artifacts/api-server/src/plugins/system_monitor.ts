@@ -3,8 +3,10 @@ import { statfs } from "fs/promises";
 import { Plugin } from "@workspace/event-bus";
 import type { PluginContext, BusEvent } from "@workspace/event-bus";
 
-const DEFAULT_POLL_INTERVAL_MS = 4_000;
-const MEMORY_SNAPSHOT_INTERVAL = 12;
+const DEFAULT_POLL_INTERVAL_MS  = 4_000;
+const MEMORY_SNAPSHOT_INTERVAL  = 12;
+const DEFAULT_CPU_ALERT_PCT     = 80;
+const DEFAULT_MEM_ALERT_PCT     = 90;
 
 type CpuSnapshot = { idle: number; total: number };
 
@@ -105,6 +107,10 @@ export default class SystemMonitorPlugin extends Plugin {
   private pollCount = 0;
   private pollIntervalMs: number = DEFAULT_POLL_INTERVAL_MS;
   private prevCpuSnapshot: CpuSnapshot = getCpuSnapshot();
+  private cpuThreshold = DEFAULT_CPU_ALERT_PCT;
+  private memThreshold = DEFAULT_MEM_ALERT_PCT;
+  private cpuAlerted = false;
+  private memAlerted = false;
 
   async init(context: PluginContext): Promise<void> {
     this.ctx = context;
@@ -113,6 +119,11 @@ export default class SystemMonitorPlugin extends Plugin {
     if (!isNaN(configuredInterval) && configuredInterval >= 1000) {
       this.pollIntervalMs = configuredInterval;
     }
+
+    const cpuThr = parseFloat(process.env["CPU_ALERT_THRESHOLD"] ?? "");
+    if (!isNaN(cpuThr) && cpuThr > 0 && cpuThr <= 100) this.cpuThreshold = cpuThr;
+    const memThr = parseFloat(process.env["MEM_ALERT_THRESHOLD"] ?? "");
+    if (!isNaN(memThr) && memThr > 0 && memThr <= 100) this.memThreshold = memThr;
 
     context.subscribe("system.monitor.request", async (event: BusEvent) => {
       if (event.type !== "system.monitor.request") return;
@@ -143,6 +154,8 @@ export default class SystemMonitorPlugin extends Plugin {
         payload: metrics,
       });
 
+      this.checkThresholds(metrics.cpu.usage, metrics.memory.percentage, context);
+
       if (this.pollCount % MEMORY_SNAPSHOT_INTERVAL === 0 && context.memory) {
         const summary = `CPU: ${metrics.cpu.usage}% (load: ${metrics.cpu.loadAverage[0].toFixed(2)}), Memory: ${metrics.memory.percentage}% used (${Math.round(metrics.memory.used / 1024 / 1024)}MB / ${Math.round(metrics.memory.total / 1024 / 1024)}MB), Disk: ${metrics.disk.percentage}% used, Network: ${metrics.network.interfaceCount} interfaces, Uptime: ${Math.floor(metrics.uptime / 3600)}h`;
         await context.memory.store({
@@ -157,7 +170,57 @@ export default class SystemMonitorPlugin extends Plugin {
     context.logger.info("System monitor started", {
       pollIntervalMs: this.pollIntervalMs,
       configurable: "SYSTEM_MONITOR_INTERVAL_MS env var (min: 1000ms)",
+      cpuAlertThreshold: `${this.cpuThreshold}% (env: CPU_ALERT_THRESHOLD)`,
+      memAlertThreshold: `${this.memThreshold}% (env: MEM_ALERT_THRESHOLD)`,
     });
+  }
+
+  private checkThresholds(cpu: number, mem: number, context: PluginContext): void {
+    if (cpu > this.cpuThreshold && !this.cpuAlerted) {
+      this.cpuAlerted = true;
+      context.emit({
+        source: this.id,
+        target: null,
+        type: "system.resource.alert",
+        payload: {
+          resource: "cpu",
+          value: cpu,
+          threshold: this.cpuThreshold,
+          message: `CPU usage at ${cpu.toFixed(1)}% — exceeds ${this.cpuThreshold}% threshold`,
+        },
+      });
+    } else if (cpu <= this.cpuThreshold && this.cpuAlerted) {
+      this.cpuAlerted = false;
+      context.emit({
+        source: this.id,
+        target: null,
+        type: "system.resource.clear",
+        payload: { resource: "cpu", value: cpu, threshold: this.cpuThreshold },
+      });
+    }
+
+    if (mem > this.memThreshold && !this.memAlerted) {
+      this.memAlerted = true;
+      context.emit({
+        source: this.id,
+        target: null,
+        type: "system.resource.alert",
+        payload: {
+          resource: "memory",
+          value: mem,
+          threshold: this.memThreshold,
+          message: `Memory usage at ${mem.toFixed(1)}% — exceeds ${this.memThreshold}% threshold`,
+        },
+      });
+    } else if (mem <= this.memThreshold && this.memAlerted) {
+      this.memAlerted = false;
+      context.emit({
+        source: this.id,
+        target: null,
+        type: "system.resource.clear",
+        payload: { resource: "memory", value: mem, threshold: this.memThreshold },
+      });
+    }
   }
 
   async on_event(_event: BusEvent): Promise<void> {
