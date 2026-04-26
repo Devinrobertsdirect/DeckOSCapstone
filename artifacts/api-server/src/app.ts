@@ -36,7 +36,9 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use("/api", router);
 
 if (process.env.ELECTRON_STATIC) {
-  const frontendDist = path.resolve(__dirname, "../../../deck-os/dist");
+  const frontendDist =
+    process.env.ELECTRON_FRONTEND_DIST ||
+    path.resolve(__dirname, "../../../deck-os/dist");
   app.use(express.static(frontendDist));
   app.get("*", (_req, res) => {
     res.sendFile(path.join(frontendDist, "index.html"));

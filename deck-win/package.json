@@ -10,7 +10,7 @@
     "build:portable": "electron-builder --win portable --x64"
   },
   "dependencies": {
-    "express": "^5.0.0"
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "electron": "^30.0.0",
