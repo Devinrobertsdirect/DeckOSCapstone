@@ -4,7 +4,7 @@ import {
   Activity, HardDrive, Cpu as Microchip, Network, Settings,
   TerminalSquare, AlertTriangle, CheckCircle2, Brain,
   Target, RefreshCw, Cpu, ChevronRight, Layers, Eye,
-  Minimize2, Maximize2, Film
+  Minimize2, Maximize2, Film, Radio
 } from "lucide-react";
 import { useHealthCheck, getHealthCheckQueryKey } from "@workspace/api-client-react";
 import { useVisualMode, type VisualMode } from "@/contexts/VisualMode";
@@ -46,6 +46,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         { href: "/goals",      icon: Target,    label: "GOALS"      },
         { href: "/feedback",   icon: RefreshCw, label: "FEEDBACK"   },
         { href: "/autonomous", icon: Cpu,       label: "AUTONOMOUS" },
+        { href: "/pulse",      icon: Radio,     label: "COG.PULSE"  },
       ],
     },
   ];

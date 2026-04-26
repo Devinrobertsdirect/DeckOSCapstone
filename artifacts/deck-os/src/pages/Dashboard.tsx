@@ -1,6 +1,8 @@
 import { useGetSystemStats, getGetSystemStatsQueryKey, useGetSystemSummary, getGetSystemSummaryQueryKey, useGetAiRouterStatus, getGetAiRouterStatusQueryKey } from "@workspace/api-client-react";
-import { Terminal, Cpu, MemoryStick, Activity, Network, Circle } from "lucide-react";
+import { Terminal, Cpu, MemoryStick, Activity, Network, Circle, Radio, Zap } from "lucide-react";
 import { type LucideIcon } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Link } from "wouter";
 
 export default function Dashboard() {
   const { data: stats, dataUpdatedAt: statsAt } = useGetSystemStats({
@@ -47,6 +49,9 @@ export default function Dashboard() {
           live
         />
       </div>
+
+      {/* COGNITIVE PULSE STRIP */}
+      <PresenceStrip />
 
       {/* main content */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1 min-h-0">
@@ -197,4 +202,77 @@ function formatUptime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   return `${h}h ${m}m`;
+}
+
+const AVAIL_COLOR: Record<string, string> = { active: "#00ff88", idle: "#ffcc00", passive: "#00c8ff55" };
+
+function PresenceStrip() {
+  const [presence, setPresence] = useState<{ availability: string; activeChannel: string; minutesSinceLastInteraction: number } | null>(null);
+  const [latestNudge, setLatestNudge] = useState<{ content: string; category: string; urgencyScore: number } | null>(null);
+  const [nudgeCount, setNudgeCount] = useState(0);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`${window.location.origin}/api/presence`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setPresence(data.presence);
+      const nudges = (data.nudges ?? []) as Array<{ content: string; category: string; urgencyScore: number; dismissed: boolean }>;
+      const active = nudges.filter((n) => !n.dismissed);
+      setNudgeCount(active.length);
+      setLatestNudge(active[0] ?? null);
+    } catch {}
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const id = setInterval(() => void load(), 20_000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  const avColor = presence ? (AVAIL_COLOR[presence.availability] ?? "#00c8ff55") : "#00c8ff22";
+
+  return (
+    <div className="border border-primary/15 bg-card/30 px-4 py-2.5 flex items-center gap-4 font-mono text-xs">
+      <div className="flex items-center gap-2 shrink-0">
+        <Radio className="w-3.5 h-3.5 text-primary/50" />
+        <span className="text-primary/40 uppercase tracking-wider">COGNITIVE.PULSE</span>
+      </div>
+      <div className="w-px h-4 bg-primary/10 shrink-0" />
+
+      {/* presence */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        <span className="text-primary/30">PRESENCE</span>
+        <span className="font-bold uppercase" style={{ color: avColor }}>
+          {presence ? presence.availability : "—"}
+        </span>
+        {presence && (
+          <span className="text-primary/30">
+            via {presence.activeChannel} · {presence.minutesSinceLastInteraction < 1 ? "now" : `${presence.minutesSinceLastInteraction}m ago`}
+          </span>
+        )}
+      </div>
+
+      <div className="w-px h-4 bg-primary/10 shrink-0" />
+
+      {/* latest nudge */}
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        <Zap className="w-3 h-3 text-primary/30 shrink-0" />
+        {latestNudge ? (
+          <span className="text-primary/60 truncate">{latestNudge.content}</span>
+        ) : (
+          <span className="text-primary/20">No active nudges — monitoring</span>
+        )}
+        {nudgeCount > 0 && (
+          <span className="shrink-0 border border-[#ffcc00]/40 text-[#ffcc00] px-1.5 py-0.5 text-xs">
+            {nudgeCount} NUDGE{nudgeCount > 1 ? "S" : ""}
+          </span>
+        )}
+      </div>
+
+      <Link href="/pulse" className="shrink-0 text-primary/30 hover:text-primary transition-colors uppercase tracking-wider">
+        PULSE →
+      </Link>
+    </div>
+  );
 }

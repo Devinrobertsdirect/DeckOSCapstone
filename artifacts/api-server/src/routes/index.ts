@@ -14,6 +14,7 @@ import predictionsRouter from "./predictions";
 import autonomyRouter from "./autonomy";
 import traceRouter from "./trace";
 import chatRouter from "./chat";
+import presenceRouter from "./presence";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(feedbackRouter);
 router.use(predictionsRouter);
 router.use(autonomyRouter);
 router.use(traceRouter);
+router.use("/presence", presenceRouter);
 
 export default router;

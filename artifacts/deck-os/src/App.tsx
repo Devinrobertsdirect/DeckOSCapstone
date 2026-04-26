@@ -16,6 +16,7 @@ import CognitiveModel from "@/pages/CognitiveModel";
 import GoalManager from "@/pages/GoalManager";
 import FeedbackLoop from "@/pages/FeedbackLoop";
 import AutonomousLayer from "@/pages/AutonomousLayer";
+import CognitivePulse from "@/pages/CognitivePulse";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -40,6 +41,7 @@ function Router() {
         <Route path="/autonomous" component={AutonomousLayer} />
         <Route path="/devices" component={DeviceControl} />
         <Route path="/commands" component={CommandConsole} />
+        <Route path="/pulse" component={CognitivePulse} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

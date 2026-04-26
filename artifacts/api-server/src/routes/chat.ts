@@ -5,6 +5,7 @@ import { desc, eq } from "drizzle-orm";
 import { runInference } from "../lib/inference.js";
 import { bus } from "../lib/bus.js";
 import { broadcast } from "../lib/ws-server.js";
+import { presenceManager } from "../lib/presence-manager.js";
 
 const router = Router();
 
@@ -32,6 +33,9 @@ router.post("/chat", async (req, res) => {
 
   const { message, channel, sessionId } = parsed.data;
   const startMs = Date.now();
+
+  // record user presence
+  void presenceManager.record(channel as any);
 
   // emit request event
   bus.emit({
