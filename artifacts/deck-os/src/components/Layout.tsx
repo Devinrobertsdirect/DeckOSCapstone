@@ -69,8 +69,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [now, setNow] = useState(() => new Date());
   const { status: wsStatus, events } = useWebSocket();
   const routerStatus = useLatestPayload<{ ollamaAvailable?: boolean; mode?: string }>("ai.router.status");
-  const ollamaOnline  = routerStatus === null ? null : (routerStatus?.ollamaAvailable ?? false);
+  const wsOllamaOnline = routerStatus === null ? null : (routerStatus?.ollamaAvailable ?? false);
+  const [httpOllamaOnline, setHttpOllamaOnline] = useState<boolean | null>(null);
   const [ollamaBannerDismissed, setOllamaBannerDismissed] = useState(false);
+  const ollamaOnline = wsOllamaOnline ?? httpOllamaOnline;
   const showOllamaBanner = ollamaOnline === false && !ollamaBannerDismissed;
   const camera = useCamera();
   const [autonomyConfig, setAutonomyConfig] = useState<AutonomyConfig | null>(null);
@@ -86,10 +88,25 @@ export function Layout({ children }: { children: React.ReactNode }) {
       .then((d) => setAutonomyConfig(d as AutonomyConfig))
       .catch(() => {});
 
-    // Initial notification count fetch
     fetchNotifications()
       .then((d) => setUnreadCount(d.unreadCount ?? 0))
       .catch(() => {});
+
+    async function pollAiStatus() {
+      try {
+        const r = await fetch("/api/ai-router/status");
+        if (r.ok) {
+          const d = (await r.json()) as { ollamaAvailable?: boolean };
+          setHttpOllamaOnline(d.ollamaAvailable ?? false);
+        }
+      } catch {
+        setHttpOllamaOnline(false);
+      }
+    }
+
+    pollAiStatus();
+    const iv = setInterval(pollAiStatus, 30_000);
+    return () => clearInterval(iv);
   }, []);
 
   useEffect(() => {

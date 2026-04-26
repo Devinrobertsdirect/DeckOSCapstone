@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
-import { db, userCognitiveModelTable, ucmSettingsTable, UCM_LAYERS } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, userCognitiveModelTable, ucmSettingsTable, behaviorProfileTable, goalsTable, memoryEntriesTable, UCM_LAYERS } from "@workspace/db";
+import { eq, desc } from "drizzle-orm";
 import { bus } from "../lib/bus.js";
 
 const router = Router();
@@ -153,6 +153,179 @@ router.get("/ucm/settings", async (req, res) => {
     personalizationLevel: settings.personalizationLevel,
     updatedAt: settings.updatedAt.toISOString(),
   });
+});
+
+router.get("/ucm/export", async (req, res) => {
+  const [model, settings] = await Promise.all([
+    getOrCreateModel(),
+    getOrCreateSettings(),
+  ]);
+
+  const [profileRows, goals, memories] = await Promise.all([
+    db.select().from(behaviorProfileTable).limit(1),
+    db.select().from(goalsTable).orderBy(desc(goalsTable.createdAt)).limit(100),
+    db.select().from(memoryEntriesTable).orderBy(desc(memoryEntriesTable.createdAt)).limit(200),
+  ]);
+
+  const profile = profileRows[0] ?? null;
+
+  const snapshot = {
+    exportVersion: 1,
+    exportedAt: new Date().toISOString(),
+    ucm: {
+      identity:       model.identity ?? {},
+      preferences:    model.preferences ?? {},
+      context:        model.context ?? {},
+      goals:          model.goals ?? {},
+      behaviorPatterns: model.behaviorPatterns ?? {},
+      emotionalModel: model.emotionalModel ?? {},
+      domainExpertise: model.domainExpertise ?? {},
+    },
+    settings: {
+      proactiveMode:            settings.proactiveMode,
+      memoryRetentionLevel:     settings.memoryRetentionLevel,
+      emotionalModelingEnabled: settings.emotionalModelingEnabled,
+      personalizationLevel:     settings.personalizationLevel,
+    },
+    behaviorProfile: profile ? {
+      verbosityLevel:      profile.verbosityLevel,
+      proactiveFrequency:  profile.proactiveFrequency,
+      toneFormality:       profile.toneFormality,
+      confidenceThreshold: profile.confidenceThreshold,
+      learnedPatterns:     profile.learnedPatterns,
+    } : null,
+    goals: goals.map((g) => ({
+      title:           g.title,
+      description:     g.description,
+      status:          g.status,
+      priority:        g.priority,
+      completionPct:   g.completionPct,
+      tags:            g.tags,
+      dueAt:           g.dueAt?.toISOString() ?? null,
+      decayRatePerHour: g.decayRatePerHour,
+    })),
+    memories: memories.map((m) => ({
+      type:      m.type,
+      content:   m.content,
+      keywords:  m.keywords ?? [],
+      source:    m.source,
+    })),
+  };
+
+  res.setHeader("Content-Disposition", `attachment; filename="deckos-profile-${Date.now()}.json"`);
+  res.setHeader("Content-Type", "application/json");
+  res.json(snapshot);
+});
+
+const ImportBody = z.object({
+  exportVersion: z.number().optional(),
+  ucm: z.object({
+    identity:         z.record(z.unknown()).optional().default({}),
+    preferences:      z.record(z.unknown()).optional().default({}),
+    context:          z.record(z.unknown()).optional().default({}),
+    goals:            z.record(z.unknown()).optional().default({}),
+    behaviorPatterns: z.record(z.unknown()).optional().default({}),
+    emotionalModel:   z.record(z.unknown()).optional().default({}),
+    domainExpertise:  z.record(z.unknown()).optional().default({}),
+  }).optional(),
+  settings: z.object({
+    proactiveMode:            z.boolean().optional(),
+    memoryRetentionLevel:     z.enum(["low", "medium", "high"]).optional(),
+    emotionalModelingEnabled: z.boolean().optional(),
+    personalizationLevel:     z.enum(["off", "minimal", "full"]).optional(),
+  }).optional(),
+  behaviorProfile: z.object({
+    verbosityLevel:      z.number().min(0).max(1).optional(),
+    proactiveFrequency:  z.number().min(0).max(1).optional(),
+    toneFormality:       z.number().min(0).max(1).optional(),
+    confidenceThreshold: z.number().min(0).max(1).optional(),
+    learnedPatterns:     z.record(z.number()).optional(),
+  }).nullable().optional(),
+  memories: z.array(z.object({
+    type:     z.enum(["short_term", "long_term"]),
+    content:  z.string(),
+    keywords: z.array(z.string()).optional().default([]),
+    source:   z.string().optional().default("import"),
+  })).optional(),
+});
+
+router.post("/ucm/import", async (req, res) => {
+  const parsed = ImportBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { ucm, settings, behaviorProfile, memories } = parsed.data;
+  const results: string[] = [];
+
+  if (ucm) {
+    const model = await getOrCreateModel();
+    await db.update(userCognitiveModelTable)
+      .set({
+        identity:         ucm.identity,
+        preferences:      ucm.preferences,
+        context:          ucm.context,
+        goals:            ucm.goals,
+        behaviorPatterns: ucm.behaviorPatterns,
+        emotionalModel:   ucm.emotionalModel,
+        domainExpertise:  ucm.domainExpertise,
+      })
+      .where(eq(userCognitiveModelTable.id, model.id));
+    results.push("ucm_layers");
+  }
+
+  if (settings) {
+    const s = await getOrCreateSettings();
+    const updates: Record<string, unknown> = {};
+    if (settings.proactiveMode !== undefined) updates.proactiveMode = settings.proactiveMode;
+    if (settings.memoryRetentionLevel !== undefined) updates.memoryRetentionLevel = settings.memoryRetentionLevel;
+    if (settings.emotionalModelingEnabled !== undefined) updates.emotionalModelingEnabled = settings.emotionalModelingEnabled;
+    if (settings.personalizationLevel !== undefined) updates.personalizationLevel = settings.personalizationLevel;
+    if (Object.keys(updates).length > 0) {
+      await db.update(ucmSettingsTable)
+        .set(updates as Partial<typeof ucmSettingsTable.$inferSelect>)
+        .where(eq(ucmSettingsTable.id, s.id));
+      results.push("settings");
+    }
+  }
+
+  if (behaviorProfile) {
+    const profileRows = await db.select().from(behaviorProfileTable).limit(1);
+    if (profileRows.length > 0) {
+      const updates: Record<string, unknown> = {};
+      if (behaviorProfile.verbosityLevel !== undefined) updates.verbosityLevel = behaviorProfile.verbosityLevel;
+      if (behaviorProfile.proactiveFrequency !== undefined) updates.proactiveFrequency = behaviorProfile.proactiveFrequency;
+      if (behaviorProfile.toneFormality !== undefined) updates.toneFormality = behaviorProfile.toneFormality;
+      if (behaviorProfile.confidenceThreshold !== undefined) updates.confidenceThreshold = behaviorProfile.confidenceThreshold;
+      if (behaviorProfile.learnedPatterns !== undefined) updates.learnedPatterns = behaviorProfile.learnedPatterns;
+      await db.update(behaviorProfileTable)
+        .set(updates)
+        .where(eq(behaviorProfileTable.id, profileRows[0].id));
+      results.push("behavior_profile");
+    }
+  }
+
+  if (memories && memories.length > 0) {
+    const rows = memories.map((m) => ({
+      type:     m.type,
+      content:  m.content,
+      keywords: m.keywords,
+      source:   m.source,
+      expiresAt: m.type === "short_term" ? new Date(Date.now() + 3600_000) : null,
+    }));
+    await db.insert(memoryEntriesTable).values(rows);
+    results.push(`memories(${rows.length})`);
+  }
+
+  bus.emit({
+    source: "ucm",
+    target: null,
+    type: "memory.stored",
+    payload: { event: "profile.imported", restored: results },
+  });
+
+  res.json({ success: true, restored: results });
 });
 
 router.put("/ucm/settings", async (req, res) => {

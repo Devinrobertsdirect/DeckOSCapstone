@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Brain, Shield, Settings2, Trash2, Edit3, Check, X, ChevronDown, ChevronRight, AlertTriangle, Loader2, RotateCcw, ToggleLeft, ToggleRight } from "lucide-react";
+import { Brain, Shield, Settings2, Trash2, Edit3, Check, X, ChevronDown, ChevronRight, AlertTriangle, Loader2, RotateCcw, ToggleLeft, ToggleRight, Download, Upload } from "lucide-react";
 
 const API_BASE = "/api";
 
@@ -218,6 +218,51 @@ function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void 
 
 export default function CognitiveModel() {
   const qc = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importStatus, setImportStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [importMsg, setImportMsg] = useState("");
+
+  async function handleExport() {
+    const res = await fetch(`${API_BASE}/ucm/export`);
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const cd = res.headers.get("Content-Disposition") ?? "";
+    const match = cd.match(/filename="([^"]+)"/);
+    a.download = match?.[1] ?? `deckos-profile-${Date.now()}.json`;
+    a.href = url;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setImportStatus("loading");
+    setImportMsg("");
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      const res = await fetch(`${API_BASE}/ucm/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(json),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as { restored: string[] };
+      setImportStatus("ok");
+      setImportMsg(`Restored: ${data.restored.join(", ")}`);
+      qc.invalidateQueries({ queryKey: ["ucm"] });
+      qc.invalidateQueries({ queryKey: ["ucm-settings"] });
+      setTimeout(() => setImportStatus("idle"), 4000);
+    } catch (err) {
+      setImportStatus("error");
+      setImportMsg(err instanceof Error ? err.message : "Import failed");
+      setTimeout(() => setImportStatus("idle"), 5000);
+    }
+  }
 
   const { data: ucm, isLoading: ucmLoading, error: ucmError } = useQuery<UCMResponse>({
     queryKey: ["ucm"],
@@ -284,10 +329,48 @@ export default function CognitiveModel() {
           <Brain className="w-4 h-4 text-primary" />
           <span>USER.COGNITIVE.MODEL // STRUCTURED IDENTITY LAYER</span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <span className="font-mono text-xs text-primary/30">
             LAST.UPDATE: {ucm ? new Date(ucm.updatedAt).toLocaleTimeString("en-US", { hour12: false }) : "—"}
           </span>
+
+          {/* Export */}
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-1 font-mono text-xs text-primary/50 hover:text-primary border border-primary/20 hover:border-primary/40 px-3 py-1.5 transition-all"
+            title="Download your full cognitive profile as JSON"
+          >
+            <Download className="w-3 h-3" />
+            EXPORT
+          </button>
+
+          {/* Import */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={handleImportFile}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importStatus === "loading"}
+            className={`flex items-center gap-1 font-mono text-xs border px-3 py-1.5 transition-all disabled:opacity-40 ${
+              importStatus === "ok"
+                ? "text-[#00ff88] border-[#00ff88]/40"
+                : importStatus === "error"
+                ? "text-[#ff3333] border-[#ff3333]/40"
+                : "text-primary/50 hover:text-primary border-primary/20 hover:border-primary/40"
+            }`}
+            title="Restore a cognitive profile from a JSON export"
+          >
+            {importStatus === "loading"
+              ? <Loader2 className="w-3 h-3 animate-spin" />
+              : <Upload className="w-3 h-3" />
+            }
+            {importStatus === "ok" ? "IMPORTED" : importStatus === "error" ? "FAILED" : "IMPORT"}
+          </button>
+
           <button
             onClick={() => resetAll.mutate()}
             disabled={resetAll.isPending}
@@ -298,6 +381,17 @@ export default function CognitiveModel() {
           </button>
         </div>
       </div>
+
+      {/* Import status message */}
+      {importStatus !== "idle" && importMsg && (
+        <div className={`font-mono text-xs px-3 py-2 border ${
+          importStatus === "ok"
+            ? "text-[#00ff88] border-[#00ff88]/30 bg-[#00ff88]/5"
+            : "text-[#ff3333] border-[#ff3333]/30 bg-[#ff3333]/5"
+        }`}>
+          {importStatus === "ok" ? "✓ " : "✗ "}{importMsg}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 flex-1 min-h-0 overflow-y-auto">
         {/* Model Layers */}
