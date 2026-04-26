@@ -112,6 +112,15 @@ else
   ok ".env already exists (skipping copy)"
 fi
 
+# Load .env into the current shell so DATABASE_URL is available for migrations
+if [[ -f .env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+  ok "Loaded environment from .env"
+fi
+
 # ─────────────────────────────────────
 # 6. Dependencies
 # ─────────────────────────────────────
@@ -123,12 +132,18 @@ ok "Dependencies installed"
 # 7. Database migrations
 # ─────────────────────────────────────
 log "Running database migrations..."
-if pnpm --filter @workspace/db run db:push 2>&1; then
+if pnpm --filter @workspace/db run push 2>&1; then
   ok "Database schema up to date"
 else
   warn "Migration failed. Check DATABASE_URL in .env and ensure Postgres is running."
-  warn "Then re-run: pnpm --filter @workspace/db run db:push"
+  warn "Then re-run:  source .env && pnpm --filter @workspace/db run push"
 fi
+
+# ─────────────────────────────────────
+# 7b. Seed (no-op — Deck OS self-seeds on first API start)
+# ─────────────────────────────────────
+log "Seed: none required — Deck OS auto-seeds all tables on first API server start."
+ok "Seed step skipped (handled by API bootstrap)"
 
 # ─────────────────────────────────────
 # 8. Done / optional start

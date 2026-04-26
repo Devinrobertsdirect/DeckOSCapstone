@@ -241,6 +241,16 @@ const ImportBody = z.object({
     confidenceThreshold: z.number().min(0).max(1).optional(),
     learnedPatterns:     z.record(z.number()).optional(),
   }).nullable().optional(),
+  goals: z.array(z.object({
+    title:            z.string(),
+    description:      z.string().nullable().optional(),
+    status:           z.string().optional().default("active"),
+    priority:         z.number().int().optional().default(50),
+    completionPct:    z.number().int().optional().default(0),
+    decayRatePerHour: z.number().optional().default(0.5),
+    tags:             z.array(z.string()).optional().default([]),
+    dueAt:            z.string().nullable().optional(),
+  })).optional(),
   memories: z.array(z.object({
     type:     z.enum(["short_term", "long_term"]),
     content:  z.string(),
@@ -256,7 +266,7 @@ router.post("/ucm/import", async (req, res) => {
     return;
   }
 
-  const { ucm, settings, behaviorProfile, memories } = parsed.data;
+  const { ucm, settings, behaviorProfile, goals, memories } = parsed.data;
   const results: string[] = [];
 
   if (ucm) {
@@ -292,18 +302,36 @@ router.post("/ucm/import", async (req, res) => {
 
   if (behaviorProfile) {
     const profileRows = await db.select().from(behaviorProfileTable).limit(1);
+    const bpValues = {
+      verbosityLevel:      behaviorProfile.verbosityLevel      ?? 0.5,
+      proactiveFrequency:  behaviorProfile.proactiveFrequency  ?? 0.5,
+      toneFormality:       behaviorProfile.toneFormality        ?? 0.5,
+      confidenceThreshold: behaviorProfile.confidenceThreshold ?? 0.7,
+      learnedPatterns:     (behaviorProfile.learnedPatterns ?? {}) as Record<string, number>,
+    };
     if (profileRows.length > 0) {
-      const updates: Record<string, unknown> = {};
-      if (behaviorProfile.verbosityLevel !== undefined) updates.verbosityLevel = behaviorProfile.verbosityLevel;
-      if (behaviorProfile.proactiveFrequency !== undefined) updates.proactiveFrequency = behaviorProfile.proactiveFrequency;
-      if (behaviorProfile.toneFormality !== undefined) updates.toneFormality = behaviorProfile.toneFormality;
-      if (behaviorProfile.confidenceThreshold !== undefined) updates.confidenceThreshold = behaviorProfile.confidenceThreshold;
-      if (behaviorProfile.learnedPatterns !== undefined) updates.learnedPatterns = behaviorProfile.learnedPatterns;
       await db.update(behaviorProfileTable)
-        .set(updates)
+        .set(bpValues)
         .where(eq(behaviorProfileTable.id, profileRows[0].id));
-      results.push("behavior_profile");
+    } else {
+      await db.insert(behaviorProfileTable).values(bpValues);
     }
+    results.push("behavior_profile");
+  }
+
+  if (goals && goals.length > 0) {
+    const goalRows = goals.map((g) => ({
+      title:            g.title,
+      description:      g.description ?? null,
+      status:           g.status ?? "active",
+      priority:         g.priority ?? 50,
+      completionPct:    g.completionPct ?? 0,
+      decayRatePerHour: g.decayRatePerHour ?? 0.5,
+      tags:             g.tags ?? [],
+      dueAt:            g.dueAt ? new Date(g.dueAt) : null,
+    }));
+    await db.insert(goalsTable).values(goalRows);
+    results.push(`goals(${goalRows.length})`);
   }
 
   if (memories && memories.length > 0) {
