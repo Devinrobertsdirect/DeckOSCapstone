@@ -84,6 +84,31 @@ PORT=5173 BASE_PATH=/ pnpm --filter @workspace/deck-os run dev
 
 ---
 
+## Updating
+
+After pulling new code, run the update script instead of manually re-running each step:
+
+```bash
+# Linux / macOS
+bash update.sh            # git pull + install deps + DB migrations
+bash update.sh --no-pull  # skip git pull (already done manually)
+bash update.sh --docker   # Docker Compose: pull new images + rebuild
+
+# Windows PowerShell
+.\update.ps1              # git pull + install deps + DB migrations
+.\update.ps1 -NoPull      # skip git pull (already done manually)
+.\update.ps1 -Docker      # Docker Compose: pull new images + rebuild
+```
+
+The script handles the three steps that are easy to forget in the right order:
+1. `git pull` — fetch latest code (skip with `--no-pull` / `-NoPull`)
+2. `pnpm install --frozen-lockfile` — sync new/changed packages
+3. `pnpm --filter @workspace/db run push` — apply any new DB migrations
+
+Then restart your dev servers to pick up the changes.
+
+---
+
 ## Local AI (Ollama)
 
 Deck OS uses [Ollama](https://ollama.com) for private, local AI inference. Install Ollama, then pull the two default models:
@@ -147,8 +172,10 @@ deck-os/
 │   ├── event-bus/       Async non-blocking EventBus
 │   └── api-zod/         Shared Zod schemas (API contracts)
 ├── docker-compose.yml   Full local stack (Postgres + API + frontend)
-├── setup.sh             Linux/macOS setup script
-└── setup.ps1            Windows PowerShell setup script
+├── setup.sh             Linux/macOS first-time setup script
+├── setup.ps1            Windows first-time setup script
+├── update.sh            Linux/macOS one-command update script
+└── update.ps1           Windows one-command update script
 ```
 
 ---
