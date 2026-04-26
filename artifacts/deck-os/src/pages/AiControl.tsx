@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Brain, Zap, Database, Globe, CheckCircle2, XCircle, ChevronRight, Loader2 } from "lucide-react";
+import { Brain, Zap, Database, Globe, CheckCircle2, XCircle, ChevronRight, Loader2, Copy, Check } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWebSocket, useLatestPayload, useWsEvents } from "@/contexts/WebSocketContext";
@@ -59,6 +59,7 @@ export default function AiControl() {
   const [sending, setSending] = useState(false);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [tierStatus, setTierStatus] = useState<TierStatus | null>(null);
   const processedTokenKeysRef = useRef(new Set<string>());
   const faceStyle = useFaceStyle();
@@ -325,11 +326,29 @@ export default function AiControl() {
           )}
           {outputItems.map((item, i) => {
             const p = item.payload as ChatResponsePayload;
+            const isCopied = copiedIdx === i;
             return (
-              <div key={i} className="border border-primary/10 p-3 bg-background/50 space-y-1">
+              <div key={i} className="group/resp border border-primary/10 p-3 bg-background/50 space-y-1">
                 <div className="flex justify-between text-primary/40">
                   <span>MODEL: {p.modelUsed ?? p.model ?? "---"}</span>
-                  <span>{p.fromCache && <span className="text-[#ffaa00] mr-2">CACHED</span>}{p.latencyMs}ms</span>
+                  <span className="flex items-center gap-2">
+                    {p.fromCache && <span className="text-[#ffaa00]">CACHED</span>}
+                    {p.latencyMs != null && <span>{p.latencyMs}ms</span>}
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(p.response ?? "");
+                        setCopiedIdx(i);
+                        setTimeout(() => setCopiedIdx(null), 1500);
+                      }}
+                      className="opacity-0 group-hover/resp:opacity-100 transition-opacity text-primary/40 hover:text-primary/80"
+                      title="Copy response"
+                    >
+                      {isCopied
+                        ? <Check className="w-3 h-3 text-[#22ff44]" />
+                        : <Copy className="w-3 h-3" />
+                      }
+                    </button>
+                  </span>
                 </div>
                 <div className="text-primary/90 whitespace-pre-wrap">{p.response ?? "---"}</div>
               </div>

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { TerminalSquare, CheckCircle2, Brain, Zap, Loader2, ChevronRight, Circle, Cpu, Sliders } from "lucide-react";
+import { TerminalSquare, CheckCircle2, Brain, Zap, Loader2, ChevronRight, Circle, Cpu, Sliders, Copy, Check } from "lucide-react";
 import { VoiceMicButton } from "@/components/VoiceMicButton";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,6 +68,7 @@ export default function CommandConsole() {
   const processedTokenKeysRef  = useRef(new Set<string>());
   const processedConfigKeysRef = useRef(new Set<string>());
   const [dotCycle, setDotCycle] = useState(0);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Animate the thinking dots while any line is pending
   const hasPendingLines = lines.some((l) => l.pending);
@@ -360,10 +361,28 @@ export default function CommandConsole() {
                     </div>
                   ) : line.output !== undefined ? (
                     <>
-                      <div className="pl-4 whitespace-pre-wrap text-primary/80">
-                        {line.output}
-                        {line.streaming && (
-                          <span className="inline-block w-[2px] h-[1em] bg-primary align-middle ml-[1px] animate-[blink_1s_step-end_infinite]" />
+                      <div className="relative group/resp pl-4">
+                        <span className="whitespace-pre-wrap text-primary/80">
+                          {line.output}
+                          {line.streaming && (
+                            <span className="inline-block w-[2px] h-[1em] bg-primary align-middle ml-[1px] animate-[blink_1s_step-end_infinite]" />
+                          )}
+                        </span>
+                        {!line.streaming && (
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(line.output ?? "");
+                              setCopiedId(line.id);
+                              setTimeout(() => setCopiedId(null), 1500);
+                            }}
+                            className="absolute top-0 right-0 p-1 opacity-0 group-hover/resp:opacity-100 transition-opacity text-primary/40 hover:text-primary/80"
+                            title="Copy response"
+                          >
+                            {copiedId === line.id
+                              ? <Check className="w-3 h-3 text-[#22ff44]" />
+                              : <Copy className="w-3 h-3" />
+                            }
+                          </button>
                         )}
                       </div>
                       {!line.streaming && (
