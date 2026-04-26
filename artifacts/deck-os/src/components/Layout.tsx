@@ -128,6 +128,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [customPresets, setCustomPresets] = useState<ParticlePreset[]>(loadCustomPresets);
   const [savingPreset, setSavingPreset] = useState(false);
   const [presetName, setPresetName] = useState("");
+  const [renamingPresetIdx, setRenamingPresetIdx] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   useEffect(() => {
     document.documentElement.classList.add("dark");
@@ -257,6 +259,27 @@ export function Layout({ children }: { children: React.ReactNode }) {
     const next = customPresets.filter((_, i) => i !== idx);
     setCustomPresets(next);
     saveCustomPresets(next);
+  }
+
+  function startRenamePreset(idx: number) {
+    setRenamingPresetIdx(idx);
+    setRenameValue(customPresets[idx]?.name ?? "");
+  }
+
+  function commitRenamePreset() {
+    if (renamingPresetIdx === null) return;
+    const raw = renameValue.trim().toUpperCase();
+    const name = raw || customPresets[renamingPresetIdx]?.name || `CUSTOM ${renamingPresetIdx + 1}`;
+    const next = customPresets.map((p, i) => i === renamingPresetIdx ? { ...p, name } : p);
+    setCustomPresets(next);
+    saveCustomPresets(next);
+    setRenamingPresetIdx(null);
+    setRenameValue("");
+  }
+
+  function cancelRenamePreset() {
+    setRenamingPresetIdx(null);
+    setRenameValue("");
   }
 
   function changeColor(c: ColorScheme) {
@@ -689,26 +712,66 @@ export function Layout({ children }: { children: React.ReactNode }) {
                               {customPresets.map((p, idx) => {
                                 const active =
                                   particlePrefs.density === p.density && particlePrefs.speed === p.speed;
+                                const isRenaming = renamingPresetIdx === idx;
                                 return (
                                   <div key={idx} className="flex items-center gap-0.5">
-                                    <button
-                                      onClick={() => applyPreset(p)}
-                                      title={`Density ${p.density}% · Speed ${p.speed}%`}
-                                      className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border transition-all ${
-                                        active
-                                          ? "border-primary/60 bg-primary/15 text-primary"
-                                          : "border-primary/20 text-primary/40 hover:border-primary/40 hover:text-primary/70"
-                                      }`}
-                                    >
-                                      {p.name}
-                                    </button>
-                                    <button
-                                      onClick={() => deleteCustomPreset(idx)}
-                                      title="Delete preset"
-                                      className="text-[9px] text-primary/20 hover:text-[#ff3333] transition-colors leading-none"
-                                    >
-                                      ×
-                                    </button>
+                                    {isRenaming ? (
+                                      <>
+                                        <input
+                                          autoFocus
+                                          value={renameValue}
+                                          onChange={(e) => setRenameValue(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter") commitRenamePreset();
+                                            if (e.key === "Escape") cancelRenamePreset();
+                                          }}
+                                          maxLength={12}
+                                          className="w-16 bg-transparent border border-primary/40 text-primary text-[9px] uppercase tracking-wider px-1 py-0.5 outline-none focus:border-primary/70"
+                                        />
+                                        <button
+                                          onClick={commitRenamePreset}
+                                          title="Save name"
+                                          className="text-[9px] text-primary/60 hover:text-primary transition-colors leading-none"
+                                        >
+                                          ✓
+                                        </button>
+                                        <button
+                                          onClick={cancelRenamePreset}
+                                          title="Cancel"
+                                          className="text-[9px] text-primary/20 hover:text-primary/60 transition-colors leading-none"
+                                        >
+                                          ✕
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <button
+                                          onClick={() => applyPreset(p)}
+                                          title={`Density ${p.density}% · Speed ${p.speed}%`}
+                                          className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border transition-all ${
+                                            active
+                                              ? "border-primary/60 bg-primary/15 text-primary"
+                                              : "border-primary/20 text-primary/40 hover:border-primary/40 hover:text-primary/70"
+                                          }`}
+                                        >
+                                          {p.name}
+                                        </button>
+                                        <button
+                                          onClick={() => startRenamePreset(idx)}
+                                          title="Rename preset"
+                                          className="text-[9px] text-primary/20 hover:text-primary/60 transition-colors leading-none"
+                                        >
+                                          ✎
+                                        </button>
+                                        <button
+                                          onClick={() => deleteCustomPreset(idx)}
+                                          title="Delete preset"
+                                          className="text-[9px] text-primary/20 hover:text-[#ff3333] transition-colors leading-none"
+                                        >
+                                          ×
+                                        </button>
+                                      </>
+                                    )}
                                   </div>
                                 );
                               })}
