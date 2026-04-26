@@ -179,72 +179,81 @@ export class MqttTransport {
       }
     }
 
+    // Parse JSON — keep this try/catch narrow so that only SyntaxErrors from
+    // JSON.parse are suppressed. Real errors in message processing below will
+    // still surface at their natural log level.
+    // Non-JSON payloads (e.g. plain-text "online"/"offline" published by
+    // third-party devices on the shared broker) are silently dropped here;
+    // the plain-text status shorthand handler above already covers the
+    // actionable cases on devices/+/status topics before we reach JSON.parse.
+    let data: Record<string, unknown>;
     try {
-      const data = JSON.parse(rawText) as Record<string, unknown>;
+      data = JSON.parse(rawText) as Record<string, unknown>;
+    } catch {
+      logger.debug({ topic }, "MqttTransport: ignoring non-JSON message");
+      return;
+    }
 
-      // ── Standard topic scheme: devices/:id/telemetry ─────────────────────
-      // Hardware publishes readings here. Payload may be:
-      //   { sensor, value, unit } | { readings: [...] } | flat key/value map
-      if (parts[0] === "devices" && parts[2] === "telemetry" && parts[1]) {
-        const deviceId = parts[1];
-        this.ensureDevice(deviceId, data);
+    // ── Standard topic scheme: devices/:id/telemetry ─────────────────────
+    // Hardware publishes readings here. Payload may be:
+    //   { sensor, value, unit } | { readings: [...] } | flat key/value map
+    if (parts[0] === "devices" && parts[2] === "telemetry" && parts[1]) {
+      const deviceId = parts[1];
+      this.ensureDevice(deviceId, data);
 
-        const readings = this.extractReadings(data);
-        if (readings.length > 0) {
-          this.deviceManager.updateState(deviceId, { status: "online", readings });
-        }
-        return;
-      }
-
-      // ── Standard topic scheme: devices/:id/status ────────────────────────
-      // Hardware publishes its connection status here.
-      // Payload: { status: "online"|"offline"|"error"|"standby", ... }
-      if (parts[0] === "devices" && parts[2] === "status" && parts[1]) {
-        const deviceId = parts[1];
-        this.ensureDevice(deviceId, data);
-
-        const rawStatus = typeof data["status"] === "string" ? data["status"] : "online";
-        const status = (["online", "offline", "error", "standby"] as const).includes(
-          rawStatus as "online" | "offline" | "error" | "standby"
-        )
-          ? (rawStatus as "online" | "offline" | "error" | "standby")
-          : "online";
-
-        this.deviceManager.updateState(deviceId, { status });
-        return;
-      }
-
-      // ── Legacy / jarvis topic scheme: jarvis/device/:id/state ────────────
-      if (parts[0] === "jarvis" && parts[1] === "device" && parts[2] && parts[3] === "state") {
-        const deviceId = parts[2];
-        this.ensureDevice(deviceId, data);
-
-        const readings = Array.isArray(data["readings"]) ? data["readings"] as DeviceReading[] : [];
+      const readings = this.extractReadings(data);
+      if (readings.length > 0) {
         this.deviceManager.updateState(deviceId, { status: "online", readings });
-        return;
       }
+      return;
+    }
 
-      // ── System heartbeat ─────────────────────────────────────────────────
-      if (parts[0] === "jarvis" && parts[1] === "system" && parts[2] === "broadcast") {
-        this.bus.emit({
-          source: "mqtt-transport",
-          target: null,
-          type: "system.heartbeat",
-          payload: data,
-        });
-        return;
-      }
+    // ── Standard topic scheme: devices/:id/status ────────────────────────
+    // Hardware publishes its connection status here.
+    // Payload: { status: "online"|"offline"|"error"|"standby", ... }
+    if (parts[0] === "devices" && parts[2] === "status" && parts[1]) {
+      const deviceId = parts[1];
+      this.ensureDevice(deviceId, data);
 
-      // ── Generic fallback ─────────────────────────────────────────────────
+      const rawStatus = typeof data["status"] === "string" ? data["status"] : "online";
+      const status = (["online", "offline", "error", "standby"] as const).includes(
+        rawStatus as "online" | "offline" | "error" | "standby"
+      )
+        ? (rawStatus as "online" | "offline" | "error" | "standby")
+        : "online";
+
+      this.deviceManager.updateState(deviceId, { status });
+      return;
+    }
+
+    // ── Legacy / jarvis topic scheme: jarvis/device/:id/state ────────────
+    if (parts[0] === "jarvis" && parts[1] === "device" && parts[2] && parts[3] === "state") {
+      const deviceId = parts[2];
+      this.ensureDevice(deviceId, data);
+
+      const readings = Array.isArray(data["readings"]) ? data["readings"] as DeviceReading[] : [];
+      this.deviceManager.updateState(deviceId, { status: "online", readings });
+      return;
+    }
+
+    // ── System heartbeat ─────────────────────────────────────────────────
+    if (parts[0] === "jarvis" && parts[1] === "system" && parts[2] === "broadcast") {
       this.bus.emit({
         source: "mqtt-transport",
         target: null,
-        type: "device.reading",
-        payload: { topic, data },
+        type: "system.heartbeat",
+        payload: data,
       });
-    } catch (err) {
-      logger.warn({ err, topic }, "MqttTransport: failed to parse message");
+      return;
     }
+
+    // ── Generic fallback ─────────────────────────────────────────────────
+    this.bus.emit({
+      source: "mqtt-transport",
+      target: null,
+      type: "device.reading",
+      payload: { topic, data },
+    });
   }
 
   /**
