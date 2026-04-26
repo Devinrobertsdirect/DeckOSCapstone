@@ -78,6 +78,7 @@ router.post("/chat", async (req, res) => {
   let response: string;
   let modelUsed: string;
   let fromCache: boolean;
+  let tier: string | undefined;
 
   try {
     const result = await runInference({
@@ -90,6 +91,7 @@ router.post("/chat", async (req, res) => {
     response = result.response;
     modelUsed = result.modelUsed;
     fromCache = result.fromCache;
+    tier = result.tier;
   } catch (err) {
     req.log.error({ err }, "Chat inference failed");
     response = "I'm having trouble processing that right now. Rule engine fallback active.";
@@ -164,7 +166,7 @@ router.post("/chat", async (req, res) => {
       ? "rule-engine"
       : "ai-inference";
 
-  res.json({ response, channel, sessionId, latencyMs, modelUsed, fromCache, reasonCode, personaUpdated });
+  res.json({ response, channel, sessionId, latencyMs, modelUsed, fromCache, tier, reasonCode, personaUpdated });
 });
 
 // ── GET /api/chat/history ──────────────────────────────────────────────────

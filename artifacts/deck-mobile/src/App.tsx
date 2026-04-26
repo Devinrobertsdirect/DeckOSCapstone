@@ -195,13 +195,8 @@ export default function App() {
   const { recorderState, micDenied, supported: micSupported, startRecording, stopRecording, cancelRecording } = useVoiceRecorder();
   const { speak } = useAudioPlayback();
 
-  const pendingTierRef = useRef<string | undefined>(undefined);
-
-  const handleWsMessage = useCallback((data: unknown) => {
-    const msg = data as { type: string; payload?: { tier?: string } };
-    if (msg.type === "ai.inference_started" && msg.payload?.tier) {
-      pendingTierRef.current = msg.payload.tier;
-    }
+  const handleWsMessage = useCallback((_data: unknown) => {
+    // WS events are handled server-side; tier arrives via HTTP response
   }, []);
 
   const { wsState, sendMessage } = useWebSocket(handleWsMessage);
@@ -301,16 +296,14 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, channel: "mobile", sessionId: SESSION_ID }),
       });
-      const data = await res.json() as { response: string; modelUsed: string; latencyMs: number; fromCache: boolean; reasonCode?: string };
-      const tier = pendingTierRef.current;
-      pendingTierRef.current = undefined;
+      const data = await res.json() as { response: string; modelUsed: string; latencyMs: number; fromCache: boolean; tier?: string; reasonCode?: string };
       const aiMsg: ChatMsg = {
         id: `a_${Date.now()}`,
         role: "assistant",
         content: data.response,
         channel: "mobile",
         modelUsed: data.modelUsed,
-        tier,
+        tier: data.tier,
         latencyMs: data.latencyMs,
         fromCache: data.fromCache,
         reasonCode: data.reasonCode,
@@ -398,16 +391,14 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: transcript.trim(), channel: "voice", sessionId: SESSION_ID }),
       });
-      const chatData = await chatRes.json() as { response: string; modelUsed?: string; latencyMs?: number };
-      const voiceTier = pendingTierRef.current;
-      pendingTierRef.current = undefined;
+      const chatData = await chatRes.json() as { response: string; modelUsed?: string; tier?: string; latencyMs?: number };
       const aiMsg: ChatMsg = {
         id: `a_voice_${Date.now()}`,
         role: "assistant",
         content: chatData.response,
         channel: "voice",
         modelUsed: chatData.modelUsed,
-        tier: voiceTier,
+        tier: chatData.tier,
         latencyMs: chatData.latencyMs,
         timestamp: new Date().toISOString(),
       };
