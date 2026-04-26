@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { readFileSync, mkdirSync, writeFileSync, unlinkSync, existsSync } from "fs";
-import { fileURLToPath } from "url";
 import path from "path";
 import { z } from "zod";
 import { db, communityPluginsTable } from "@workspace/db";
@@ -10,9 +9,13 @@ import { logger } from "../lib/logger.js";
 
 const router = Router();
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 const SAFE_PLUGIN_ID_RE = /^[a-z][a-z0-9_-]{0,63}$/;
+
+const APPROVED_ENTRYPOINT_ORIGINS = new Set([
+  "https://raw.githubusercontent.com",
+  "https://cdn.jsdelivr.net",
+  "https://unpkg.com",
+]);
 
 interface RegistryPlugin {
   id: string;
@@ -55,7 +58,7 @@ async function fetchRegistry(): Promise<Registry> {
     return data;
   }
 
-  const localPath = path.resolve(__dirname, "../registry.json");
+  const localPath = path.resolve(process.cwd(), "registry.json");
   const raw = readFileSync(localPath, "utf-8");
   const data = JSON.parse(raw) as Registry;
   registryCache = data;
@@ -71,6 +74,22 @@ function communityPluginLocalPath(pluginId: string): string {
 
 async function downloadPluginFile(entry: RegistryPlugin): Promise<string | null> {
   if (!entry.entrypointUrl) return null;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(entry.entrypointUrl);
+  } catch {
+    throw new Error(`Malformed entrypointUrl: ${entry.entrypointUrl}`);
+  }
+
+  if (parsed.protocol !== "https:") {
+    throw new Error(`Rejected non-HTTPS entrypointUrl: ${entry.entrypointUrl}`);
+  }
+
+  const origin = `${parsed.protocol}//${parsed.hostname}`;
+  if (!APPROVED_ENTRYPOINT_ORIGINS.has(origin)) {
+    throw new Error(`Rejected unapproved domain '${parsed.hostname}' — not in allowlist`);
+  }
 
   const res = await fetch(entry.entrypointUrl, { signal: AbortSignal.timeout(15_000) });
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${entry.entrypointUrl}`);
@@ -340,7 +359,16 @@ router.patch("/plugins/store/:pluginId/toggle", async (req, res) => {
 
   const { registry } = await import("../lib/bootstrap.js");
   if (registry) {
-    registry.setEnabled(pluginId, enabled);
+    if (enabled && !registry.getPlugin(pluginId)) {
+      const localPath = communityPluginLocalPath(pluginId);
+      if (existsSync(localPath)) {
+        await registry.loadPlugin(localPath).catch((err) =>
+          logger.warn({ err, pluginId }, "Store: toggle-enable runtime load failed"),
+        );
+      }
+    } else {
+      registry.setEnabled(pluginId, enabled);
+    }
   }
 
   bus.emit({
