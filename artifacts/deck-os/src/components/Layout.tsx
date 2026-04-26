@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { getStoredConfig, applyColor, getStoredColor, type ColorScheme } from "@/components/Onboarding";
+import { useAiName } from "@/hooks/useAiName";
 import { AIFace, useFaceStyle } from "@/components/AIFace";
 import { Link, useLocation } from "wouter";
 import {
@@ -65,18 +66,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const { mode, setMode, particlePrefs, setParticlePrefs } = useVisualMode();
   const cfg      = useMemo(() => getStoredConfig(), []);
   const userName = cfg?.userName ?? null;
-  const [aiName, setAiName] = useState(() => {
-    const c = getStoredConfig();
-    return c?.aiName ?? c?.systemName ?? "JARVIS";
-  });
-  useEffect(() => {
-    function onNameUpdate() {
-      const c = getStoredConfig();
-      setAiName(c?.aiName ?? c?.systemName ?? "JARVIS");
-    }
-    window.addEventListener("deckos:ai_name_updated", onNameUpdate);
-    return () => window.removeEventListener("deckos:ai_name_updated", onNameUpdate);
-  }, []);
+  const aiName   = useAiName();
   const [activeColor, setActiveColor] = useState<ColorScheme>(getStoredColor());
   const [now, setNow] = useState(() => new Date());
   const { status: wsStatus, events } = useWebSocket();

@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWebSocket, useLatestPayload, useWsEvents } from "@/contexts/WebSocketContext";
 import { AIFace, useFaceStyle } from "@/components/AIFace";
+import { useAiName } from "@/hooks/useAiName";
 
 const MODES = ["DIRECT_EXECUTION", "LIGHT_REASONING", "DEEP_REASONING", "HYBRID_MODE"] as const;
 type Mode = typeof MODES[number];
@@ -63,6 +64,7 @@ export default function AiControl() {
   const [tierStatus, setTierStatus] = useState<TierStatus | null>(null);
   const processedTokenKeysRef = useRef(new Set<string>());
   const faceStyle = useFaceStyle();
+  const aiName = useAiName();
 
   useEffect(() => {
     const fetchTiers = () => {
@@ -176,7 +178,7 @@ export default function AiControl() {
           <span className="text-primary uppercase tracking-widest">
             {streamingText ? "STREAMING RESPONSE" : sending ? "PROCESSING REQUEST" : "WAITING FOR INPUT"}
           </span>
-          <span className="text-primary/40">// JARVIS STANDING BY</span>
+          <span className="text-primary/40">// {aiName} STANDING BY</span>
         </div>
         {sending && <Loader2 className="w-3 h-3 text-primary/30 animate-spin ml-auto" />}
       </div>

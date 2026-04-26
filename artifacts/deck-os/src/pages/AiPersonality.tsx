@@ -358,6 +358,10 @@ function RecalibrateTab() {
     if (currentCfg) {
       localStorage.setItem("jarvis.user", JSON.stringify({ ...currentCfg, aiName: trimmed, systemName: trimmed }));
     }
+    window.dispatchEvent(new Event(AI_NAME_UPDATED_EVENT));
+    setNameSaving(false);
+    setNameSaved(true);
+    setTimeout(() => setNameSaved(false), 2000);
     try {
       await fetch(`${API_BASE}/ucm/identity`, {
         method: "PATCH",
@@ -365,10 +369,6 @@ function RecalibrateTab() {
         body: JSON.stringify({ data: { aiName: trimmed }, merge: true }),
       });
     } catch { /* silently ignore — localStorage already updated */ }
-    window.dispatchEvent(new Event(AI_NAME_UPDATED_EVENT));
-    setNameSaving(false);
-    setNameSaved(true);
-    setTimeout(() => setNameSaved(false), 2000);
   }
 
   function resetQuiz() {

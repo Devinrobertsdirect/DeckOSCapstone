@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWebSocket, useWsEvents } from "@/contexts/WebSocketContext";
 import { AIFace, useFaceStyle } from "@/components/AIFace";
+import { useAiName } from "@/hooks/useAiName";
 
 type ChatResponsePayload = {
   response?: string;
@@ -57,6 +58,7 @@ export default function CommandConsole() {
   const [lines, setLines] = useState<ConsoleLine[]>([]);
   const outputRef = useRef<HTMLDivElement>(null);
   const faceStyle = useFaceStyle();
+  const aiName = useAiName();
 
   const chatRequests    = useWsEvents((e) => e.type === "ai.chat.request");
   const chatTokens      = useWsEvents((e) => e.type === "ai.chat.token");
@@ -274,7 +276,7 @@ export default function CommandConsole() {
           <span className="text-primary uppercase tracking-widest">
             {isStreaming ? "STREAMING RESPONSE" : hasPendingLines ? "PROCESSING REQUEST" : "WAITING FOR INPUT"}
           </span>
-          <span className="text-primary/40">// JARVIS STANDING BY</span>
+          <span className="text-primary/40">// {aiName} STANDING BY</span>
         </div>
         {isAiActive && <Loader2 className="w-3 h-3 text-primary/30 animate-spin ml-auto" />}
       </div>
