@@ -34,10 +34,25 @@ const BUILT_IN_PRESETS: ParticlePreset[] = [
 
 const CUSTOM_PRESETS_KEY = "deckos_particle_presets_custom";
 
+function clampPresetVal(v: unknown): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 100;
+  return Math.max(10, Math.min(300, n));
+}
+
 function loadCustomPresets(): ParticlePreset[] {
   try {
     const raw = localStorage.getItem(CUSTOM_PRESETS_KEY);
-    if (raw) return JSON.parse(raw) as ParticlePreset[];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((p): p is Record<string, unknown> => p !== null && typeof p === "object")
+      .map((p) => ({
+        name:    typeof p.name === "string" && p.name.trim() ? p.name.trim().slice(0, 12).toUpperCase() : "PRESET",
+        density: clampPresetVal(p.density),
+        speed:   clampPresetVal(p.speed),
+      }));
   } catch {}
   return [];
 }
@@ -220,7 +235,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   function commitSavePreset() {
     const name = presetName.trim().toUpperCase() || `CUSTOM ${customPresets.length + 1}`;
-    const next = [...customPresets, { name, density: particlePrefs.density, speed: particlePrefs.speed }];
+    const next = [...customPresets, {
+      name,
+      density: clampPresetVal(particlePrefs.density),
+      speed:   clampPresetVal(particlePrefs.speed),
+    }];
     setCustomPresets(next);
     saveCustomPresets(next);
     setPresetName("");
