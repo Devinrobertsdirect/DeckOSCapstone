@@ -344,7 +344,7 @@ export default function AiControl() {
                       title="Copy response"
                     >
                       {isCopied
-                        ? <Check className="w-3 h-3 text-[#22ff44]" />
+                        ? <span className="flex items-center gap-1 text-[#22ff44]"><Check className="w-3 h-3" />COPIED</span>
                         : <Copy className="w-3 h-3" />
                       }
                     </button>
