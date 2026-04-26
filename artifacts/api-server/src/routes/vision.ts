@@ -6,6 +6,7 @@ import {
   ensureCompatibleFormat,
 } from "@workspace/integrations-openai-ai-server/audio";
 import { bus } from "../lib/bus.js";
+import { db, aiPersonaTable } from "@workspace/db";
 
 const router = Router();
 
@@ -110,7 +111,18 @@ router.post("/tts", async (req, res) => {
     return;
   }
 
-  const audio = await textToSpeech(text.slice(0, 4096), (voice as "onyx") ?? "onyx", "mp3");
+  // If caller didn't supply a voice, use the persona's configured voice
+  let resolvedVoice = voice;
+  if (!resolvedVoice) {
+    try {
+      const [persona] = await db.select({ voice: aiPersonaTable.voice }).from(aiPersonaTable).limit(1);
+      resolvedVoice = persona?.voice ?? "onyx";
+    } catch {
+      resolvedVoice = "onyx";
+    }
+  }
+
+  const audio = await textToSpeech(text.slice(0, 4096), (resolvedVoice as "onyx"), "mp3");
   res.json({ audio: audio.toString("base64"), format: "mp3" });
 });
 

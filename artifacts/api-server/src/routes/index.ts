@@ -19,6 +19,7 @@ import visionRouter from "./vision";
 import whatsappRouter from "./whatsapp";
 import locationRouter from "./location";
 import discoveryRouter from "./discovery";
+import personaRouter from "./persona";
 
 const router: IRouter = Router();
 
@@ -29,6 +30,7 @@ router.use(pluginsRouter);
 router.use(memoryRouter);
 router.use(systemRouter);
 router.use(commandsRouter);
+router.use(personaRouter);
 router.use(discoveryRouter);
 router.use(devicesRouter);
 router.use(eventsRouter);

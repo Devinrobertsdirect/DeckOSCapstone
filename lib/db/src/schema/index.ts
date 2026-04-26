@@ -7,3 +7,4 @@ export * from "./chat";
 export * from "./presence";
 export * from "./location";
 export * from "./devices";
+export * from "./persona";
