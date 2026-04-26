@@ -94,6 +94,10 @@ export const ClientEventTypeSchema = z.enum([
   "client.disconnected",
 ]);
 
+export const NotificationEventTypeSchema = z.enum([
+  "notification.created",
+]);
+
 export const EventTypeSchema = z.union([
   SystemEventTypeSchema,
   PluginEventTypeSchema,
@@ -102,6 +106,7 @@ export const EventTypeSchema = z.union([
   MemoryEventTypeSchema,
   AutonomyEventTypeSchema,
   ClientEventTypeSchema,
+  NotificationEventTypeSchema,
 ]);
 
 export type EventType = z.infer<typeof EventTypeSchema>;

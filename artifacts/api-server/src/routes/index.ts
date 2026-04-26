@@ -21,6 +21,7 @@ import locationRouter from "./location";
 import discoveryRouter from "./discovery";
 import personaRouter from "./persona";
 import routinesRouter from "./routines";
+import notificationsRouter from "./notifications";
 
 const router: IRouter = Router();
 
@@ -46,5 +47,6 @@ router.use("/vision", visionRouter);
 router.use(whatsappRouter);
 router.use(locationRouter);
 router.use(routinesRouter);
+router.use(notificationsRouter);
 
 export default router;

@@ -16,6 +16,7 @@ import { generateDeviceProfile } from "./profile-generator.js";
 import { cognitiveLoop } from "./cognitive-loop.js";
 import { memoryEnricher } from "./memory-enricher.js";
 import { routineRunner } from "./routine-runner.js";
+import { notificationService } from "./notification-service.js";
 import { eq } from "drizzle-orm";
 
 export let registry: PluginRegistry;
@@ -387,6 +388,9 @@ export async function bootstrap(): Promise<void> {
   // ── Memory Enricher (background UCM auto-enrichment) ─────────────────────
   memoryEnricher.start();
 
+  // ── Notification Service (persistent alert inbox) ─────────────────────────
+  notificationService.start();
+
   // ── Routine Runner (scheduled & event-based automations) ─────────────────
   await seedStarterRoutines();
   routineRunner.start();
@@ -407,6 +411,7 @@ export async function teardown(): Promise<void> {
   initiativeEngine.stop();
   cognitiveLoop.stop();
   memoryEnricher.stop();
+  notificationService.stop();
   routineRunner.stop();
 
   if (stopSimDevices) {

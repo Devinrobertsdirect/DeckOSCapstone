@@ -107,5 +107,17 @@ export type BehaviorProfile = typeof behaviorProfileTable.$inferSelect;
 export type Prediction = typeof predictionsTable.$inferSelect;
 export type AutonomyConfig = typeof autonomyConfigTable.$inferSelect;
 export type AutonomyLog = typeof autonomyLogTable.$inferSelect;
+export const notificationsTable = pgTable("notifications", {
+  id:        serial("id").primaryKey(),
+  type:      text("type").notNull(),
+  severity:  text("severity").notNull().default("info"), // info | warning | critical
+  title:     text("title").notNull(),
+  message:   text("message").notNull(),
+  read:      boolean("read").notNull().default(false),
+  metadata:  jsonb("metadata").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type Notification = typeof notificationsTable.$inferSelect;
 export type Routine = typeof routinesTable.$inferSelect;
 export type RoutineExecution = typeof routineExecutionsTable.$inferSelect;

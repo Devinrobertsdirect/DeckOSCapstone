@@ -15,6 +15,7 @@ import { EventLogPanel } from "@/components/EventLogPanel";
 import { ParticleOverlay } from "@/components/ParticleOverlay";
 import { useQuery } from "@tanstack/react-query";
 import { DeviceDiscovery } from "@/components/DeviceDiscovery";
+import { NotificationBell, NotificationDrawer } from "@/components/NotificationDrawer";
 
 interface AutonomyConfig {
   enabled: boolean;
@@ -58,6 +59,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [autonomyOpen, setAutonomyOpen] = useState(false);
   const [eventLogOpen, setEventLogOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const { mode, setMode } = useVisualMode();
   const cfg = useMemo(() => getStoredConfig(), []);
   const aiName   = cfg?.aiName ?? cfg?.systemName ?? "JARVIS";
@@ -282,6 +284,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
               )}
             </button>
           )}
+          {/* Notification bell */}
+          <NotificationBell
+            onClick={() => setNotifOpen((o) => !o)}
+            wsEvents={events}
+          />
           {/* Event log toggle */}
           <button
             onClick={() => setEventLogOpen((o) => !o)}
@@ -531,6 +538,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       {/* EVENT LOG PANEL */}
       <EventLogPanel open={eventLogOpen} onClose={() => setEventLogOpen(false)} />
+
+      {/* NOTIFICATION DRAWER */}
+      <NotificationDrawer
+        open={notifOpen}
+        onClose={() => setNotifOpen(false)}
+        wsEvents={events}
+      />
     </div>
   );
 }
