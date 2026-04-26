@@ -92,6 +92,7 @@ interface ChatMsg {
   content: string;
   channel?: Channel;
   modelUsed?: string;
+  tier?: string;
   latencyMs?: number;
   fromCache?: boolean;
   reasonCode?: string;
@@ -194,11 +195,12 @@ export default function App() {
   const { recorderState, micDenied, supported: micSupported, startRecording, stopRecording, cancelRecording } = useVoiceRecorder();
   const { speak } = useAudioPlayback();
 
+  const pendingTierRef = useRef<string | undefined>(undefined);
+
   const handleWsMessage = useCallback((data: unknown) => {
-    const msg = data as { type: string; content?: string; modelUsed?: string; latencyMs?: number; timestamp?: string };
-    if (msg.type === "chat.message" && msg.content) {
-      // WS pushes AI responses from other channels — useful for multi-channel
-      // (we already handle our own via HTTP response, so skip duplicates)
+    const msg = data as { type: string; payload?: { tier?: string } };
+    if (msg.type === "ai.inference_started" && msg.payload?.tier) {
+      pendingTierRef.current = msg.payload.tier;
     }
   }, []);
 
@@ -300,12 +302,15 @@ export default function App() {
         body: JSON.stringify({ message: text, channel: "mobile", sessionId: SESSION_ID }),
       });
       const data = await res.json() as { response: string; modelUsed: string; latencyMs: number; fromCache: boolean; reasonCode?: string };
+      const tier = pendingTierRef.current;
+      pendingTierRef.current = undefined;
       const aiMsg: ChatMsg = {
         id: `a_${Date.now()}`,
         role: "assistant",
         content: data.response,
         channel: "mobile",
         modelUsed: data.modelUsed,
+        tier,
         latencyMs: data.latencyMs,
         fromCache: data.fromCache,
         reasonCode: data.reasonCode,
@@ -394,12 +399,15 @@ export default function App() {
         body: JSON.stringify({ message: transcript.trim(), channel: "voice", sessionId: SESSION_ID }),
       });
       const chatData = await chatRes.json() as { response: string; modelUsed?: string; latencyMs?: number };
+      const voiceTier = pendingTierRef.current;
+      pendingTierRef.current = undefined;
       const aiMsg: ChatMsg = {
         id: `a_voice_${Date.now()}`,
         role: "assistant",
         content: chatData.response,
         channel: "voice",
         modelUsed: chatData.modelUsed,
+        tier: voiceTier,
         latencyMs: chatData.latencyMs,
         timestamp: new Date().toISOString(),
       };
@@ -636,6 +644,9 @@ function MessageBubble({ msg }: { msg: ChatMsg }) {
         </div>
         <div className="flex items-center gap-2 font-mono text-xs text-primary/25 flex-wrap">
           <span>{formatTime(msg.timestamp)}</span>
+          {!msg.pending && msg.role === "assistant" && msg.tier && (
+            <TierBadge tier={msg.tier} />
+          )}
           {!msg.pending && msg.role === "assistant" && msg.modelUsed && (
             <ReasonBadge reasonCode={msg.reasonCode} modelUsed={msg.modelUsed} fromCache={msg.fromCache} latencyMs={msg.latencyMs} />
           )}
@@ -648,6 +659,19 @@ function MessageBubble({ msg }: { msg: ChatMsg }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function TierBadge({ tier }: { tier: string }) {
+  const color =
+    tier === "cortex"    ? "text-[#cc44ff]" :
+    tier === "reflex"    ? "text-[#ffc820]" :
+                           "text-[#11d97a]";
+  return (
+    <>
+      <span>·</span>
+      <span className={`uppercase font-bold tracking-wider ${color}`}>{tier}</span>
+    </>
   );
 }
 
