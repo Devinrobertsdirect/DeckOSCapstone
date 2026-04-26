@@ -419,6 +419,13 @@ export default function Settings() {
       const streamRes = await fetch("/api/admin/update/stream", {
         headers: { "X-Admin-Token": adminSecretInput.trim() },
       });
+      if (!streamRes.ok) {
+        let errMsg = `Stream error (${streamRes.status})`;
+        try { const j = await streamRes.json() as { error?: string }; if (j.error) errMsg = j.error; } catch {}
+        setUpdateDone({ success: false, error: errMsg });
+        setUpdateRunning(false);
+        return;
+      }
       if (!streamRes.body) throw new Error("No response body from stream");
 
       const reader = streamRes.body.getReader();
