@@ -334,14 +334,6 @@ router.post("/plugins/store/install/:pluginId", async (req, res) => {
     });
 
     const { loaded, warning } = await loadCommunityPlugin(entry);
-    if (loaded && existing.length > 0) {
-      bus.emit({
-        source: "store",
-        target: null,
-        type: "plugin.reload",
-        payload: { pluginId, version: entry.version },
-      });
-    }
     logger.info({ pluginId, version: entry.version, runtimeLoaded: loaded }, "Community plugin installed");
     res.json({ pluginId, installed: true, version: entry.version, runtimeLoaded: loaded, ...(warning ? { warning } : {}) });
   } catch (err) {
@@ -467,6 +459,61 @@ router.get("/plugins/store/installed", async (_req, res) => {
 const CommunityExecuteBody = z.object({
   command: z.string().min(1).default("default"),
   args: z.record(z.unknown()).optional().default({}),
+});
+
+const RESERVED_PLUGIN_IDS = new Set(["store", "community"]);
+
+router.all("/plugins/:pluginId/*path", async (req, res, next) => {
+  const { pluginId } = req.params;
+
+  if (RESERVED_PLUGIN_IDS.has(pluginId) || !SAFE_PLUGIN_ID_RE.test(pluginId)) {
+    next();
+    return;
+  }
+
+  const rawPathValue = (req.params as Record<string, unknown>)["path"];
+  const rawPath = Array.isArray(rawPathValue)
+    ? (rawPathValue as string[]).join("/")
+    : String(rawPathValue ?? "");
+  const subPath = `/${rawPath.replace(/^\/+/, "")}`;
+  const method = req.method.toUpperCase();
+
+  const { registry } = await import("../lib/bootstrap.js").catch(() => ({ registry: null as null }));
+  if (!registry) {
+    next();
+    return;
+  }
+
+  const pluginRoutes = registry.getPluginRoutes(pluginId);
+  if (pluginRoutes.length === 0) {
+    next();
+    return;
+  }
+
+  const match = pluginRoutes.find(
+    (r) => r.method === method && (r.pattern === subPath || r.pattern === subPath.slice(1)),
+  );
+
+  if (!match) {
+    res.status(404).json({
+      error: `No route '${method} ${subPath}' registered for community plugin '${pluginId}'`,
+      registeredRoutes: pluginRoutes.map((r) => `${r.method} ${r.pattern}`),
+    });
+    return;
+  }
+
+  try {
+    const result = await registry.dispatchPluginRoute(pluginId, match.routeId, {
+      body: req.body,
+      query: req.query,
+      params: req.params,
+      headers: req.headers,
+    });
+    res.status(result.status).json(result.body);
+  } catch (err) {
+    logger.error({ err, pluginId, subPath }, "Community plugin route dispatch error");
+    res.status(502).json({ error: err instanceof Error ? err.message : "Route dispatch failed" });
+  }
 });
 
 router.post("/plugins/store/community/:pluginId/execute", async (req, res) => {

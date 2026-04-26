@@ -1,5 +1,5 @@
 /**
- * Weather Monitor — Community Plugin v1.0.3
+ * Weather Monitor — Community Plugin v1.0.4
  * Polls Open-Meteo API (no key required) every 15 minutes and emits weather events.
  * Source: https://raw.githubusercontent.com/deck-os/community-plugins/main/weather_monitor/index.mjs
  */
@@ -7,7 +7,7 @@
 export default class WeatherMonitor {
   id = "weather_monitor";
   name = "Weather Monitor";
-  version = "1.0.3";
+  version = "1.0.4";
   description = "Fetches current weather and 7-day forecasts for your location. Emits alerts when severe weather is detected.";
   category = "monitoring";
 
@@ -23,6 +23,15 @@ export default class WeatherMonitor {
   async init(ctx) {
     this._ctx = ctx;
     ctx.logger.info("WeatherMonitor: initialised — polling Open-Meteo every 15 minutes");
+
+    ctx.http.register("GET", "/current", async (_req) => ({
+      status: 200,
+      body: {
+        weather: this._lastWeather,
+        coordinates: { lat: this._lat, lon: this._lon },
+        pollIntervalMinutes: this._pollIntervalMs / 60_000,
+      },
+    }));
 
     ctx.subscribe("weather_monitor.configure", (event) => {
       const { lat, lon, intervalMinutes } = event.payload ?? {};

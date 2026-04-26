@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 import { readdir, access } from "fs/promises";
@@ -17,9 +18,12 @@ type PluginEntry = {
   lastActivity?: Date;
 };
 
+type PluginRoute = { routeId: string; method: string; pattern: string };
+
 export class PluginRegistry {
   private plugins = new Map<string, PluginEntry>();
   private workerMap = new Map<string, Worker>();
+  private pluginRoutes = new Map<string, PluginRoute[]>();
   private bus: EventBus;
   private memory: PluginMemory | undefined;
   private inferFn: ((opts: InferOptions) => Promise<InferResult>) | undefined;
@@ -193,6 +197,16 @@ export class PluginRegistry {
             clearTimeout(initTimeout);
 
             const pluginIdFromWorker = msg["pluginId"] as string;
+            if (pluginIdFromWorker !== pluginId) {
+              logger.error(
+                { expectedPluginId: pluginId, actualPluginId: pluginIdFromWorker },
+                "PluginRegistry: community plugin identity mismatch — rejected to prevent ID spoofing",
+              );
+              void worker.terminate();
+              resolve(false);
+              break;
+            }
+
             const name = msg["name"] as string;
             const version = msg["version"] as string;
             const description = msg["description"] as string;
@@ -289,6 +303,19 @@ export class PluginRegistry {
               ? "warn"
               : "info";
             logger[level]({ pluginId }, `[community:${pluginId}] ${msg["msg"] as string}`);
+            break;
+          }
+
+          case "route_register": {
+            const route: PluginRoute = {
+              routeId: msg["routeId"] as string,
+              method: msg["method"] as string,
+              pattern: msg["pattern"] as string,
+            };
+            const existing = this.pluginRoutes.get(pluginId) ?? [];
+            if (!existing.find((r) => r.routeId === route.routeId)) existing.push(route);
+            this.pluginRoutes.set(pluginId, existing);
+            logger.info({ pluginId, method: route.method, pattern: route.pattern }, "PluginRegistry: community plugin registered HTTP sub-route");
             break;
           }
 
@@ -470,6 +497,39 @@ export class PluginRegistry {
     return true;
   }
 
+  getPluginRoutes(pluginId: string): PluginRoute[] {
+    return this.pluginRoutes.get(pluginId) ?? [];
+  }
+
+  async dispatchPluginRoute(
+    pluginId: string,
+    routeId: string,
+    request: unknown,
+  ): Promise<{ status: number; body: unknown }> {
+    const worker = this.workerMap.get(pluginId);
+    if (!worker) throw new Error(`No running worker for community plugin '${pluginId}'`);
+
+    const requestId = randomUUID();
+    const TIMEOUT_MS = 30_000;
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        worker.off("message", onMsg);
+        reject(new Error(`Route dispatch timeout after ${TIMEOUT_MS}ms — plugin '${pluginId}', routeId '${routeId}'`));
+      }, TIMEOUT_MS);
+
+      const onMsg = (msg: Record<string, unknown>) => {
+        if (msg["type"] === "route_response" && msg["requestId"] === requestId) {
+          clearTimeout(timer);
+          worker.off("message", onMsg);
+          resolve({ status: (msg["status"] as number) ?? 200, body: msg["body"] });
+        }
+      };
+      worker.on("message", onMsg);
+      worker.postMessage({ type: "route_dispatch", routeId, requestId, request });
+    });
+  }
+
   async unloadPlugin(id: string): Promise<boolean> {
     const entry = this.plugins.get(id);
     if (!entry) return false;
@@ -479,6 +539,7 @@ export class PluginRegistry {
       logger.error({ err, pluginId: id }, "PluginRegistry: shutdown error during unload");
     }
     this.plugins.delete(id);
+    this.pluginRoutes.delete(id);
 
     const worker = this.workerMap.get(id);
     if (worker) {
