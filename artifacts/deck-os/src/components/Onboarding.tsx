@@ -555,29 +555,89 @@ async function saveConfig(key: string, value: string): Promise<void> {
   });
 }
 
-function ApiKeysPhase({ aiName, onNext }: { aiName: string; onNext: () => void }) {
-  const [visible, setVisible]     = useState(false);
-  const [elKey, setElKey]         = useState("");
-  const [openaiKey, setOpenaiKey] = useState("");
+// ── ApiKeysPhase ─────────────────────────────────────────────────────────────
+// Integration cards config
+interface IntegrationDef {
+  id: string;
+  name: string;
+  badge: "RECOMMENDED" | "OPTIONAL";
+  badgeColor: string;
+  placeholder: string;
+  getKeyUrl: string;
+  getKeyLabel: string;
+  tagline: string;
+  description: string; // plain-English accordion body
+  extras?: "elevenlabs_voice";
+}
+
+const INTEGRATIONS: IntegrationDef[] = [
+  {
+    id: "ELEVENLABS_API_KEY",
+    name: "ElevenLabs",
+    badge: "RECOMMENDED",
+    badgeColor: "text-[#11d97a] border-[#11d97a]/30 bg-[#11d97a]/5",
+    placeholder: "sk_••••••••••••••••",
+    getKeyUrl: "https://elevenlabs.io/app/settings/api-keys",
+    getKeyLabel: "Free at elevenlabs.io →",
+    tagline: "AI voice — makes responses sound human",
+    description:
+      "When you add this, your AI speaks out loud in a voice that sounds genuinely natural — not robotic. You pick the voice (there are dozens of options). Without this, responses stay silent unless you also add an OpenAI key. Free accounts get 10,000 characters per month, which is plenty for daily use.",
+    extras: "elevenlabs_voice",
+  },
+  {
+    id: "OPENAI_API_KEY",
+    name: "OpenAI",
+    badge: "RECOMMENDED",
+    badgeColor: "text-[#11d97a] border-[#11d97a]/30 bg-[#11d97a]/5",
+    placeholder: "sk-••••••••••••••••",
+    getKeyUrl: "https://platform.openai.com/api-keys",
+    getKeyLabel: "Get key at openai.com →",
+    tagline: "Speak to your AI + share images + cloud backup",
+    description:
+      "This unlocks three things at once. First, you can talk out loud instead of typing — your microphone captures your voice and your AI understands it. Second, you can share a photo or screenshot and ask your AI what it sees. Third, if your local AI goes offline, your system automatically falls back to GPT-4 so it never goes dark.",
+  },
+  {
+    id: "ANTHROPIC_API_KEY",
+    name: "Anthropic",
+    badge: "OPTIONAL",
+    badgeColor: "text-[#ffc820] border-[#ffc820]/30 bg-[#ffc820]/5",
+    placeholder: "sk-ant-••••••••••••••••",
+    getKeyUrl: "https://console.anthropic.com/settings/keys",
+    getKeyLabel: "Get key at anthropic.com →",
+    tagline: "Claude as a second AI backup brain",
+    description:
+      "Adds Claude — one of the most capable AI assistants available — as a backup. If your local AI is unavailable and you don't have an OpenAI key (or want a different style of response), your system switches to Claude automatically. This is particularly useful if you travel or work away from your home machine.",
+  },
+];
+
+function IntegrationCard({
+  def,
+  aiName,
+}: {
+  def: IntegrationDef;
+  aiName: string;
+}) {
+  const [value, setValue]         = useState("");
+  const [show, setShow]           = useState(false);
+  const [open, setOpen]           = useState(false);
   const [voiceId, setVoiceId]     = useState(EL_PRESET_VOICES[0].id);
   const [testing, setTesting]     = useState(false);
   const [testOk, setTestOk]       = useState<boolean | null>(null);
-  const [saving, setSaving]       = useState(false);
+  const [saved, setSaved]         = useState(false);
 
-  useEffect(() => { setTimeout(() => setVisible(true), 300); }, []);
+  const hasValue = value.trim().length > 0;
 
-  async function testElevenLabs() {
-    if (!elKey.trim()) return;
+  async function testVoice() {
+    if (!hasValue) return;
     setTesting(true);
     setTestOk(null);
     try {
-      // Save key temporarily so the backend can use it for the test
-      await saveConfig("ELEVENLABS_API_KEY", elKey.trim());
+      await saveConfig("ELEVENLABS_API_KEY", value.trim());
       await saveConfig("ELEVENLABS_VOICE_ID", voiceId);
       await saveConfig("TTS_PROVIDER", "elevenlabs");
-      // Fire a real TTS test
       await apiTts(`Hello. I am ${aiName}. Voice connection confirmed.`);
       setTestOk(true);
+      setSaved(true);
     } catch {
       setTestOk(false);
     } finally {
@@ -585,16 +645,161 @@ function ApiKeysPhase({ aiName, onNext }: { aiName: string; onNext: () => void }
     }
   }
 
-  async function save() {
+  // Expose the current value so the parent can collect it on save
+  // (We use a data attribute trick via a hidden input the parent reads)
+  return (
+    <div className={`border transition-all duration-300 ${hasValue ? "border-primary/40 bg-primary/4" : "border-primary/15 bg-transparent"}`}>
+      {/* Header row */}
+      <div className="flex items-start gap-3 p-4">
+        {/* Left: name + badge */}
+        <div className="flex-1 min-w-0 space-y-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-sm font-bold text-primary tracking-widest uppercase">
+              {def.name}
+            </span>
+            <span className={`font-mono text-[9px] tracking-widest uppercase border px-1.5 py-0.5 ${def.badgeColor}`}>
+              {def.badge}
+            </span>
+            {saved && (
+              <span className="font-mono text-[9px] text-[#11d97a] tracking-widest">✓ SAVED</span>
+            )}
+          </div>
+          <div className="font-mono text-xs text-primary/40 leading-relaxed">{def.tagline}</div>
+        </div>
+        {/* Right: get-key link */}
+        <a
+          href={def.getKeyUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-mono text-[10px] text-primary/35 hover:text-primary/70 underline underline-offset-2 transition-colors shrink-0 mt-0.5"
+        >
+          {def.getKeyLabel}
+        </a>
+      </div>
+
+      {/* Key input */}
+      <div className="px-4 pb-3">
+        <div className="relative">
+          <input
+            type={show ? "text" : "password"}
+            value={value}
+            onChange={(e) => { setValue(e.target.value); setTestOk(null); setSaved(false); }}
+            placeholder={def.placeholder}
+            data-config-key={def.id}
+            data-config-value={value}
+            className="w-full bg-transparent border-b border-primary/25 focus:border-primary
+              text-primary font-mono text-sm tracking-wider outline-none py-2 pr-8
+              placeholder:text-primary/18 transition-colors duration-200"
+          />
+          <button
+            type="button"
+            onClick={() => setShow((s) => !s)}
+            className="absolute right-0 top-1/2 -translate-y-1/2 text-primary/30 hover:text-primary/60 transition-colors"
+          >
+            {show ? (
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ElevenLabs extras: voice picker + test */}
+      {def.extras === "elevenlabs_voice" && hasValue && (
+        <div className="px-4 pb-4 space-y-3 animate-[ob-fade-in_0.3s_ease_both]">
+          {/* Hidden input so handleContinue collects the voice ID too */}
+          <input type="hidden" data-config-key="ELEVENLABS_VOICE_ID" value={voiceId} readOnly />
+          <div className="font-mono text-[10px] text-primary/35 uppercase tracking-widest">Pick a voice</div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {EL_PRESET_VOICES.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => { setVoiceId(v.id); setTestOk(null); }}
+                className={`border px-2.5 py-1.5 text-left transition-all duration-200
+                  ${voiceId === v.id
+                    ? "border-primary bg-primary/10"
+                    : "border-primary/15 hover:border-primary/35"
+                  }`}
+              >
+                <div className={`font-mono text-[11px] font-bold ${voiceId === v.id ? "text-primary" : "text-primary/55"}`}>
+                  {v.name}
+                </div>
+                <div className="font-mono text-[9px] text-primary/30 mt-0.5">{v.desc}</div>
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={testVoice}
+              disabled={testing}
+              className="font-mono text-[10px] tracking-widest uppercase border border-primary/30 px-3 py-1.5
+                text-primary/60 hover:border-primary hover:text-primary transition-all disabled:opacity-40 disabled:cursor-wait"
+            >
+              {testing ? "Testing..." : "▶ Play Test"}
+            </button>
+            {testOk === true  && <span className="font-mono text-[10px] text-[#11d97a] tracking-wider">VOICE OK</span>}
+            {testOk === false && <span className="font-mono text-[10px] text-[#f03248] tracking-wider">CHECK KEY</span>}
+          </div>
+        </div>
+      )}
+
+      {/* Accordion — What does this unlock? */}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-4 py-2.5 border-t border-primary/10
+          font-mono text-[10px] text-primary/35 hover:text-primary/60 transition-colors text-left"
+      >
+        <span className="tracking-widest uppercase">What does this unlock?</span>
+        <span className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`}>▾</span>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 animate-[ob-fade-in_0.2s_ease_both]">
+          <p className="font-mono text-xs text-primary/50 leading-relaxed border-l-2 border-primary/20 pl-3">
+            {def.description}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ApiKeysPhase({ aiName, onNext }: { aiName: string; onNext: () => void }) {
+  const [visible, setVisible] = useState(false);
+  const [saving, setSaving]   = useState(false);
+
+  useEffect(() => { setTimeout(() => setVisible(true), 300); }, []);
+
+  async function handleContinue() {
     setSaving(true);
     try {
-      if (elKey.trim()) {
-        await saveConfig("ELEVENLABS_API_KEY", elKey.trim());
-        await saveConfig("ELEVENLABS_VOICE_ID", voiceId);
-        await saveConfig("TTS_PROVIDER", "elevenlabs");
-      }
-      if (openaiKey.trim()) {
-        await saveConfig("OPENAI_API_KEY", openaiKey.trim());
+      // Collect all filled keys from the hidden data attributes
+      const inputs = document.querySelectorAll<HTMLInputElement>("[data-config-key]");
+      const batch: Record<string, string> = {};
+      inputs.forEach((el) => {
+        const k = el.getAttribute("data-config-key") ?? "";
+        const v = el.value.trim();
+        if (k && v) batch[k] = v;
+      });
+
+      if (Object.keys(batch).length > 0) {
+        // If ElevenLabs key is present, also set provider
+        if (batch["ELEVENLABS_API_KEY"]) {
+          batch["TTS_PROVIDER"] = "elevenlabs";
+        }
+        await fetch("/api/config", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(batch),
+        });
       }
     } finally {
       setSaving(false);
@@ -602,141 +807,38 @@ function ApiKeysPhase({ aiName, onNext }: { aiName: string; onNext: () => void }
     }
   }
 
-  function skip() { onNext(); }
-
-  const hasEl = elKey.trim().length > 0;
-
   return (
     <div className="fixed inset-0 flex flex-col items-center justify-center bg-background z-50 p-6 overflow-y-auto">
       <HudCorners />
       <Scanline />
-      <div className={`w-full max-w-xl space-y-6 py-8 transition-all duration-500
+      <div className={`w-full max-w-xl py-8 space-y-6 transition-all duration-500
         ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}>
 
+        {/* Header */}
         <div className="text-center space-y-2">
-          <div className="text-primary/40 font-mono text-xs tracking-[0.4em] uppercase">Voice Setup</div>
-          <div className="text-primary font-mono text-xl tracking-widest">
-            Set up {aiName}'s voice
-          </div>
-          <div className="text-primary/40 font-mono text-xs leading-relaxed max-w-sm mx-auto">
-            ElevenLabs makes the most realistic AI voices available. Add your key below to give {aiName} a real voice — or skip and use text mode for now.
+          <div className="text-primary/40 font-mono text-xs tracking-[0.4em] uppercase">Setup — Integrations</div>
+          <div className="text-primary font-mono text-xl tracking-widest">Connect your tools</div>
+          <div className="text-primary/35 font-mono text-xs leading-relaxed max-w-sm mx-auto">
+            None of these are required — {aiName} runs fully offline on your local AI.
+            Add any you have to unlock extra features.
           </div>
         </div>
 
-        <ObPanel>
-          <div className="space-y-5">
+        {/* Integration cards */}
+        <div className="space-y-3">
+          {INTEGRATIONS.map((def) => (
+            <IntegrationCard key={def.id} def={def} aiName={aiName} />
+          ))}
+        </div>
 
-            {/* ElevenLabs key */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="font-mono text-xs text-primary/50 tracking-widest uppercase">ElevenLabs API Key</div>
-                <a
-                  href="https://elevenlabs.io/app/settings/api-keys"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-mono text-[10px] text-primary/40 hover:text-primary/70 underline underline-offset-2 transition-colors"
-                >
-                  Get free key →
-                </a>
-              </div>
-              <input
-                type="password"
-                value={elKey}
-                onChange={(e) => { setElKey(e.target.value); setTestOk(null); }}
-                placeholder="sk_..."
-                className="w-full bg-transparent border-b border-primary/30 focus:border-primary
-                  text-primary font-mono text-sm tracking-wider outline-none py-2
-                  placeholder:text-primary/20 transition-colors duration-200"
-              />
-            </div>
-
-            {/* Voice picker */}
-            {hasEl && (
-              <div className="space-y-2 animate-[ob-fade-in_0.3s_ease_both]">
-                <div className="font-mono text-xs text-primary/50 tracking-widest uppercase">Voice</div>
-                <div className="grid grid-cols-3 gap-2">
-                  {EL_PRESET_VOICES.map((v) => (
-                    <button
-                      key={v.id}
-                      onClick={() => { setVoiceId(v.id); setTestOk(null); }}
-                      className={`border px-3 py-2 text-left transition-all duration-200
-                        ${voiceId === v.id
-                          ? "border-primary bg-primary/10 shadow-[0_0_12px_rgba(var(--primary-rgb),0.2)]"
-                          : "border-primary/20 hover:border-primary/40"
-                        }`}
-                    >
-                      <div className={`font-mono text-xs font-bold tracking-wide ${voiceId === v.id ? "text-primary" : "text-primary/60"}`}>
-                        {v.name}
-                      </div>
-                      <div className="font-mono text-[10px] text-primary/35 mt-0.5">{v.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Test button */}
-            {hasEl && (
-              <div className="flex items-center gap-3 animate-[ob-fade-in_0.3s_ease_both]">
-                <button
-                  onClick={testElevenLabs}
-                  disabled={testing}
-                  className="font-mono text-xs tracking-widest uppercase border border-primary/40 px-4 py-2
-                    text-primary/70 hover:border-primary hover:text-primary transition-all duration-200
-                    disabled:opacity-40 disabled:cursor-wait"
-                >
-                  {testing ? "Testing..." : "▶  Play Test"}
-                </button>
-                {testOk === true && (
-                  <span className="font-mono text-xs text-green-400 tracking-wider">[ VOICE OK ]</span>
-                )}
-                {testOk === false && (
-                  <span className="font-mono text-xs text-red-400 tracking-wider">[ CHECK KEY ]</span>
-                )}
-              </div>
-            )}
-
-            {/* OpenAI STT divider */}
-            <div className="border-t border-primary/10 pt-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="font-mono text-xs text-primary/50 tracking-widest uppercase">
-                  OpenAI Key <span className="text-primary/25 normal-case">(for speech-to-text)</span>
-                </div>
-                <a
-                  href="https://platform.openai.com/api-keys"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-mono text-[10px] text-primary/40 hover:text-primary/70 underline underline-offset-2 transition-colors"
-                >
-                  Get key →
-                </a>
-              </div>
-              <input
-                type="password"
-                value={openaiKey}
-                onChange={(e) => setOpenaiKey(e.target.value)}
-                placeholder="sk-..."
-                className="w-full bg-transparent border-b border-primary/30 focus:border-primary
-                  text-primary font-mono text-sm tracking-wider outline-none py-2
-                  placeholder:text-primary/20 transition-colors duration-200"
-              />
-              <div className="font-mono text-[10px] text-primary/25 leading-relaxed">
-                Needed only to understand your voice. ElevenLabs handles {aiName}'s speech.
-              </div>
-            </div>
-          </div>
-        </ObPanel>
-
-        <div className="flex flex-col items-center gap-3">
-          <ObButton onClick={save} disabled={saving}>
-            {saving ? "Saving..." : hasEl ? "Save & Continue →" : "Continue →"}
+        {/* CTA */}
+        <div className="flex flex-col items-center gap-3 pt-2">
+          <ObButton onClick={handleContinue} disabled={saving}>
+            {saving ? "Saving..." : "Continue →"}
           </ObButton>
-          <button
-            onClick={skip}
-            className="font-mono text-xs text-primary/30 hover:text-primary/60 transition-colors underline underline-offset-4"
-          >
-            Skip for now — I'll use text mode
-          </button>
+          <div className="font-mono text-[10px] text-primary/25 tracking-wider">
+            You can add or change these any time in Settings → API Keys
+          </div>
         </div>
       </div>
     </div>
