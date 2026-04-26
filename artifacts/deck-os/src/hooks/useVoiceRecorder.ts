@@ -3,9 +3,9 @@ import { useState, useRef, useCallback } from "react";
 export type RecorderState = "idle" | "listening";
 
 const PREFERRED_MIME =
-  MediaRecorder.isTypeSupported?.("audio/webm;codecs=opus")
+  typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported?.("audio/webm;codecs=opus")
     ? "audio/webm;codecs=opus"
-    : MediaRecorder.isTypeSupported?.("audio/webm")
+    : typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported?.("audio/webm")
     ? "audio/webm"
     : "";
 
