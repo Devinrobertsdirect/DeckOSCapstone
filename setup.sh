@@ -142,8 +142,8 @@ log "Running database migrations..."
 if pnpm --filter @workspace/db run push 2>&1; then
   ok "Database schema up to date"
 else
-  warn "Migration failed. Check DATABASE_URL in .env and ensure Postgres is running."
-  warn "Then re-run:  source .env && pnpm --filter @workspace/db run push"
+  fail "Migration failed. Check DATABASE_URL in .env and ensure Postgres is running.
+       Then fix the issue and re-run: source .env && pnpm --filter @workspace/db run push"
 fi
 
 # ─────────────────────────────────────

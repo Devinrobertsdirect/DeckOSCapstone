@@ -221,6 +221,7 @@ export default function CognitiveModel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importStatus, setImportStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const [importMsg, setImportMsg] = useState("");
+  const [importReplace, setImportReplace] = useState(false);
 
   async function handleExport() {
     const res = await fetch(`${API_BASE}/ucm/export`);
@@ -248,7 +249,7 @@ export default function CognitiveModel() {
       const res = await fetch(`${API_BASE}/ucm/import`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(json),
+        body: JSON.stringify({ ...json, replace: importReplace }),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = (await res.json()) as { restored: string[] };
@@ -370,6 +371,20 @@ export default function CognitiveModel() {
             }
             {importStatus === "ok" ? "IMPORTED" : importStatus === "error" ? "FAILED" : "IMPORT"}
           </button>
+
+          {/* Replace toggle — replaces existing goals/memories/feedback on import */}
+          <label
+            className="flex items-center gap-1 font-mono text-[10px] text-primary/40 cursor-pointer select-none"
+            title="When enabled, existing goals, memories and feedback signals are cleared before restoring"
+          >
+            <input
+              type="checkbox"
+              checked={importReplace}
+              onChange={(e) => setImportReplace(e.target.checked)}
+              className="accent-primary w-3 h-3"
+            />
+            REPLACE
+          </label>
 
           <button
             onClick={() => resetAll.mutate()}
