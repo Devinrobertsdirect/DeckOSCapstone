@@ -15,6 +15,7 @@ import {
   MODEL_CONFIG,
 } from "../lib/inference.js";
 import { bus } from "../lib/bus.js";
+import { getConfig } from "../lib/app-config.js";
 
 const router = Router();
 
@@ -25,7 +26,14 @@ const routerState: { mode: IntelligenceMode } = {
 };
 
 async function detectCloud(): Promise<boolean> {
-  return !!(process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY);
+  const [oaiDb, anthDb] = await Promise.all([
+    getConfig("OPENAI_API_KEY").catch(() => null),
+    getConfig("ANTHROPIC_API_KEY").catch(() => null),
+  ]);
+  return !!(
+    oaiDb || process.env.OPENAI_API_KEY ||
+    anthDb || process.env.ANTHROPIC_API_KEY
+  );
 }
 
 refreshOllamaDetection().catch(() => {

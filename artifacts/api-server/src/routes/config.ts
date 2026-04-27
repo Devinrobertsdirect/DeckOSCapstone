@@ -87,6 +87,11 @@ router.put("/config", async (req, res) => {
   const updates = parsed.data;
   for (const [key, value] of Object.entries(updates)) {
     await setConfig(key, value);
+    // Mirror to process.env so live code picks it up without restart
+    process.env[key] = value;
+    if (key === "OPENAI_API_KEY") {
+      process.env["AI_INTEGRATIONS_OPENAI_API_KEY"] = value;
+    }
   }
 
   invalidateConfigCache();
