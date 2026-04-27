@@ -105,7 +105,7 @@ Write-Info "Downloading all the code libraries Deck OS needs to run."
 Write-Info "This only happens on the first run and may take 1-2 minutes."
 Write-Info "Please wait -- do not close this window..."
 Write-Host ""
-& pnpm install --ignore-scripts
+& pnpm install --ignore-scripts --force
 if ($LASTEXITCODE -ne 0) {
   Write-Err "Dependency installation failed."
   Write-Host "  Check your internet connection and try again." -ForegroundColor Yellow
