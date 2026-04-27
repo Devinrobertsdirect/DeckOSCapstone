@@ -441,7 +441,7 @@ export default function App() {
     }
 
     setVoiceState("idle");
-  }, [voiceState, recorderState, stopRecording, speak]);
+  }, [voiceState, recorderState, stopRecording, speak, persona]);
 
   const onVoiceCancel = useCallback(() => {
     if (!voicePressedRef.current) return;
