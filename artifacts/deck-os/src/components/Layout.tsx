@@ -14,7 +14,7 @@ import {
   Activity, HardDrive, Cpu as Microchip, Network, Settings,
   TerminalSquare, AlertTriangle, CheckCircle2,
   ChevronRight, Layers, Eye, Minimize2, Film, List,
-  Camera, CameraOff, Shield, Zap, Map, MapPin, Bot, Clock, Newspaper, Package, GitBranch,
+  Camera, CameraOff, Shield, Zap, Map, MapPin, Bot, Clock, Newspaper, Package, GitBranch, Scan,
 } from "lucide-react";
 import { useCamera } from "@/hooks/useCamera";
 import { useHealthCheck, getHealthCheckQueryKey } from "@workspace/api-client-react";
@@ -107,7 +107,7 @@ function eventToAction(type: string, payload: Record<string, unknown>): ActionFl
 const NAV_PAGE_ORDER = [
   "/", "/ai", "/ai/personality", "/plugins", "/plugins/store",
   "/memory", "/devices", "/commands", "/routines",
-  "/briefings", "/timeline", "/settings", "/map",
+  "/briefings", "/lie-detector", "/timeline", "/settings", "/map",
 ] as const;
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -402,9 +402,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
         { href: "/devices", icon: Network,         label: "DEVICES"   },
         { href: "/commands",  icon: TerminalSquare,  label: "CONSOLE"   },
         { href: "/routines",   icon: Clock,           label: "ROUTINES"  },
-        { href: "/briefings",  icon: Newspaper,       label: "BRIEFINGS" },
-        { href: "/timeline",   icon: GitBranch,       label: "TIMELINE"  },
-        { href: "/settings",   icon: Settings,        label: "SETTINGS"  },
+        { href: "/briefings",      icon: Newspaper,   label: "BRIEFINGS" },
+        { href: "/lie-detector",   icon: Scan,        label: "POLYGRAPH" },
+        { href: "/timeline",       icon: GitBranch,   label: "TIMELINE"  },
+        { href: "/settings",       icon: Settings,    label: "SETTINGS"  },
       ],
     },
     {

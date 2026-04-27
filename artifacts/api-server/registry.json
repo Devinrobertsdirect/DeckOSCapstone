@@ -74,6 +74,20 @@
       "readme": "Connects to your Home Assistant instance via long-lived access tokens. Syncs entity state to Deck OS device registry and forwards commands back. Requires HA_URL and HA_TOKEN environment variables."
     },
     {
+      "id": "lie_detector",
+      "name": "Lie Detector — Polygraph Suite",
+      "author": "deck-os/official",
+      "description": "Psychophysiological polygraph using Stark bioelectric sensors (EMG/EKG/EEG). Records stress responses to questions, scores deception probability, and delivers an AI-interpreted analysis report read back by JARVIS.",
+      "version": "1.0.0",
+      "category": "biometric",
+      "permissions": ["stark_read", "ai_inference", "memory_write"],
+      "tags": ["official", "biometric", "stark", "polygraph", "stress", "ai"],
+      "iconUrl": null,
+      "entrypointUrl": null,
+      "installCount": 0,
+      "readme": "Official Deck OS polygraph plugin. Requires a Stark-compatible bioelectric sensor (Upside Down Labs BioAmp) connected via Web Serial. Runs a 30-second baseline calibration, then records 10-second physiological windows per question. Stress Z-scores are computed from EMG amplitude and EKG BPM deviation. After the session JARVIS delivers a read-back analysis report via the AI router."
+    },
+    {
       "id": "daily_briefing",
       "name": "Daily Briefing",
       "author": "community/morning_owl",

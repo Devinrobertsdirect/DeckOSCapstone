@@ -25,6 +25,7 @@ import RoutinesPage from "@/pages/RoutinesPage";
 import BriefingsPage from "@/pages/BriefingsPage";
 import SettingsPage from "@/pages/Settings";
 import TimelinePage from "@/pages/TimelinePage";
+import LieDetector from "@/pages/LieDetector";
 
 applyColor(getStoredColor());
 
@@ -54,6 +55,7 @@ function Router() {
         <Route path="/briefings" component={BriefingsPage} />
         <Route path="/settings" component={SettingsPage} />
         <Route path="/timeline" component={TimelinePage} />
+        <Route path="/lie-detector" component={LieDetector} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
