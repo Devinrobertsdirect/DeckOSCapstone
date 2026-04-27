@@ -439,9 +439,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
       {/* HEADER */}
       <header className="h-14 border-b border-primary/30 flex items-center px-5 justify-between bg-card/80 backdrop-blur shrink-0 relative z-40">
         <div className="flex items-center gap-3">
-          <div className="w-7 h-7 rounded-full border-2 border-primary flex items-center justify-center pulse-glow">
-            <Activity className="w-4 h-4 text-primary" />
-          </div>
+          <img
+            src={`${import.meta.env.BASE_URL}logo.png`}
+            alt="Deck OS"
+            className="w-8 h-8 object-contain pulse-glow"
+          />
           <div>
             <h1 className="text-xl font-bold text-primary tracking-widest uppercase m-0 leading-none">Deck OS</h1>
             <p className="text-xs text-primary/50 font-mono">SYS.VER.9.4.2 // {aiName}</p>

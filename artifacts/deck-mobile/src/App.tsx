@@ -294,6 +294,12 @@ function PairingGate({ onPaired }: { onPaired: () => void }) {
 export default function App() {
   const [paired, setPaired] = useState(() => !!localStorage.getItem(PAIRING_KEY));
 
+  const handleUnpair = () => {
+    localStorage.removeItem(PAIRING_KEY);
+    localStorage.removeItem(SESSION_ID_KEY);
+    setPaired(false);
+  };
+
   if (!paired) {
     return (
       <PairingGate
@@ -305,10 +311,10 @@ export default function App() {
     );
   }
 
-  return <PairedApp />;
+  return <PairedApp onUnpair={handleUnpair} />;
 }
 
-function PairedApp() {
+function PairedApp({ onUnpair }: { onUnpair: () => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -323,6 +329,21 @@ function PairedApp() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const voicePressedRef = useRef(false);
+
+  /* Silent startup re-validation — if the desktop reset its code, send user back to pairing gate */
+  useEffect(() => {
+    const code = localStorage.getItem(PAIRING_KEY);
+    if (!code) { onUnpair(); return; }
+    fetch(`${API_BASE}/pairing/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    })
+      .then((r) => r.json())
+      .then(({ valid }: { valid: boolean }) => { if (!valid) onUnpair(); })
+      .catch(() => { /* network error — assume still valid, carry on */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { recorderState, micDenied, supported: micSupported, startRecording, stopRecording, cancelRecording } = useVoiceRecorder();
   const { speak } = useAudioPlayback();
