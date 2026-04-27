@@ -67,14 +67,16 @@ export function StartScreen({ onStart }: Props) {
       const id = setTimeout(() => setTypedTitle(TITLE.slice(0, typedTitle.length + 1)), 75);
       return () => clearTimeout(id);
     }
+    return undefined;
   }, [typedTitle]);
 
   useEffect(() => {
-    if (typedTitle.length < TITLE.length) return;
+    if (typedTitle.length < TITLE.length) return undefined;
     if (typedSub.length < SUBTITLE.length) {
       const id = setTimeout(() => setTypedSub(SUBTITLE.slice(0, typedSub.length + 1)), 28);
       return () => clearTimeout(id);
     }
+    return undefined;
   }, [typedTitle, typedSub]);
 
   useEffect(() => {

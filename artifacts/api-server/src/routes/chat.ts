@@ -10,6 +10,7 @@ import { buildPersonalizedPrompt, extractSelfUpdate } from "../lib/system-prompt
 import { aiPersonaTable } from "@workspace/db";
 import { eq as drEq } from "drizzle-orm";
 import { checkEasterEgg } from "../lib/easter-eggs.js";
+import { getAceraContext } from "../lib/bootstrap.js";
 
 const router = Router();
 
@@ -84,7 +85,11 @@ router.post("/chat", async (req, res) => {
 
   const eggResponse = checkEasterEgg(message, personaCtx);
 
-  const systemPrompt = await buildPersonalizedPrompt(recentMemory.map((m) => m.content), channel);
+  const baseSystemPrompt = await buildPersonalizedPrompt(recentMemory.map((m) => m.content), channel);
+  const aceraCtx = getAceraContext();
+  const systemPrompt = aceraCtx
+    ? `${baseSystemPrompt}\n\n--- ACERA SCENE CONTEXT ---\n${aceraCtx}\n---`
+    : baseSystemPrompt;
 
   let response: string;
   let modelUsed: string;

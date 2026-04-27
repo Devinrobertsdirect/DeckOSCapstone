@@ -6,7 +6,7 @@
 
 let _audioCtx: AudioContext | null = null;
 let _analyser: AnalyserNode | null = null;
-let _dataArr: Uint8Array | null = null;
+let _dataArr: Uint8Array<ArrayBuffer> | null = null;
 
 const _attached = new WeakSet<HTMLAudioElement>();
 const _sources = new WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>();

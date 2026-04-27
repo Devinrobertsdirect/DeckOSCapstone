@@ -306,7 +306,7 @@ function RoutineRow({ routine, onToggle, onDelete, onTrigger, onEdit }: {
               {routine.triggerType === "cron" ? "CRON" : "EVENT"}
             </span>
             {routine.notifyOnComplete && (
-              <Bell className="w-3 h-3 shrink-0 text-primary/40" title="Notifies on completion" />
+              <Bell className="w-3 h-3 shrink-0 text-primary/40" aria-label="Notifies on completion" />
             )}
           </div>
           <div className="flex items-center gap-3 mt-0.5">

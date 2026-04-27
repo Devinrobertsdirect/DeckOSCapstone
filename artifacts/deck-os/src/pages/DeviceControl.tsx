@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
 import { useWsEvents } from "@/contexts/WebSocketContext";
-import { useListDevices, useGetDevice, useControlDevice } from "@workspace/api-client-react";
+import { useListDevices, useGetDevice, useControlDevice, getListDevicesQueryKey, getGetDeviceQueryKey } from "@workspace/api-client-react";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid,
 } from "recharts";
@@ -334,12 +334,13 @@ export default function DeviceControl() {
   const profileMap = Object.fromEntries(profiles.map(p => [p.deviceId, p]));
 
   const { data: restData, isLoading, dataUpdatedAt, refetch } = useListDevices({
-    query: { refetchInterval: 5_000 },
+    query: { queryKey: getListDevicesQueryKey(), refetchInterval: 5_000 },
   });
   const restDevices: DeviceShape[] = restData?.devices ?? [];
 
   const { data: selectedRestDevice } = useGetDevice(selectedDevice ?? "", {
     query: {
+      queryKey: getGetDeviceQueryKey(selectedDevice ?? ""),
       enabled: !!selectedDevice,
       refetchInterval: 3_000,
     },
