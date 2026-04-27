@@ -65,9 +65,61 @@ const COLOR_DESC: Record<ColorScheme, string> = {
 export function applyColor(c: ColorScheme) {
   document.documentElement.setAttribute("data-color", c);
   localStorage.setItem("deckos_color", c);
+  localStorage.removeItem("deckos_color_hex");
+  const root = document.documentElement;
+  for (const prop of ["--primary", "--primary-rgb", "--foreground", "--border",
+    "--card-foreground", "--card-border", "--popover-foreground", "--popover-border",
+    "--muted-foreground", "--accent", "--accent-foreground", "--ring", "--input"]) {
+    root.style.removeProperty(prop);
+  }
 }
 export function getStoredColor(): ColorScheme {
   return (localStorage.getItem("deckos_color") as ColorScheme) ?? "blue";
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace("#", "");
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  const r1 = r / 255, g1 = g / 255, b1 = b / 255;
+  const max = Math.max(r1, g1, b1), min = Math.min(r1, g1, b1);
+  const delta = max - min;
+  const l = (max + min) / 2;
+  let h = 0, s = 0;
+  if (delta !== 0) {
+    s = delta / (1 - Math.abs(2 * l - 1));
+    if (max === r1)      h = 60 * (((g1 - b1) / delta) % 6);
+    else if (max === g1) h = 60 * ((b1 - r1) / delta + 2);
+    else                 h = 60 * ((r1 - g1) / delta + 4);
+    if (h < 0) h += 360;
+  }
+  return [h, s * 100, l * 100];
+}
+
+export function applyHexColor(hex: string): void {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return;
+  const [r, g, b] = hexToRgb(hex);
+  const [h, s, l] = rgbToHsl(r, g, b);
+  const H = Math.round(h), S = Math.round(s), L = Math.round(l);
+  document.documentElement.removeAttribute("data-color");
+  const root = document.documentElement;
+  root.style.setProperty("--primary",           `${H} ${S}% ${L}%`);
+  root.style.setProperty("--primary-rgb",        `${r}, ${g}, ${b}`);
+  root.style.setProperty("--foreground",         `${H} 70% 80%`);
+  root.style.setProperty("--border",             `${H} 60% 28%`);
+  root.style.setProperty("--card-foreground",    `${H} 70% 80%`);
+  root.style.setProperty("--card-border",        `${H} 60% 28%`);
+  root.style.setProperty("--popover-foreground", `${H} 70% 80%`);
+  root.style.setProperty("--popover-border",     `${H} 60% 28%`);
+  root.style.setProperty("--muted-foreground",   `${H} 40% 68%`);
+  root.style.setProperty("--accent",             `${H} 80% 18%`);
+  root.style.setProperty("--accent-foreground",  `${H} 80% 90%`);
+  root.style.setProperty("--ring",               `${H} ${S}% ${L}%`);
+  root.style.setProperty("--input",              `${H} 60% 28%`);
+  localStorage.setItem("deckos_color_hex", hex);
+  localStorage.removeItem("deckos_color");
 }
 
 // ─────────────────────────────────────────────

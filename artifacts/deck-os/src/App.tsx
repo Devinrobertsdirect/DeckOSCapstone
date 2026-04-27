@@ -6,7 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Layout } from "@/components/Layout";
 import { VisualModeProvider } from "@/contexts/VisualMode";
 import { WebSocketProvider } from "@/contexts/WebSocketContext";
-import { Onboarding, isInitialized, applyColor, getStoredColor } from "@/components/Onboarding";
+import { Onboarding, isInitialized, applyColor, applyHexColor, getStoredColor } from "@/components/Onboarding";
 import { StartScreen } from "@/components/StartScreen";
 import { CinematicOnboarding, isCinematicDone } from "@/components/CinematicOnboarding";
 import { SetupGuideModal } from "@/components/SetupGuideModal";
@@ -27,7 +27,12 @@ import SettingsPage from "@/pages/Settings";
 import TimelinePage from "@/pages/TimelinePage";
 import LieDetector from "@/pages/LieDetector";
 
-applyColor(getStoredColor());
+const _storedHex = localStorage.getItem("deckos_color_hex");
+if (_storedHex) {
+  applyHexColor(_storedHex);
+} else {
+  applyColor(getStoredColor());
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {

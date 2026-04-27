@@ -11,7 +11,7 @@ import { AIFace, saveFaceStyle, useFaceStyle } from "@/components/AIFace";
 import {
   FACE_OPTIONS, QUIZ_QUESTIONS, VOICE_OPTIONS, VOICE_KEY, AI_NAME_KEY,
 } from "@/components/CinematicOnboarding";
-import { getStoredConfig } from "@/components/Onboarding";
+import { getStoredConfig, applyColor, applyHexColor, type ColorScheme } from "@/components/Onboarding";
 import { AI_NAME_UPDATED_EVENT } from "@/hooks/useAiName";
 import { USER_NAME_UPDATED_EVENT } from "@/hooks/useUserName";
 import type { FaceStyle } from "@/components/AIFace";
@@ -49,6 +49,13 @@ const PRESET_COLORS = [
   { label: "ROSE",     value: "#f472b6" },
   { label: "WHITE",    value: "#e2e8f0" },
 ];
+
+const HEX_TO_SCHEME: Record<string, ColorScheme> = {
+  "#3f84f3": "blue",
+  "#11d97a": "green",
+  "#ffc820": "yellow",
+  "#f03248": "red",
+};
 
 const GENDERS = [
   { value: "neutral",   label: "Neutral",     desc: "No gender pronoun preference" },
@@ -1020,6 +1027,14 @@ export default function AiPersonality() {
         localStorage.setItem(VOICE_KEY, form.voice);
         window.dispatchEvent(new CustomEvent(VOICE_CHANGED_EVENT, { detail: { voice: form.voice } }));
       }
+      if (form.textColor) {
+        const scheme = HEX_TO_SCHEME[form.textColor.toLowerCase()];
+        if (scheme) {
+          applyColor(scheme);
+        } else {
+          applyHexColor(form.textColor);
+        }
+      }
     },
   });
 
@@ -1347,7 +1362,7 @@ export default function AiPersonality() {
               </div>
             </div>
             <div className="mt-2 text-primary/20 font-mono text-[9px] text-center">
-              Live preview — save to apply globally
+              Live preview — applied instantly on save
             </div>
           </div>
 
