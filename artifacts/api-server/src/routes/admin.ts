@@ -4,6 +4,25 @@ import { EventEmitter } from "events";
 import path from "path";
 import fs from "fs";
 import os from "os";
+import { db } from "@workspace/db";
+import {
+  memoryEntriesTable,
+  chatMessagesTable,
+  voiceIdentityTable,
+  userCognitiveModelTable,
+  ucmSettingsTable,
+  goalsTable,
+  goalPlansTable,
+  feedbackSignalsTable,
+  behaviorProfileTable,
+  predictionsTable,
+  briefingsTable,
+  notificationsTable,
+  appConfigTable,
+  aiPersonaTable,
+} from "@workspace/db";
+import { invalidateConfigCache } from "../lib/app-config.js";
+import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
@@ -195,6 +214,73 @@ router.get("/admin/update/stream", requireAdminSecret, (req, res) => {
     jobEmitter.off("log", onLog);
     jobEmitter.off("done", onDone);
   });
+});
+
+// ── POST /api/admin/reset-profile ─────────────────────────────────────────
+// Purges all learned AI profile data: memories, chat history, persona,
+// goals, behavior model, cognitive model, predictions, briefings.
+// Does NOT touch: app_config, routines, devices, or secrets.
+
+router.post("/admin/reset-profile", async (_req, res) => {
+  try {
+    await db.delete(memoryEntriesTable);
+    await db.delete(chatMessagesTable);
+    await db.delete(voiceIdentityTable);
+    await db.delete(goalsTable);
+    await db.delete(goalPlansTable);
+    await db.delete(feedbackSignalsTable);
+    await db.delete(behaviorProfileTable);
+    await db.delete(predictionsTable);
+    await db.delete(briefingsTable);
+    await db.delete(notificationsTable);
+    await db.delete(userCognitiveModelTable);
+    await db.delete(ucmSettingsTable);
+    await db.delete(aiPersonaTable);
+
+    logger.info("ADMIN: Command profile purged — all AI memory, history, persona, goals cleared");
+    res.json({
+      ok: true,
+      cleared: [
+        "memory_entries",
+        "chat_messages",
+        "voice_identity",
+        "ai_persona",
+        "goals + goal_plans",
+        "behavior_profile",
+        "feedback_signals",
+        "predictions",
+        "briefings",
+        "notifications",
+        "user_cognitive_model",
+        "ucm_settings",
+      ],
+      preserved: ["app_config (settings)", "routines", "devices", "secrets"],
+    });
+  } catch (err) {
+    logger.error({ err }, "ADMIN: reset-profile failed");
+    res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
+// ── POST /api/admin/reset-settings ────────────────────────────────────────
+// Clears all app_config rows (model names, Ollama host, API URLs, etc.).
+// API keys stored as env var secrets are NOT affected.
+// Persona, memory, routines, and devices are NOT affected.
+
+router.post("/admin/reset-settings", async (_req, res) => {
+  try {
+    await db.delete(appConfigTable);
+    invalidateConfigCache();
+    logger.info("ADMIN: App config reset to factory defaults");
+    res.json({
+      ok: true,
+      cleared: ["app_config (model names, Ollama host, API URLs)"],
+      preserved: ["secrets (env vars)", "memory", "persona", "routines", "devices"],
+    });
+  } catch (err) {
+    logger.error({ err }, "ADMIN: reset-settings failed");
+    res.status(500).json({ ok: false, error: String(err) });
+  }
 });
 
 export default router;

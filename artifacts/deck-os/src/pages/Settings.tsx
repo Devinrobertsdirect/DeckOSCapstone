@@ -4,7 +4,7 @@ import {
   XCircle, Loader2, Eye, EyeOff, Save, AlertTriangle, RotateCcw, Zap,
   Volume2, Mic, Globe, HardDrive, ShieldCheck, RefreshCw, Database, Server,
   Info, Terminal, Download, Bell, BellOff, Rocket, SlidersHorizontal, Hand,
-  Activity, Brain, Plug, Unplug, Heart,
+  Activity, Brain, Plug, Unplug, Heart, Trash2, ShieldAlert, RotateCw,
 } from "lucide-react";
 import { ACERA_KEY } from "@/hooks/useAceraConnect";
 import { STARK_KEY } from "@/hooks/useStarkConnect";
@@ -19,7 +19,7 @@ type FeatureMap = {
   store: FeatureInfo;
 };
 
-type Tab = "connection" | "apikeys" | "models" | "system" | "about" | "vision" | "stark";
+type Tab = "connection" | "apikeys" | "models" | "system" | "about" | "vision" | "stark" | "admin";
 
 type HealthStatus = {
   ok: boolean | null;
@@ -127,6 +127,53 @@ export default function Settings() {
   const [updateLog, setUpdateLog]           = useState<{ line: string; stderr?: boolean }[]>([]);
   const [updateDone, setUpdateDone]         = useState<{ success: boolean; version?: string; error?: string } | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
+
+  type ResetPhase = "idle" | "confirming" | "loading" | "done" | "error";
+  const [resetSettingsPhase, setResetSettingsPhase] = useState<ResetPhase>("idle");
+  const [resetSettingsMsg, setResetSettingsMsg]     = useState("");
+
+  type PurgePhase = "idle" | "armed" | "typing" | "loading" | "done" | "error";
+  const PURGE_PHRASE = "PURGE PROFILE";
+  const [purgePhase, setPurgePhase]         = useState<PurgePhase>("idle");
+  const [purgeInput, setPurgeInput]         = useState("");
+  const [purgeMsg, setPurgeMsg]             = useState("");
+
+  const doResetSettings = async () => {
+    setResetSettingsPhase("loading");
+    try {
+      const r = await fetch("/api/admin/reset-settings", { method: "POST" });
+      const data = await r.json() as { ok: boolean; error?: string };
+      if (data.ok) {
+        setResetSettingsPhase("done");
+        setResetSettingsMsg("Settings cleared. Factory defaults will apply on next startup.");
+      } else {
+        setResetSettingsPhase("error");
+        setResetSettingsMsg(data.error ?? "Unknown error");
+      }
+    } catch (err) {
+      setResetSettingsPhase("error");
+      setResetSettingsMsg(String(err));
+    }
+  };
+
+  const doPurgeProfile = async () => {
+    if (purgeInput.trim().toUpperCase() !== PURGE_PHRASE) return;
+    setPurgePhase("loading");
+    try {
+      const r = await fetch("/api/admin/reset-profile", { method: "POST" });
+      const data = await r.json() as { ok: boolean; error?: string };
+      if (data.ok) {
+        setPurgePhase("done");
+        setPurgeMsg("Command profile purged. JARVIS memory, history, and persona have been wiped.");
+      } else {
+        setPurgePhase("error");
+        setPurgeMsg(data.error ?? "Unknown error");
+      }
+    } catch (err) {
+      setPurgePhase("error");
+      setPurgeMsg(String(err));
+    }
+  };
 
   const fetchHealth = useCallback(async () => {
     setHealthChecking(true);
@@ -536,6 +583,7 @@ export default function Settings() {
     { id: "vision",     label: "ACERA VISION",  icon: <Hand className="w-3 h-3" /> },
     { id: "stark",      label: "STARK CONNECT", icon: <Activity className="w-3 h-3" /> },
     { id: "about",      label: "ABOUT & UPDATE",icon: <Info className="w-3 h-3" /> },
+    { id: "admin",      label: "ADMIN",         icon: <ShieldAlert className="w-3 h-3 text-red-400" /> },
   ];
 
   return (
@@ -1893,6 +1941,215 @@ export default function Settings() {
           </div>
         </div>
       )}
+      {/* ── ADMIN tab ──────────────────────────────────────────────────── */}
+      {tab === "admin" && (
+        <div className="flex flex-col gap-6 font-mono">
+          <div className="flex items-center gap-2 text-xs text-red-400/80 uppercase tracking-widest border border-red-500/20 bg-red-500/5 px-3 py-2">
+            <ShieldAlert className="w-3.5 h-3.5 text-red-400 shrink-0" />
+            <span>SYSTEM.ADMIN // DANGER ZONE — IRREVERSIBLE OPERATIONS</span>
+          </div>
+
+          {/* ── RESET SETTINGS ─────────────────────────────────── */}
+          <div className="border border-primary/20 bg-primary/5 p-4 flex flex-col gap-4">
+            <div className="flex items-center gap-2 text-xs text-primary/80 uppercase tracking-widest">
+              <RotateCw className="w-3.5 h-3.5 text-primary/60" />
+              <span>RESET SETTINGS TO DEFAULTS</span>
+            </div>
+
+            <p className="text-xs text-primary/55 leading-relaxed">
+              Clears all saved configuration from the database — model names, Ollama host, API URLs, and other settings.
+              Secrets stored as environment variables are <span className="text-primary/80">not</span> affected.
+              Memory, persona, routines, and devices are <span className="text-primary/80">not</span> affected.
+            </p>
+
+            <div className="text-[10px] text-primary/40 border border-primary/10 bg-black/20 px-3 py-2 leading-5">
+              CLEARS: app_config (model names, Ollama host, API URLs)<br />
+              PRESERVES: secrets · memory · persona · routines · devices
+            </div>
+
+            {resetSettingsPhase === "idle" && (
+              <button
+                onClick={() => setResetSettingsPhase("confirming")}
+                className="self-start flex items-center gap-2 px-4 py-2 text-xs border border-amber-500/40 text-amber-400/80 hover:bg-amber-500/10 hover:border-amber-400/60 transition-colors"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                RESET SETTINGS TO DEFAULTS
+              </button>
+            )}
+
+            {resetSettingsPhase === "confirming" && (
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-amber-400/80">Confirm reset all settings?</span>
+                <button
+                  onClick={doResetSettings}
+                  className="px-3 py-1.5 text-xs border border-red-500/50 text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  YES, RESET
+                </button>
+                <button
+                  onClick={() => setResetSettingsPhase("idle")}
+                  className="px-3 py-1.5 text-xs border border-primary/20 text-primary/50 hover:bg-primary/10 transition-colors"
+                >
+                  CANCEL
+                </button>
+              </div>
+            )}
+
+            {resetSettingsPhase === "loading" && (
+              <div className="flex items-center gap-2 text-xs text-primary/50">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                CLEARING CONFIG...
+              </div>
+            )}
+
+            {resetSettingsPhase === "done" && (
+              <div className="flex items-center gap-2 text-xs text-green-400/80">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                {resetSettingsMsg}
+              </div>
+            )}
+
+            {resetSettingsPhase === "error" && (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-xs text-red-400">
+                  <XCircle className="w-3.5 h-3.5" />
+                  RESET FAILED: {resetSettingsMsg}
+                </div>
+                <button
+                  onClick={() => setResetSettingsPhase("idle")}
+                  className="self-start text-xs text-primary/50 hover:text-primary/80 transition-colors"
+                >
+                  ← TRY AGAIN
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* ── PURGE COMMAND PROFILE ───────────────────────────── */}
+          <div className="border border-red-500/30 bg-red-500/5 p-4 flex flex-col gap-4">
+            <div className="flex items-center gap-2 text-xs text-red-400/90 uppercase tracking-widest">
+              <Trash2 className="w-3.5 h-3.5 text-red-400" />
+              <span>PURGE COMMAND PROFILE</span>
+              <span className="ml-auto text-[10px] text-red-500/60 border border-red-500/30 px-1.5 py-0.5">IRREVERSIBLE</span>
+            </div>
+
+            <p className="text-xs text-primary/55 leading-relaxed">
+              Permanently wipes all learned AI data — memories, conversation history, persona, goals, behavior model,
+              cognitive model, predictions, and briefings. JARVIS will reintroduce itself on next interaction.
+              Routines, devices, settings, and secrets are <span className="text-primary/80">not</span> affected.
+            </p>
+
+            <div className="text-[10px] text-red-400/40 border border-red-500/15 bg-black/20 px-3 py-2 leading-5">
+              CLEARS: memory · chat history · ai_persona · voice_identity · goals · behavior_profile ·<br />
+              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;feedback_signals · predictions · briefings · user_cognitive_model · ucm_settings<br />
+              PRESERVES: app_config (settings) · routines · devices · secrets
+            </div>
+
+            {purgePhase === "idle" && (
+              <button
+                onClick={() => setPurgePhase("armed")}
+                className="self-start flex items-center gap-2 px-4 py-2 text-xs border border-red-500/40 text-red-400/80 hover:bg-red-500/10 hover:border-red-400/60 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                INITIATE PROFILE PURGE
+              </button>
+            )}
+
+            {purgePhase === "armed" && (
+              <div className="flex flex-col gap-3">
+                <div className="text-xs text-red-400/80 border border-red-500/20 bg-red-500/10 px-3 py-2">
+                  ⚠ WARNING: This will permanently delete all AI memory and learned behavior.
+                  This action cannot be undone.
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => { setPurgePhase("typing"); setPurgeInput(""); }}
+                    className="px-3 py-1.5 text-xs border border-red-500/50 text-red-400 hover:bg-red-500/10 transition-colors"
+                  >
+                    I UNDERSTAND — CONTINUE
+                  </button>
+                  <button
+                    onClick={() => setPurgePhase("idle")}
+                    className="px-3 py-1.5 text-xs border border-primary/20 text-primary/50 hover:bg-primary/10 transition-colors"
+                  >
+                    ABORT
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {purgePhase === "typing" && (
+              <div className="flex flex-col gap-3">
+                <div className="text-xs text-red-400/80">
+                  Type <span className="font-bold text-red-400 bg-red-500/15 px-1">{PURGE_PHRASE}</span> to confirm:
+                </div>
+                <input
+                  autoFocus
+                  type="text"
+                  value={purgeInput}
+                  onChange={e => setPurgeInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") doPurgeProfile(); if (e.key === "Escape") setPurgePhase("idle"); }}
+                  placeholder={PURGE_PHRASE}
+                  className="bg-black/40 border border-red-500/30 px-3 py-2 text-xs text-red-300 font-mono placeholder:text-red-500/30 focus:outline-none focus:border-red-400/60 w-60"
+                />
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={doPurgeProfile}
+                    disabled={purgeInput.trim().toUpperCase() !== PURGE_PHRASE}
+                    className="px-3 py-1.5 text-xs border border-red-500/50 text-red-400 hover:bg-red-500/15 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    EXECUTE PURGE
+                  </button>
+                  <button
+                    onClick={() => { setPurgePhase("idle"); setPurgeInput(""); }}
+                    className="px-3 py-1.5 text-xs border border-primary/20 text-primary/50 hover:bg-primary/10 transition-colors"
+                  >
+                    CANCEL
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {purgePhase === "loading" && (
+              <div className="flex items-center gap-2 text-xs text-red-400/70">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                PURGING COMMAND PROFILE...
+              </div>
+            )}
+
+            {purgePhase === "done" && (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-xs text-green-400/80">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {purgeMsg}
+                </div>
+                <button
+                  onClick={() => { setPurgePhase("idle"); setPurgeMsg(""); }}
+                  className="self-start text-xs text-primary/40 hover:text-primary/70 transition-colors"
+                >
+                  CLOSE
+                </button>
+              </div>
+            )}
+
+            {purgePhase === "error" && (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-xs text-red-400">
+                  <XCircle className="w-3.5 h-3.5" />
+                  PURGE FAILED: {purgeMsg}
+                </div>
+                <button
+                  onClick={() => { setPurgePhase("idle"); setPurgeInput(""); setPurgeMsg(""); }}
+                  className="self-start text-xs text-primary/50 hover:text-primary/80 transition-colors"
+                >
+                  ← TRY AGAIN
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
