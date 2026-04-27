@@ -4,24 +4,24 @@
 
 Your AI doesn't know you. It forgets your name, your goals, your home, your history the moment you close the tab. You pay $20/month for a chat box that treats you like a stranger every time.
 
-Deck OS replaces it. One private command center — running entirely on your own hardware — with an AI that knows your context, remembers your goals, controls your environment, and gets smarter the longer you use it. No cloud. No subscription. No data leaving your machine.
+Deck OS replaces it with an AI that actually runs your system — remembering everything, acting on your environment, and routing work without being told twice. Runs on your hardware. Fully yours to own and extend.
 
 ```bash
 npx deckos start
 ```
 
-Running in under a minute.
+Running in under a minute. Say *"turn off the lights"* — and they turn off. Flex your wrist — and the scene changes.
 
 ---
 
-**What it replaces specifically:**
+**The habits it replaces:**
 
-| Before | After |
-|--------|-------|
-| ChatGPT that forgets you every session | JARVIS that carries full memory across every conversation |
-| 8 disconnected apps (weather, todos, smart home, health, calendar...) | One screen. One AI. Everything connected. |
-| Paying for cloud AI that trains on your data | Local Ollama inference — your conversations never leave your machine |
-| Smart home apps you have to open separately | Voice + text commands that trigger your actual devices in real time |
+| What you do now | What Deck OS replaces it with |
+|-----------------|-------------------------------|
+| Re-explain your context to AI every session | Memory that builds — JARVIS knows your goals, habits, and history without being told again |
+| Tab between 5 tools to get one thing done | One system that routes, acts, and responds across everything |
+| Ask AI questions it can't do anything about | Commands that affect your devices, routines, and workflows in real time |
+| Pay for cloud AI that learns nothing about you | Local AI you fully own, control, and extend |
 
 ---
 
