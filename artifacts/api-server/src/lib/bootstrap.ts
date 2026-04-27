@@ -1,6 +1,7 @@
 import { existsSync } from "fs";
 import path from "path";
 import { bus } from "./bus.js";
+import { migrateConfig } from "./app-config.js";
 import { PluginRegistry } from "./plugin-registry.js";
 import { memoryService } from "./memory-service.js";
 import { runInference, runInferenceStreaming, refreshOllamaDetection, getInferenceState, type InferenceMode } from "./inference.js";
@@ -407,6 +408,8 @@ async function seedStarterRoutines(): Promise<void> {
 }
 
 export async function bootstrap(): Promise<void> {
+  await migrateConfig();
+
   memoryService.start(60_000);
   presenceManager.start(30_000);
   initiativeEngine.start(60_000);

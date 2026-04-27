@@ -293,15 +293,15 @@ export default function AiControl() {
               </div>
               <div className="text-[11px] text-primary/70 font-bold truncate">{model}</div>
               <div className="text-[9px] text-primary/40 uppercase tracking-wider">{role}</div>
-              <div className="text-[9px] text-primary/25 leading-snug">{desc}</div>
+              <div className="text-[9px] text-primary/55 leading-snug">{desc}</div>
               <div className="pt-1 border-t border-primary/10 flex justify-between text-[9px]">
-                <span className="text-primary/30">REQUESTS</span>
+                <span className="text-primary/55">REQUESTS</span>
                 <span style={{ color }}>{reqs}</span>
               </div>
             </div>
           ))}
         </div>
-        <div className="mt-3 text-primary/20 text-[9px]">
+        <div className="mt-3 text-primary/50 text-[9px]">
           Task routing: chat/reasoning → CORTEX (Gemma) · classification/commands → REFLEX (phi3) · system/devices → AUTOPILOT (rule engine)
         </div>
       </div>
@@ -326,7 +326,7 @@ export default function AiControl() {
               <div>1. Open WSL terminal</div>
               <div>2. Run: <span className="text-primary/80">ollama launch openclaw</span></div>
               <div>3. Gateway starts on port 18789 — Deck OS connects automatically</div>
-              <div className="pt-1 text-primary/30">Guide: docs.openclaw.ai/windows · Skills: clawhub.ai</div>
+              <div className="pt-1 text-primary/50">Guide: docs.openclaw.ai/windows · Skills: clawhub.ai</div>
             </div>
           </div>
         )}
@@ -334,15 +334,15 @@ export default function AiControl() {
         {clawOk && (
           <div className="grid grid-cols-3 gap-3 mb-4 text-[10px]">
             <div className="border border-primary/10 bg-card/20 p-2">
-              <div className="text-primary/30 mb-0.5">GATEWAY</div>
+              <div className="text-primary/55 mb-0.5">GATEWAY</div>
               <div className="text-[#22ff44]">{openclawStatus?.gateway ?? "localhost:18789"}</div>
             </div>
             <div className="border border-primary/10 bg-card/20 p-2">
-              <div className="text-primary/30 mb-0.5">MODEL</div>
+              <div className="text-primary/55 mb-0.5">MODEL</div>
               <div className="text-[#cc44ff] truncate">{openclawStatus?.model ?? "gemma4"}</div>
             </div>
             <div className="border border-primary/10 bg-card/20 p-2">
-              <div className="text-primary/30 mb-0.5">SKILLS.REGISTRY</div>
+              <div className="text-primary/55 mb-0.5">SKILLS.REGISTRY</div>
               <div className="text-[#00d4ff]">CLAWHUB.AI</div>
             </div>
           </div>
@@ -354,7 +354,7 @@ export default function AiControl() {
           </div>
         )}
 
-        <div className="mb-2 flex items-center gap-2 text-[9px] text-primary/30 uppercase">
+        <div className="mb-2 flex items-center gap-2 text-[9px] text-primary/55 uppercase">
           <Package className="w-2.5 h-2.5" />
           <span>FEATURED CLAWHUB SKILLS</span>
         </div>
@@ -363,11 +363,11 @@ export default function AiControl() {
             <div key={skill.slug} className="border border-primary/10 bg-card/20 p-2.5 space-y-1.5">
               <div className="flex items-start justify-between gap-1">
                 <div className="text-[10px] text-primary/80 font-bold leading-tight">{skill.name}</div>
-                <div className="text-[8px] text-primary/30 shrink-0">{(skill.installCount / 1000).toFixed(1)}k</div>
+                <div className="text-[8px] text-primary/55 shrink-0">{(skill.installCount / 1000).toFixed(1)}k</div>
               </div>
               <div className="text-[9px] text-primary/40 leading-snug line-clamp-2">{skill.description}</div>
               <div className="flex items-center justify-between pt-0.5">
-                <span className="text-[8px] text-primary/25 uppercase">{skill.category}</span>
+                <span className="text-[8px] text-primary/50 uppercase">{skill.category}</span>
                 <button
                   onClick={() => handleClawInstall(skill.slug)}
                   disabled={clawInstalling === skill.slug}
@@ -379,7 +379,7 @@ export default function AiControl() {
             </div>
           ))}
         </div>
-        <div className="mt-3 text-[9px] text-primary/20">
+        <div className="mt-3 text-[9px] text-primary/50">
           5200+ community skills · Install via clawhub CLI inside WSL · clawhub.ai · github.com/VoltAgent/awesome-openclaw-skills
         </div>
       </div>

@@ -21,16 +21,23 @@ type ClawSkill = {
 // ── Connectivity helpers ───────────────────────────────────────────────────
 
 async function isOpenClawRunning(): Promise<boolean> {
-  try {
-    const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(), 2_000);
-    const res = await fetch(`http://localhost:${OPENCLAW_PORT}/health`, {
-      signal: ctrl.signal,
-    });
-    return res.status < 500;
-  } catch {
-    return false;
+  // OpenClaw follows Ollama's API format — try multiple endpoints
+  const endpoints = [
+    `http://localhost:${OPENCLAW_PORT}/api/tags`,
+    `http://localhost:${OPENCLAW_PORT}/`,
+    `http://localhost:${OPENCLAW_PORT}/health`,
+  ];
+  for (const url of endpoints) {
+    try {
+      const ctrl = new AbortController();
+      setTimeout(() => ctrl.abort(), 2_000);
+      const res = await fetch(url, { signal: ctrl.signal });
+      if (res.status < 500) return true;
+    } catch {
+      // try next endpoint
+    }
   }
+  return false;
 }
 
 async function getOpenClawModel(): Promise<string> {

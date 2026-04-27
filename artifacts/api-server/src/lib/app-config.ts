@@ -67,6 +67,25 @@ export function isSensitive(key: string): boolean {
   return SENSITIVE_KEYS.has(key);
 }
 
+/**
+ * Migrate stale config values to updated defaults.
+ * Call once at server startup — safe to run multiple times.
+ */
+export async function migrateConfig(): Promise<void> {
+  try {
+    const old = await getConfig("REASONING_MODEL");
+    if (old === "gemma3:9b") {
+      await setConfig("REASONING_MODEL", "gemma4");
+    }
+    const oldOc = await getConfig("OPENCLAW_MODEL");
+    if (oldOc === "gemma3:9b") {
+      await setConfig("OPENCLAW_MODEL", "gemma4");
+    }
+  } catch {
+    // non-fatal — DB may not be ready yet
+  }
+}
+
 function maskSecret(val: string): string {
   if (val.length <= 8) return "••••••••";
   return val.slice(0, 4) + "••••••••" + val.slice(-4);
