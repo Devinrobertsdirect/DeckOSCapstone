@@ -65,6 +65,14 @@ if (-not (Test-Path ".env")) {
   Write-Err "No .env file found."; Read-Host "  Press Enter to close"; exit 1
 }
 Write-Ok ".env file found"
+$openaiKey = $env:OPENAI_API_KEY
+if (-not $openaiKey) {
+  Write-Host ""
+  Write-Host "  NOTE: OPENAI_API_KEY is not set in your .env file." -ForegroundColor Yellow
+  Write-Host "  AI chat features will not work until you add it." -ForegroundColor Yellow
+  Write-Host "  Open .env in Notepad and add: OPENAI_API_KEY=sk-..." -ForegroundColor Yellow
+  Write-Host ""
+}
 Get-Content ".env" | ForEach-Object {
   if ($_ -match "^\s*([^#=][^=]*)=(.*)$") {
     $k = $Matches[1].Trim(); $v = $Matches[2].Trim().Trim('"').Trim("'")
