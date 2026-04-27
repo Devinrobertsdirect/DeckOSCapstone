@@ -138,10 +138,10 @@ try {
 # 6. Launch
 Write-Step 6 6 "Starting Deck OS..."
 Write-Info "Starting the API server (backend) -- a window will open..."
-Start-Process cmd -ArgumentList "/c title Deck OS API && pnpm --filter @workspace/api-server run dev" -WindowStyle Normal
+Start-Process cmd -ArgumentList "/c pnpm --filter @workspace/api-server run dev > api-server.log 2>&1" -WindowStyle Minimized
 Start-Sleep -Seconds 5
 Write-Info "Starting the frontend (dashboard) -- another window will open..."
-Start-Process cmd -ArgumentList "/c title Deck OS Frontend && pnpm --filter @workspace/deck-os run dev" -WindowStyle Normal
+Start-Process cmd -ArgumentList "/c pnpm --filter @workspace/deck-os run dev > frontend.log 2>&1" -WindowStyle Minimized
 
 Write-Host ""
 Write-Info "Waiting up to 60 seconds for services to start..."
@@ -177,6 +177,15 @@ if ($webUp) {
   }
   Write-Host ""
   Write-Host "   Paste any errors from those windows here for help." -ForegroundColor Gray
+Write-Host "" 
+if (Test-Path "api-server.log") {
+  Write-Host "  --- API Server log (last 20 lines) ---" -ForegroundColor Yellow
+  Get-Content "api-server.log" | Select-Object -Last 20 | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+}
+if (Test-Path "frontend.log") {
+  Write-Host "  --- Frontend log (last 20 lines) ---" -ForegroundColor Yellow
+  Get-Content "frontend.log" | Select-Object -Last 20 | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+}
 }
 
 Write-Host ""
