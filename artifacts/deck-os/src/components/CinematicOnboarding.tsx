@@ -1192,16 +1192,10 @@ export function CinematicOnboarding({ onComplete }: Props) {
     const local = resolveLocalVoice(voiceId);
     const openAiVoiceIds = new Set(VOICE_OPTIONS.map((v) => v.id));
     if (local) {
-      // Local voice selected — map to cloud-compatible ID and persist gender
+      // Local voice selected — map to cloud-compatible ID.
+      // Do NOT overwrite explicit gender-step selection; gender step is source of truth.
       setVoice(local.voice);
-      setGender(local.gender);
       localStorage.setItem(VOICE_KEY, local.voice);
-      // Eagerly save gender to persona so local TTS uses it immediately
-      fetch(`${API_BASE}/persona`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gender: local.gender }),
-      }).catch(() => {});
       // Clear any stale ElevenLabs voice ID — not needed for local TTS
       fetch(`${API_BASE}/config/ELEVENLABS_VOICE_ID`, { method: "DELETE" }).catch(() => {});
     } else {
@@ -1229,7 +1223,15 @@ export function CinematicOnboarding({ onComplete }: Props) {
   }
 
   async function handleFirstContactComplete() {
-    await writeToUCM(aiName, quizAnswers, voice, faceStyle, gender ?? "neutral");
+    const finalGender = gender ?? "neutral";
+    // Authoritative persona PATCH at completion — ensures gender is persisted even if
+    // the earlier eager PATCH (handleGenderComplete) failed due to a network error.
+    await fetch(`${API_BASE}/persona`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gender: finalGender }),
+    }).catch(() => {});
+    await writeToUCM(aiName, quizAnswers, voice, faceStyle, finalGender);
     localStorage.setItem(CINEMATIC_KEY, "true");
     localStorage.setItem("jarvis.initialized", "true");
     localStorage.setItem("jarvis.user", JSON.stringify({
