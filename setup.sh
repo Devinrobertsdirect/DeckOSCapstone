@@ -145,7 +145,7 @@ if command -v ollama &>/dev/null; then
   else
     ok "Ollama is running"
     log "  Tip: pull the default models if you haven't already:"
-    echo "       ollama pull gemma3:9b"
+    echo "       ollama pull gemma4"
     echo "       ollama pull phi3"
   fi
 else

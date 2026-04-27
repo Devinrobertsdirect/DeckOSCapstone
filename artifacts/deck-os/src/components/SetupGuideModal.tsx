@@ -250,7 +250,7 @@ const STEPS: StepDef[] = [
           <div className="text-primary/40 uppercase tracking-widest mb-2">HOW TO SET UP OLLAMA (LOCAL AI)</div>
           <div className="space-y-1 text-primary/60">
             <div>1. Download Ollama from <span className="text-primary">ollama.com</span> (free)</div>
-            <div>2. Open a terminal and run: <span className="text-primary bg-black/60 px-1">ollama pull llama3</span></div>
+            <div>2. Open a terminal and run: <span className="text-primary bg-black/60 px-1">ollama pull gemma4</span></div>
             <div>3. Deck OS auto-detects it — the AI status turns green</div>
           </div>
         </div>
@@ -647,7 +647,7 @@ const STEPS: StepDef[] = [
         </p>
         <div className="space-y-2 font-mono text-xs">
           {[
-            { step: "01", label: "Install Ollama",     desc: "Run: ollama pull llama3", done: false },
+            { step: "01", label: "Install Ollama",     desc: "Run: ollama pull gemma4", done: false },
             { step: "02", label: "Name your AI",       desc: "AI.PERSONA → choose a name", done: false },
             { step: "03", label: "First message",      desc: "AI.ROUTER → introduce yourself", done: false },
             { step: "04", label: "Set a goal",         desc: "Tell AI what you're working toward", done: false },

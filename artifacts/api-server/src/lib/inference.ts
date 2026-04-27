@@ -47,7 +47,7 @@ export type InferenceResult = {
 export const MODEL_CONFIG = {
   // Gemma — "Cortex / Thinking layer"
   // Handles: chat, planning, reasoning, goal breakdown, summarization, predictions
-  REASONING: process.env["REASONING_MODEL"] ?? "gemma3:9b",
+  REASONING: process.env["REASONING_MODEL"] ?? "gemma4",
 
   // phi3 — "Reflex layer"
   // Handles: quick responses, classification, routing, lightweight commands

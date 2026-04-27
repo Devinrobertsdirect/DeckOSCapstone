@@ -35,9 +35,9 @@ async function isOpenClawRunning(): Promise<boolean> {
 
 async function getOpenClawModel(): Promise<string> {
   try {
-    return (await getConfig("OPENCLAW_MODEL")) ?? process.env["OPENCLAW_MODEL"] ?? "gemma3:9b";
+    return (await getConfig("OPENCLAW_MODEL")) ?? process.env["OPENCLAW_MODEL"] ?? "gemma4";
   } catch {
-    return process.env["OPENCLAW_MODEL"] ?? "gemma3:9b";
+    return process.env["OPENCLAW_MODEL"] ?? "gemma4";
   }
 }
 

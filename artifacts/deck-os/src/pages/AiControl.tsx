@@ -97,7 +97,7 @@ export default function AiControl() {
         .then((data: RouterStatusPayload & { models?: { cortex?: string; reflex?: string; autopilot?: string }; tierStats?: { cortexRequests?: number; reflexRequests?: number; autopilotRequests?: number } }) => {
           if (data.models) {
             setTierStatus({
-              cortex:    data.models.cortex    ?? "gemma3:9b",
+              cortex:    data.models.cortex    ?? "gemma4",
               reflex:    data.models.reflex    ?? "phi3",
               autopilot: data.models.autopilot ?? "rule-engine-v1",
               tierStats: {
@@ -260,7 +260,7 @@ export default function AiControl() {
           {[
             {
               tier:    "CORTEX",
-              model:   tierStatus?.cortex ?? "gemma3:9b",
+              model:   tierStatus?.cortex ?? "gemma4",
               role:    "Thinking Layer",
               desc:    "chat · reasoning · planning · briefings · predictions",
               color:   "#3f84f3",
@@ -339,7 +339,7 @@ export default function AiControl() {
             </div>
             <div className="border border-primary/10 bg-card/20 p-2">
               <div className="text-primary/30 mb-0.5">MODEL</div>
-              <div className="text-[#cc44ff] truncate">{openclawStatus?.model ?? "gemma3:9b"}</div>
+              <div className="text-[#cc44ff] truncate">{openclawStatus?.model ?? "gemma4"}</div>
             </div>
             <div className="border border-primary/10 bg-card/20 p-2">
               <div className="text-primary/30 mb-0.5">SKILLS.REGISTRY</div>

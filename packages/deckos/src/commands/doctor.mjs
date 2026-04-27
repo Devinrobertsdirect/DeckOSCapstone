@@ -80,7 +80,7 @@ export async function doctorCmd(opts = {}) {
   if (ollama) {
     const running = ollamaRunning();
     if (!silent) ok(`Ollama: ${chalk.green('installed')}${running ? '' : chalk.yellow(' (not running — start with: ollama serve)')}`);
-    if (!running && !silent) info('Pull models: ollama pull gemma3:9b && ollama pull phi3');
+    if (!running && !silent) info('Pull models: ollama pull gemma4 && ollama pull phi3');
   } else {
     if (!silent) warn('Ollama: not found (optional — Deck OS runs in rule-engine fallback mode)');
     if (!silent) info('Install from: https://ollama.com');

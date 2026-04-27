@@ -79,7 +79,7 @@ services:
       TRACE_MODE: ${TRACE_MODE:-}
       # Local AI
       OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
-      REASONING_MODEL: ${REASONING_MODEL:-gemma3:9b}
+      REASONING_MODEL: ${REASONING_MODEL:-gemma4}
       FAST_MODEL: ${FAST_MODEL:-phi3}
       # Open WebUI
       OPENWEBUI_HOST: ${OPENWEBUI_HOST:-}

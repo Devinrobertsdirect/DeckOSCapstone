@@ -66,7 +66,7 @@ router.get("/config", async (_req, res) => {
   // Merge with env defaults so the UI always shows a value
   const merged: Record<string, string> = {
     OLLAMA_HOST:     process.env["OLLAMA_HOST"]     ?? "http://localhost:11434",
-    REASONING_MODEL: process.env["REASONING_MODEL"] ?? "gemma3:9b",
+    REASONING_MODEL: process.env["REASONING_MODEL"] ?? "gemma4",
     FAST_MODEL:      process.env["FAST_MODEL"]      ?? "phi3",
     ...config,
   };

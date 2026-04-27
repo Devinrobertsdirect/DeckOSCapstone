@@ -63,7 +63,7 @@ const DEFAULTS: ConfigState = {
   OLLAMA_HOST:         "http://localhost:11434",
   OPENWEBUI_HOST:      "",
   OPENWEBUI_API_KEY:   "",
-  REASONING_MODEL:     "gemma3:9b",
+  REASONING_MODEL:     "gemma4",
   FAST_MODEL:          "phi3",
   OPENAI_API_KEY:      "",
   ANTHROPIC_API_KEY:   "",
@@ -200,7 +200,7 @@ export default function Settings() {
         ok: ollamaOk,
         label: "OLLAMA",
         checkedAt: aiCheckedAt,
-        hint: ollamaOk ? "" : "Ollama is offline. Start it with: ollama serve — and pull a model: ollama pull gemma3:9b",
+        hint: ollamaOk ? "" : "Ollama is offline. Start it with: ollama serve — and pull a model: ollama pull gemma4",
       },
       openwebui: {
         ok: owHost.trim() ? openwebuiOk : null,
@@ -692,7 +692,7 @@ export default function Settings() {
                   )}
                   {testResult.ok && testResult.models?.length === 0 && (
                     <div className="text-[#ffc820]">
-                      Connected but no models found — run <code className="bg-primary/10 px-1">ollama pull gemma3:9b</code>
+                      Connected but no models found — run <code className="bg-primary/10 px-1">ollama pull gemma4</code>
                     </div>
                   )}
                   {!testResult.ok && (
@@ -704,7 +704,7 @@ export default function Settings() {
               <div className="p-3 border border-primary/10 bg-primary/5 font-mono text-xs text-primary/40 space-y-1">
                 <div className="text-primary/60 mb-1">QUICK SETUP</div>
                 <div>1. Install Ollama: <span className="text-primary">ollama.com/download</span></div>
-                <div>2. Pull models: <span className="text-primary">ollama pull gemma3:9b &amp;&amp; ollama pull phi3</span></div>
+                <div>2. Pull models: <span className="text-primary">ollama pull gemma4 &amp;&amp; ollama pull phi3</span></div>
                 <div>3. Test connection above, then Save</div>
               </div>
             </CardContent>
@@ -1348,7 +1348,7 @@ export default function Settings() {
                     type="text"
                     value={cfg.REASONING_MODEL}
                     onChange={(e) => change("REASONING_MODEL", e.target.value)}
-                    placeholder="gemma3:9b"
+                    placeholder="gemma4"
                     className="w-full bg-background border border-primary/30 px-3 py-2 font-mono text-xs text-primary focus:border-primary focus:outline-none"
                   />
                 </div>
@@ -1402,7 +1402,7 @@ export default function Settings() {
                 className="flex items-center gap-1.5 font-mono text-xs text-primary/40 hover:text-primary/70 transition-all"
               >
                 <RotateCcw className="w-3 h-3" />
-                RESET TO DEFAULTS (gemma3:9b / phi3)
+                RESET TO DEFAULTS (gemma4 / phi3)
               </button>
             </CardContent>
           </Card>
