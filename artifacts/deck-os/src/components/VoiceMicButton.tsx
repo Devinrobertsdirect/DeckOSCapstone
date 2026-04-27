@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { Mic, MicOff, Loader2, Volume2 } from "lucide-react";
 import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
 import { useAudioPlayback } from "@/hooks/useAudioPlayback";
+import { VOICE_KEY } from "@/components/CinematicOnboarding";
 
 export type VoicePipelineState =
   | "idle"
@@ -98,10 +99,11 @@ export function VoiceMicButton({ onTranscript, disabled = false, className = "",
       }
 
       setPipelineState("speaking");
+      const storedVoice = localStorage.getItem(VOICE_KEY) ?? undefined;
       const ttsRes = await fetch("/api/vision/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: responseText }),
+        body: JSON.stringify({ text: responseText, voice: storedVoice }),
       });
       if (!ttsRes.ok) { setPipelineState("idle"); return; }
       const { audio, format } = await ttsRes.json() as { audio: string; format?: string };

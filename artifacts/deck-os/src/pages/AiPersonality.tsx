@@ -405,6 +405,12 @@ function RecalibrateTab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ voice: v }),
       }).catch(() => {});
+    } else if (!v.startsWith("local-")) {
+      fetch(`${API_BASE}/config`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ELEVENLABS_VOICE_ID: v }),
+      }).catch(() => {});
     }
     window.dispatchEvent(new CustomEvent(VOICE_CHANGED_EVENT, { detail: { voice: v } }));
     setVoiceSaved(true);

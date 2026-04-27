@@ -1075,6 +1075,7 @@ export function CinematicOnboarding({ onComplete }: Props) {
 
   function handleVoiceComplete(voiceId: string) {
     const local = resolveLocalVoice(voiceId);
+    const openAiVoiceIds = new Set(VOICE_OPTIONS.map((v) => v.id));
     if (local) {
       // Local voice selected — map to cloud-compatible ID and persist gender
       setVoice(local.voice);
@@ -1089,6 +1090,15 @@ export function CinematicOnboarding({ onComplete }: Props) {
     } else {
       setVoice(voiceId);
       localStorage.setItem(VOICE_KEY, voiceId);
+      // If this is an ElevenLabs voice ID (not a standard OpenAI voice),
+      // persist it to backend config so all TTS paths use the right voice.
+      if (!openAiVoiceIds.has(voiceId)) {
+        fetch(`${API_BASE}/config`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ELEVENLABS_VOICE_ID: voiceId }),
+        }).catch(() => {});
+      }
     }
     setStep("face");
   }
