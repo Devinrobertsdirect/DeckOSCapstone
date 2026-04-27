@@ -131,12 +131,13 @@ export async function startCmd(opts = {}) {
   {
     const sp = spinner('Running pnpm install...');
     try {
-      sh('pnpm install --frozen-lockfile', repoDir);
+      sh('pnpm install --frozen-lockfile --ignore-scripts', repoDir);
       sp.stop('Dependencies installed');
     } catch {
-      sp.fail('pnpm install failed');
+      sp.fail('pnpm install --frozen-lockfile failed, retrying...');
       try {
-        sh('pnpm install', repoDir);
+        sh('pnpm install --ignore-scripts', repoDir);
+        sp.stop('Dependencies installed');
       } catch (e) {
         fail(`Dependency install failed: ${e.message}`);
       }
