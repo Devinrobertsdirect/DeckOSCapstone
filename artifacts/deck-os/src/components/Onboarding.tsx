@@ -21,7 +21,7 @@ export interface UserConfig {
 }
 
 type Phase = "color" | "boot" | "ai_name" | "api_keys" | "voice_mode" | "user_name"
-           | "photo" | "questions" | "visual_mode" | "activation";
+           | "photo" | "questions" | "visual_mode" | "mobile_setup" | "activation";
 
 // ─────────────────────────────────────────────
 // Storage
@@ -1499,7 +1499,103 @@ function VisualModePhase({ onNext }: { onNext: (m: VisualMode) => void }) {
 }
 
 // ─────────────────────────────────────────────
-// Phase 8: Activation ceremony
+// Phase 8: Mobile Setup
+// ─────────────────────────────────────────────
+function MobileSetupPhase({ aiName, onNext }: { aiName: string; onNext: () => void }) {
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [mobileUrl, setMobileUrl] = useState<string>("");
+  const [copied, setCopied] = useState(false);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(true), 300);
+    fetch(`${window.location.origin}/api/pairing/code`)
+      .then((r) => r.json())
+      .then(({ code, mobileUrl: url }: { code: string; mobileUrl: string }) => {
+        setPairingCode(code);
+        setMobileUrl(url);
+      })
+      .catch(() => {});
+    return () => clearTimeout(t);
+  }, []);
+
+  function copyCode() {
+    if (!pairingCode) return;
+    void navigator.clipboard.writeText(pairingCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="fixed inset-0 flex flex-col items-center justify-center bg-background z-50 p-6">
+      <HudCorners />
+      <Scanline />
+      <div className={`w-full max-w-xl space-y-8 transition-all duration-500 ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}>
+        <div className="text-center space-y-2">
+          <div className="text-primary/40 font-mono text-xs tracking-[0.4em] uppercase">Optional — Mobile Companion</div>
+          <div className="text-primary font-mono text-xl tracking-widest">Connect Your Phone</div>
+        </div>
+
+        <ObPanel>
+          <div className="space-y-5">
+            <div className="font-mono text-primary/70 text-sm leading-relaxed">
+              {aiName} runs on your phone too. Open the mobile URL on your device and enter the pairing code — your phone will stay linked to this desktop instance.
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="font-mono text-[10px] text-primary/30 uppercase tracking-widest mb-2">Pairing Code</div>
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl font-mono font-bold text-primary tracking-[0.25em]">
+                    {pairingCode ?? "• • • •"}
+                  </span>
+                  {pairingCode && (
+                    <button
+                      onClick={copyCode}
+                      className="font-mono text-[10px] border border-primary/30 px-2 py-1 text-primary/50 hover:text-primary hover:border-primary/60 transition-colors"
+                    >
+                      {copied ? "COPIED" : "COPY"}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="font-mono text-[10px] text-primary/30 uppercase tracking-widest mb-2">How to Connect</div>
+                <ol className="font-mono text-[10px] text-primary/50 space-y-1 leading-relaxed list-none">
+                  <li><span className="text-primary/30">1.</span> Open the mobile URL on your phone</li>
+                  <li><span className="text-primary/30">2.</span> Enter the pairing code above</li>
+                  <li><span className="text-primary/30">3.</span> That's it — you're linked</li>
+                </ol>
+              </div>
+            </div>
+
+            {mobileUrl && (
+              <div>
+                <div className="font-mono text-[10px] text-primary/30 uppercase tracking-widest mb-1">Mobile URL</div>
+                <div className="font-mono text-xs text-primary/50 break-all border border-primary/10 px-3 py-2 bg-primary/5">
+                  {mobileUrl}
+                </div>
+              </div>
+            )}
+
+            <div className="font-mono text-[10px] text-primary/25 leading-relaxed">
+              You can also find the pairing code later in Settings → Mobile Access. The code is unique to this machine.
+            </div>
+          </div>
+        </ObPanel>
+
+        <div className="flex gap-4">
+          <ObButton onClick={onNext}>Continue →</ObButton>
+          <ObButton onClick={onNext} variant="ghost">Skip for now</ObButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Phase 9: Activation ceremony
 // ─────────────────────────────────────────────
 function ActivationPhase({
   config, onComplete,
@@ -1705,7 +1801,10 @@ export function Onboarding({ onComplete }: { onComplete: () => void }) {
         />
       )}
       {phase === "visual_mode" && (
-        <VisualModePhase onNext={(m) => advance("activation", { visualMode: m })} />
+        <VisualModePhase onNext={(m) => advance("mobile_setup", { visualMode: m })} />
+      )}
+      {phase === "mobile_setup" && (
+        <MobileSetupPhase aiName={cfg.aiName ?? "JARVIS"} onNext={() => advance("activation")} />
       )}
       {phase === "activation" && (
         <ActivationPhase config={cfg} onComplete={onComplete} />

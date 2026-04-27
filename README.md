@@ -33,8 +33,9 @@ Running in under a minute. Say *"turn off the lights"* — and they turn off. Fl
 4. [Local AI (Ollama)](#local-ai-ollama)
 5. [Environment Variables](#environment-variables)
 6. [Features](#features)
-7. [Architecture](#architecture)
-8. [Plugin System](#plugin-system)
+7. [Mobile Access](#mobile-access)
+8. [Architecture](#architecture)
+9. [Plugin System](#plugin-system)
    - [How Plugins Work](#how-plugins-work)
    - [Writing a Community Plugin](#writing-a-community-plugin)
    - [Sandbox API Reference](#sandbox-api-reference)
@@ -42,16 +43,16 @@ Running in under a minute. Say *"turn off the lights"* — and they turn off. Fl
    - [Publishing to the Marketplace](#publishing-to-the-marketplace)
    - [Registry Entry Format](#registry-entry-format)
    - [Built-in Plugins (TypeScript)](#built-in-plugins-typescript)
-9. [EventBus Event Types](#eventbus-event-types)
-10. [WebSocket API](#websocket-api)
-11. [Troubleshooting](#troubleshooting)
-12. [Requirements](#requirements)
-13. [Complete Feature & Component Reference](#complete-feature--component-reference)
-14. [IoT & Hardware Compatibility](#iot--hardware-compatibility)
-15. [ACERA Protocol — Vision Tracking Reference](#acera-protocol--vision-tracking-reference)
-16. [Stark Protocol — Bioelectric Signal Reference](#stark-protocol--bioelectric-signal-reference)
-17. [Use Cases](#use-cases)
-18. [License](#license)
+10. [EventBus Event Types](#eventbus-event-types)
+11. [WebSocket API](#websocket-api)
+12. [Troubleshooting](#troubleshooting)
+13. [Requirements](#requirements)
+14. [Complete Feature & Component Reference](#complete-feature--component-reference)
+15. [IoT & Hardware Compatibility](#iot--hardware-compatibility)
+16. [ACERA Protocol — Vision Tracking Reference](#acera-protocol--vision-tracking-reference)
+17. [Stark Protocol — Bioelectric Signal Reference](#stark-protocol--bioelectric-signal-reference)
+18. [Use Cases](#use-cases)
+19. [License](#license)
 
 ---
 
@@ -383,8 +384,61 @@ See `.env.example` for the full list with descriptions.
 - **Autonomous Layer** — Routine scheduling with safety levels (strict/moderate/permissive)
 - **Spatial Map** — Live device tracking with geofencing
 - **Voice TTS/STT** — ElevenLabs TTS and OpenAI Whisper STT (optional API keys)
+- **Mobile Companion App** — PWA paired to your desktop via a unique device code; JARVIS chat, persona, and channel status on your phone; auto-reconnects on next visit
 - **ACERA Connect** — MediaPipe hand-tracking gesture control (enable in Settings → Vision)
 - **Plugin System** — Dynamically-loaded community plugins run in isolated worker sandboxes
+
+---
+
+## Mobile Access
+
+Deck OS ships with a PWA mobile companion (`deck-mobile`) that gives you JARVIS chat, persona management, and channel status from your phone — all routed through the same desktop instance.
+
+### How Pairing Works
+
+Mobile devices authenticate to a specific desktop instance via a **unique device code** (format: `XXX-0000`). The code is stored in the database and is stable across restarts. Resetting it invalidates all previously paired phones.
+
+```
+Desktop                Mobile Browser
+───────                ──────────────
+GET /api/pairing/code  ←─ Settings → Mobile Access shows code
+POST /api/pairing/validate  ←─ Phone enters code at first launch
+  {"valid": true}       ──→ Phone stores code + session ID in localStorage
+                             Auto-reconnects on every subsequent visit
+```
+
+### Step-by-Step: First Pairing
+
+1. **On your desktop** — open DeckOS, go to **Settings → Mobile Access**
+2. Note the pairing code (e.g. `UYP-0006`) and the mobile URL shown beneath it
+3. **On your phone** — navigate to the mobile URL (same local network required)
+4. Enter the pairing code on the pairing screen and tap **Link to Desktop →**
+5. Your phone is now permanently linked — it auto-connects every time you open the URL
+
+> The pairing screen also appears during the first-run setup wizard (after the visual mode step), so you can pair your phone before you even open the main dashboard.
+
+### Managing Pairings
+
+| Action | How |
+|--------|-----|
+| **View your code** | Desktop → Settings → Mobile Access |
+| **Copy code / mobile URL** | Copy buttons on the Mobile Access tab |
+| **Re-pair your phone** | Mobile → Settings → Identity → RE-LINK, then enter new code |
+| **Revoke all mobile access** | Desktop → Settings → Mobile Access → Reset Code (generates a new code; old phones must re-pair) |
+
+### Persistence & Reconnection
+
+- The pairing code is saved in your phone's `localStorage` — closing and reopening the browser tab reconnects automatically without re-entering the code.
+- On every launch, the mobile app silently validates the stored code against the desktop. If the code has been reset, the app drops back to the pairing screen.
+- Network errors during validation are treated as "still valid" — a brief connectivity blip does not force re-pairing.
+
+### API Reference
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/pairing/code` | GET | Returns `{ code, mobileUrl }` — lazy-generates if not set |
+| `/api/pairing/validate` | POST `{ code }` | Returns `{ valid: boolean }` |
+| `/api/pairing/reset` | POST | Generates a new code, invalidates old pairings |
 
 ---
 
@@ -1001,7 +1055,7 @@ A full map of every module, page, and sub-system in Deck OS — what it does, wh
 | **Spatial Map** | `/map` | `pages/MapPage.tsx` | Leaflet-based device map, geofence editor, live device position updates |
 | **News Feed** | `/news` | `pages/NewsPage.tsx` | AI-curated briefing cards, source configurator, read/unread tracking |
 | **Plugin Store** | `/store` | `pages/StorePage.tsx` | Community plugin browser, one-click install, enable/disable, version info |
-| **Settings** | `/settings` | `pages/Settings.tsx` | Seven tabs: Connection · API Keys · Models · System Health · ACERA Vision · Stark Connect · About |
+| **Settings** | `/settings` | `pages/Settings.tsx` | Eight tabs: Connection · API Keys · Models · System Health · ACERA Vision · Stark Connect · Mobile Access · About |
 | **Start Screen** | `/` (pre-auth) | `components/Onboarding.tsx` | Name/AI-name setup, color theme picker, launch gate |
 
 #### Core Components
@@ -1065,6 +1119,9 @@ A full map of every module, page, and sub-system in Deck OS — what it does, wh
 | `/api/persona` | `routes/persona.ts` | GET PATCH | AI name, gender, personality dials |
 | `/api/config` | `routes/config.ts` | GET PATCH | Runtime env var overrides |
 | `/api/self-update` | `routes/self-update.ts` | POST | `git pull` + `pnpm install` + migration |
+| `/api/pairing/code` | `routes/pairing.ts` | GET | Lazy-generate and return the instance pairing code + mobile URL |
+| `/api/pairing/validate` | `routes/pairing.ts` | POST | Validate a code submitted by a mobile device |
+| `/api/pairing/reset` | `routes/pairing.ts` | POST | Regenerate the pairing code (revokes existing mobile sessions) |
 
 #### Core Server Libraries
 
@@ -1125,6 +1182,7 @@ A full map of every module, page, and sub-system in Deck OS — what it does, wh
 | `ai_persona` | ai_name, gender, gravity, snarkiness | Personality configuration |
 | `voice_identity` | tone, formality, verbosity | TTS voice style profile |
 | `notifications` | type, message, read | System notification queue |
+| `app_config` | key, value | Key-value store for instance settings (e.g. `INSTANCE_PAIRING_CODE`) |
 
 ---
 
