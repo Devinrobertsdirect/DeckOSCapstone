@@ -29,11 +29,12 @@ Running in under a minute. Say *"turn off the lights"* — and they turn off. Fl
 
 1. [Quick Start](#quick-start)
 2. [Updating](#updating)
-3. [Local AI (Ollama)](#local-ai-ollama)
-4. [Environment Variables](#environment-variables)
-5. [Features](#features)
-6. [Architecture](#architecture)
-7. [Plugin System](#plugin-system)
+3. [Development Commands](#development-commands)
+4. [Local AI (Ollama)](#local-ai-ollama)
+5. [Environment Variables](#environment-variables)
+6. [Features](#features)
+7. [Architecture](#architecture)
+8. [Plugin System](#plugin-system)
    - [How Plugins Work](#how-plugins-work)
    - [Writing a Community Plugin](#writing-a-community-plugin)
    - [Sandbox API Reference](#sandbox-api-reference)
@@ -41,16 +42,16 @@ Running in under a minute. Say *"turn off the lights"* — and they turn off. Fl
    - [Publishing to the Marketplace](#publishing-to-the-marketplace)
    - [Registry Entry Format](#registry-entry-format)
    - [Built-in Plugins (TypeScript)](#built-in-plugins-typescript)
-8. [EventBus Event Types](#eventbus-event-types)
-9. [WebSocket API](#websocket-api)
-10. [Troubleshooting](#troubleshooting)
-11. [Requirements](#requirements)
-12. [Complete Feature & Component Reference](#complete-feature--component-reference)
-13. [IoT & Hardware Compatibility](#iot--hardware-compatibility)
-14. [ACERA Protocol — Vision Tracking Reference](#acera-protocol--vision-tracking-reference)
-15. [Stark Protocol — Bioelectric Signal Reference](#stark-protocol--bioelectric-signal-reference)
-16. [Use Cases](#use-cases)
-17. [License](#license)
+9. [EventBus Event Types](#eventbus-event-types)
+10. [WebSocket API](#websocket-api)
+11. [Troubleshooting](#troubleshooting)
+12. [Requirements](#requirements)
+13. [Complete Feature & Component Reference](#complete-feature--component-reference)
+14. [IoT & Hardware Compatibility](#iot--hardware-compatibility)
+15. [ACERA Protocol — Vision Tracking Reference](#acera-protocol--vision-tracking-reference)
+16. [Stark Protocol — Bioelectric Signal Reference](#stark-protocol--bioelectric-signal-reference)
+17. [Use Cases](#use-cases)
+18. [License](#license)
 
 ---
 
@@ -198,6 +199,139 @@ The script handles the three steps that are easy to forget in the right order:
 3. `pnpm --filter @workspace/db run push` — apply any new DB migrations
 
 Then restart your dev servers to pick up the changes.
+
+---
+
+## Development Commands
+
+All commands are run from the **repo root** unless otherwise noted. Every package is addressed with `pnpm --filter <package-name>`.
+
+### Workspace (root)
+
+```bash
+pnpm install                    # Install all dependencies across the monorepo
+pnpm build                      # Typecheck + build every artifact in order
+pnpm typecheck                  # Type-check libs + all artifacts (no emit)
+pnpm typecheck:libs             # Type-check lib packages only (tsc --build)
+```
+
+---
+
+### API Server (`@workspace/api-server`)
+
+```bash
+# Development
+pnpm --filter @workspace/api-server run dev         # esbuild → start (rebuilds on every run)
+pnpm --filter @workspace/api-server run build       # esbuild bundle only → dist/
+pnpm --filter @workspace/api-server run start       # Start pre-built dist/index.mjs
+pnpm --filter @workspace/api-server run typecheck   # tsc type-check (no emit)
+```
+
+Server starts on **port 8080** (`PORT` env overrides).
+
+---
+
+### Deck OS — main dashboard (`@workspace/deck-os`)
+
+```bash
+# Development
+pnpm --filter @workspace/deck-os run dev            # Vite dev server (HMR, port $PORT)
+pnpm --filter @workspace/deck-os run build          # Production Vite build → dist/
+pnpm --filter @workspace/deck-os run serve          # Preview the production build locally
+pnpm --filter @workspace/deck-os run typecheck      # tsc type-check (no emit)
+```
+
+---
+
+### Deck Mobile — PWA chat interface (`@workspace/deck-mobile`)
+
+```bash
+pnpm --filter @workspace/deck-mobile run dev        # Vite dev server (HMR)
+pnpm --filter @workspace/deck-mobile run build      # Production build → dist/
+pnpm --filter @workspace/deck-mobile run serve      # Preview the production build
+pnpm --filter @workspace/deck-mobile run typecheck  # tsc type-check (no emit)
+```
+
+---
+
+### Deck CLI (`@workspace/deck-cli`)
+
+```bash
+pnpm --filter @workspace/deck-cli run dev           # Build then launch interactive REPL
+pnpm --filter @workspace/deck-cli run build         # esbuild bundle → dist/
+pnpm --filter @workspace/deck-cli run start         # Start pre-built CLI (non-interactive)
+pnpm --filter @workspace/deck-cli run typecheck     # tsc type-check (no emit)
+```
+
+---
+
+### Database — Drizzle migrations (`@workspace/db`)
+
+```bash
+pnpm --filter @workspace/db run push                # Push schema changes to the DB (safe)
+pnpm --filter @workspace/db run push-force          # Force push — overwrites conflicting columns
+```
+
+> Run `push` after pulling new code that includes schema changes. `push-force` is only needed when column types change during early development.
+
+---
+
+### API Codegen (`@workspace/api-spec`)
+
+```bash
+pnpm --filter @workspace/api-spec run codegen       # Regenerate API client from OpenAPI spec (Orval)
+```
+
+Run this after editing `lib/api-spec/openapi.yaml`. It regenerates `lib/api-client-react/` and `lib/api-zod/` automatically.
+
+---
+
+### OpenClaw — local AI agent gateway
+
+OpenClaw runs inside WSL2 on Windows and exposes an Ollama-compatible gateway on **port 18789**.
+
+```bash
+# Windows PowerShell (inside WSL2)
+ollama launch openclaw                              # Start the OpenClaw gateway
+ollama list                                         # List locally available models
+
+# Install ClawHub skills (inside WSL2 terminal)
+clawhub install <author>/<skill-name>               # e.g. clawhub install github/github
+clawhub list                                        # List installed skills
+clawhub update                                      # Update all installed skills
+```
+
+The `setup.ps1` script auto-detects WSL2 and starts the gateway for you. See **Settings → Connection → OpenClaw Gateway** in the app to verify status.
+
+---
+
+### Ollama — local inference models
+
+```bash
+ollama serve                                        # Start the Ollama server (if not running as a service)
+ollama pull gemma3:9b                               # CORTEX tier — chat, reasoning, planning
+ollama pull phi3                                    # REFLEX tier — fast classification, commands
+ollama list                                         # Show installed models + sizes
+ollama rm <model>                                   # Remove a model to free disk space
+ollama run gemma3:9b                                # Interactive chat with a model (testing)
+```
+
+Deck OS auto-detects Ollama on startup and every 30 seconds. No restart needed when you pull a new model.
+
+---
+
+### Docker Compose
+
+```bash
+docker compose up -d                                # Start all services in the background
+docker compose up --build                           # Rebuild images then start
+docker compose logs -f                              # Tail logs for all services
+docker compose logs -f api                          # API server logs only
+docker compose logs -f frontend                     # Frontend logs only
+docker compose down                                 # Stop all services
+docker compose down -v                              # Stop + wipe the database volume
+docker compose ps                                   # Show running containers + ports
+```
 
 ---
 
