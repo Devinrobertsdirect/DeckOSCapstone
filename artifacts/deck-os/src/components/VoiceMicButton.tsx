@@ -82,7 +82,12 @@ export function VoiceMicButton({ onTranscript, disabled = false, className = "",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ audio: base64Audio }),
       });
-      if (!sttRes.ok) { handleError("STT failed"); return; }
+      if (!sttRes.ok) {
+        const d = await sttRes.json().catch(() => ({})) as { reason?: string };
+        const msg = d.reason === "no-stt-key" ? "OpenAI key required" : "STT failed";
+        handleError(msg);
+        return;
+      }
       const { transcript } = await sttRes.json() as { transcript: string };
 
       if (!transcript?.trim()) {

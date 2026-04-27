@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db, userCognitiveModelTable, ucmSettingsTable, behaviorProfileTable, goalsTable, memoryEntriesTable, feedbackSignalsTable, UCM_LAYERS } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { bus } from "../lib/bus.js";
+import { broadcast } from "../lib/ws-server.js";
 
 const router = Router();
 
@@ -93,6 +94,18 @@ router.patch("/ucm/:layer", async (req, res) => {
     type: "memory.stored",
     payload: { layer, keys: Object.keys(data), operation: "patch" },
   });
+
+  // Broadcast identity changes (aiName, userName) as persona.updated so
+  // all connected clients (desktop + mobile) update in real time.
+  if (layer === "identity") {
+    const identityData = data as Record<string, unknown>;
+    const patch: Record<string, unknown> = {};
+    if (typeof identityData["aiName"] === "string") patch["aiName"] = identityData["aiName"];
+    if (typeof identityData["userName"] === "string") patch["userName"] = identityData["userName"];
+    if (Object.keys(patch).length > 0) {
+      broadcast({ type: "persona.updated", payload: patch });
+    }
+  }
 
   const fresh = await getOrCreateModel();
   res.json(formatModel(fresh));

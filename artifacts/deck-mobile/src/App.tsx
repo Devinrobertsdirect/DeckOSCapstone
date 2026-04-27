@@ -117,6 +117,36 @@ interface Persona {
   responseLength?: string;
   gravityLevel?: number;
   snarkinessLevel?: number;
+  textColor?: string;
+}
+
+function hexToHsl(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let h = 0, s = 0;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+  return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
+}
+
+function applyAccentColor(hex: string) {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return;
+  try {
+    const hsl = hexToHsl(hex);
+    document.documentElement.style.setProperty("--primary", hsl);
+    document.documentElement.style.setProperty("--ring", hsl);
+  } catch {}
 }
 
 interface ChannelEntry {
@@ -363,12 +393,18 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
 
     if (msg.type === "persona.updated" && msg.payload) {
       setPersona((prev) => ({ ...prev, ...(msg.payload as Persona) }));
-      const incoming = msg.payload as Persona;
+      const incoming = msg.payload as Persona & { userName?: string };
       if (incoming.aiName?.trim()) {
         setAiName(incoming.aiName.trim());
       }
+      if ((incoming as { userName?: string }).userName?.trim()) {
+        setUserName((incoming as { userName?: string }).userName!.trim());
+      }
+      if (incoming.textColor) {
+        applyAccentColor(incoming.textColor);
+      }
     }
-  }, [setPersona, setAiName]);
+  }, [setPersona, setAiName, setUserName]);
 
   const { wsState, sendMessage } = useWebSocket(handleWsMessage);
   useSensorBridge(sendMessage, wsState);
@@ -416,7 +452,11 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
     const loadPersona = async () => {
       try {
         const res = await fetch(`${API_BASE}/ai/persona`);
-        if (res.ok) setPersona(await res.json() as Persona);
+        if (res.ok) {
+          const p = await res.json() as Persona;
+          setPersona(p);
+          if (p.textColor) applyAccentColor(p.textColor);
+        }
       } catch {}
     };
 
@@ -539,7 +579,21 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ audio: base64Audio }),
       });
-      if (!sttRes.ok) { setVoiceState("error"); setTimeout(() => setVoiceState("idle"), 2000); return; }
+      if (!sttRes.ok) {
+        setVoiceState("idle");
+        const errData = await sttRes.json().catch(() => ({})) as { reason?: string };
+        const reason = errData.reason ?? (sttRes.status === 503 ? "no-stt-key" : "stt-failed");
+        const errMsg = reason === "no-stt-key"
+          ? "Voice input requires an OpenAI API key. Configure it in desktop Settings → API Keys, then try again."
+          : "Voice transcription failed. Please try again or type your message.";
+        setMessages((prev) => [...prev, {
+          id: `sys_${Date.now()}`,
+          role: "system" as const,
+          content: errMsg,
+          timestamp: new Date().toISOString(),
+        }]);
+        return;
+      }
       const { transcript } = await sttRes.json() as { transcript: string };
       if (!transcript?.trim()) { setVoiceState("idle"); return; }
 
@@ -591,8 +645,8 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
         body: JSON.stringify({ text: chatData.response, voice: storedVoice }),
       });
       if (ttsRes.ok) {
-        const { audio } = await ttsRes.json() as { audio: string };
-        await speak(audio);
+        const { audio, format } = await ttsRes.json() as { audio: string; format?: string };
+        if (audio) await speak(audio, format ?? "mp3").catch(() => {});
       }
     } catch {
       setMessages((prev) => prev.filter((m) => !m.pending));
@@ -902,12 +956,14 @@ type SaveFields = {
 };
 
 const MOBILE_VOICES = [
-  { value: "alloy",   label: "ALLOY",   desc: "Neutral, balanced"    },
-  { value: "echo",    label: "ECHO",    desc: "Male, smooth"         },
-  { value: "fable",   label: "FABLE",   desc: "Storytelling"         },
-  { value: "onyx",    label: "ONYX",    desc: "Deep, authoritative"  },
-  { value: "nova",    label: "NOVA",    desc: "Female, energetic"    },
-  { value: "shimmer", label: "SHIMMER", desc: "Soft, gentle"         },
+  { value: "local-male",     label: "ARGUS",   desc: "Local · Deep, authoritative" },
+  { value: "local-female",   label: "ARIA",    desc: "Local · Clear, energetic"    },
+  { value: "local-nonbinary", label: "AXIOM",  desc: "Local · Mid-range tone"      },
+  { value: "alloy",          label: "ALLOY",   desc: "Cloud · Neutral, balanced"   },
+  { value: "echo",           label: "ECHO",    desc: "Cloud · Male, smooth"        },
+  { value: "onyx",           label: "ONYX",    desc: "Cloud · Deep, authoritative" },
+  { value: "nova",           label: "NOVA",    desc: "Cloud · Female, energetic"   },
+  { value: "shimmer",        label: "SHIMMER", desc: "Cloud · Soft, gentle"        },
 ];
 
 function SettingsPanel({
@@ -980,13 +1036,15 @@ function SettingsPanel({
         body: JSON.stringify({ text: `${voiceId} voice online and ready.`, voice: voiceId }),
       });
       if (res.ok) {
-        const { audio } = await res.json() as { audio: string };
+        const { audio, format } = await res.json() as { audio: string; format?: string };
+        if (!audio) { setPlayingVoice(null); return; }
+        const mime = format === "wav" ? "audio/wav" : format === "ogg" ? "audio/ogg" : "audio/mpeg";
         sampleAudioRef.current?.pause();
-        const el = new Audio(`data:audio/mp3;base64,${audio}`);
+        const el = new Audio(`data:${mime};base64,${audio}`);
         sampleAudioRef.current = el;
         el.onended = () => setPlayingVoice(null);
         el.onerror = () => setPlayingVoice(null);
-        await el.play();
+        await el.play().catch(() => setPlayingVoice(null));
       } else {
         setPlayingVoice(null);
       }
