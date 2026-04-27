@@ -250,6 +250,22 @@ const CURATED_SKILLS = [
   { slug: "youtube/summarize",     name: "YouTube Summarizer", author: "youtube",    category: "media",          description: "Download transcripts and generate summaries of YouTube videos.", installCount: 4600, tags: ["youtube", "video", "summarize", "media"] },
   { slug: "image/generate",        name: "Image Generate", author: "image",           category: "media",          description: "Generate images with Stable Diffusion or DALL-E from text prompts.", installCount: 5800, tags: ["image", "generation", "stable-diffusion", "dalle"] },
   { slug: "pdf/reader",            name: "PDF Reader",     author: "pdf",             category: "media",          description: "Extract and summarize text from PDF files.", installCount: 7100, tags: ["pdf", "documents", "extract", "read"] },
+
+  // Homelab / Self-Hosted Infrastructure
+  { slug: "home-assistant/hass",   name: "Home Assistant", author: "home-assistant",  category: "homelab",        description: "Control smart home devices, automations, scenes, and sensors via Home Assistant.", installCount: 9200, tags: ["home-assistant", "smart-home", "iot", "automation", "jarvis"] },
+  { slug: "proxmox/proxmox",       name: "Proxmox VE",     author: "proxmox",         category: "homelab",        description: "Manage VMs, LXC containers, storage, and node health on Proxmox Virtual Environment.", installCount: 3100, tags: ["proxmox", "vm", "virtualization", "homelab", "server"] },
+  { slug: "plex/plex",             name: "Plex",           author: "plex",            category: "homelab",        description: "Browse your Plex library, control playback, and manage media from your assistant.", installCount: 4400, tags: ["plex", "media", "streaming", "homelab"] },
+  { slug: "jellyfin/jellyfin",     name: "Jellyfin",       author: "jellyfin",        category: "homelab",        description: "Self-hosted media control — browse libraries, manage users, and control playback.", installCount: 3700, tags: ["jellyfin", "media", "self-hosted", "homelab"] },
+  { slug: "tailscale/tailscale",   name: "Tailscale",      author: "tailscale",       category: "homelab",        description: "View mesh network peers, check VPN status, and manage Tailscale devices.", installCount: 5600, tags: ["tailscale", "vpn", "networking", "mesh", "homelab"] },
+
+  // Security
+  { slug: "bitwarden/bitwarden",   name: "Bitwarden",      author: "bitwarden",       category: "security",       description: "Look up passwords and secure notes from your Bitwarden vault (read-only by default).", installCount: 4900, tags: ["bitwarden", "passwords", "secrets", "security", "vault"] },
+
+  // Notifications
+  { slug: "ntfy/ntfy",             name: "ntfy",           author: "ntfy",            category: "system",         description: "Push notifications to your phone or desktop via ntfy — trigger from any AI action.", installCount: 3300, tags: ["ntfy", "notifications", "push", "alerts", "self-hosted"] },
+
+  // Knowledge Management
+  { slug: "obsidian/obsidian",     name: "Obsidian",       author: "obsidian",        category: "productivity",   description: "Read, write, and search notes in your Obsidian vault. Integrates with Memory Bank.", installCount: 6100, tags: ["obsidian", "notes", "knowledge", "markdown", "vault"] },
 ];
 
 export default router;

@@ -51,11 +51,19 @@ interface ClawSkill {
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
-  monitoring: "text-[#00d4ff]",
-  ai: "text-[#cc44ff]",
-  iot: "text-[#ffaa00]",
-  productivity: "text-[#22ff44]",
-  community: "text-primary/60",
+  monitoring:    "text-[#00d4ff]",
+  ai:            "text-[#cc44ff]",
+  iot:           "text-[#ffaa00]",
+  productivity:  "text-[#22ff44]",
+  community:     "text-primary/60",
+  communication: "text-[#38bdf8]",
+  devops:        "text-[#00e5cc]",
+  data:          "text-[#facc15]",
+  research:      "text-[#a78bfa]",
+  system:        "text-[#94a3b8]",
+  media:         "text-[#f472b6]",
+  homelab:       "text-[#fb923c]",
+  security:      "text-[#f87171]",
 };
 
 const PERMISSION_LABELS: Record<string, { label: string; desc: string; risk: "low" | "medium" | "high" }> = {
