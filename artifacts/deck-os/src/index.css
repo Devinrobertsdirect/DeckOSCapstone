@@ -68,7 +68,7 @@
   --secondary-foreground: 217 70% 80%;
 
   --muted: 220 40% 12%;
-  --muted-foreground: 217 40% 58%;
+  --muted-foreground: 217 40% 68%;
 
   --accent: 217 80% 18%;
   --accent-foreground: 217 80% 90%;
@@ -99,7 +99,7 @@
   --foreground: 217 70% 80%; --border: 217 60% 28%;
   --card-foreground: 217 70% 80%; --card-border: 217 60% 28%;
   --popover-foreground: 217 70% 80%; --popover-border: 217 60% 28%;
-  --muted-foreground: 217 40% 58%; --accent: 217 80% 18%;
+  --muted-foreground: 217 40% 68%; --accent: 217 80% 18%;
   --accent-foreground: 217 80% 90%; --ring: 217 88% 60%; --input: 217 60% 28%;
 }
 [data-color="green"] {
@@ -107,7 +107,7 @@
   --foreground: 145 70% 78%; --border: 145 60% 26%;
   --card-foreground: 145 70% 78%; --card-border: 145 60% 26%;
   --popover-foreground: 145 70% 78%; --popover-border: 145 60% 26%;
-  --muted-foreground: 145 35% 52%; --accent: 145 70% 16%;
+  --muted-foreground: 145 35% 65%; --accent: 145 70% 16%;
   --accent-foreground: 145 80% 90%; --ring: 145 80% 45%; --input: 145 60% 26%;
 }
 [data-color="yellow"] {
@@ -115,7 +115,7 @@
   --foreground: 45 75% 80%; --border: 45 65% 28%;
   --card-foreground: 45 75% 80%; --card-border: 45 65% 28%;
   --popover-foreground: 45 75% 80%; --popover-border: 45 65% 28%;
-  --muted-foreground: 45 35% 52%; --accent: 45 70% 16%;
+  --muted-foreground: 45 35% 65%; --accent: 45 70% 16%;
   --accent-foreground: 45 80% 90%; --ring: 45 92% 54%; --input: 45 65% 28%;
 }
 [data-color="red"] {
@@ -123,7 +123,7 @@
   --foreground: 355 65% 80%; --border: 355 55% 26%;
   --card-foreground: 355 65% 80%; --card-border: 355 55% 26%;
   --popover-foreground: 355 65% 80%; --popover-border: 355 55% 26%;
-  --muted-foreground: 355 30% 52%; --accent: 355 60% 16%;
+  --muted-foreground: 355 30% 65%; --accent: 355 60% 16%;
   --accent-foreground: 355 70% 90%; --ring: 355 78% 57%; --input: 355 55% 26%;
 }
 
@@ -161,6 +161,18 @@
 @keyframes scanline {
   0%   { transform: translateY(-100%); }
   100% { transform: translateY(100vh); }
+}
+
+/* ───────────────────────────────────────────
+   HUD TEXT GLOW ON HOVER
+─────────────────────────────────────────── */
+.hud-glow-hover {
+  transition: text-shadow 0.25s ease;
+}
+.hud-glow-hover:hover {
+  text-shadow:
+    0 0 8px  rgba(var(--primary-rgb), 0.6),
+    0 0 20px rgba(var(--primary-rgb), 0.22);
 }
 
 /* ───────────────────────────────────────────

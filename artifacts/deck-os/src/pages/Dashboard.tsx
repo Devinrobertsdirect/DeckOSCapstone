@@ -690,7 +690,7 @@ export default function Dashboard() {
             <SummaryRow label="REQUESTS" value={String(aiInferred?.totalRequests ?? 0)} valueClass="text-primary/70" />
           </div>
           <div className="p-4 border-t border-primary/10 space-y-1.5">
-            <div className="font-mono text-xs text-primary/30 uppercase mb-2">INFERENCE</div>
+            <div className="font-mono text-xs text-primary/50 uppercase mb-2">INFERENCE</div>
             <StatusDot label="Ollama"      active={aiInferred?.ollamaAvailable ?? false} />
             <StatusDot label="Cloud API"   active={aiInferred?.cloudAvailable  ?? false} />
             <StatusDot label="Rule Engine" active />
@@ -698,7 +698,7 @@ export default function Dashboard() {
 
           {(mobileSnap || cameraSnap) && (
             <div className="border-t border-primary/10 p-4 space-y-3 font-mono text-xs">
-              <div className="text-primary/30 uppercase tracking-wider mb-2">FIELD.SENSORS</div>
+              <div className="text-primary/50 uppercase tracking-wider mb-2">FIELD.SENSORS</div>
 
               {mobileSnap?.values?.gps && (
                 <div className="flex items-start gap-2">
@@ -767,8 +767,8 @@ export default function Dashboard() {
 
           {!mobileSnap && !cameraSnap && (
             <div className="p-4 border-t border-primary/10 font-mono">
-              <div className="text-primary/20 text-xs uppercase tracking-wider mb-1">FIELD.SENSORS</div>
-              <div className="text-primary/15 text-[10px] leading-relaxed">
+              <div className="text-primary/40 text-xs uppercase tracking-wider mb-1">FIELD.SENSORS</div>
+              <div className="text-primary/35 text-[10px] leading-relaxed">
                 No live sensor feeds. Open DeckOS on your phone to stream location, battery, and network data.
               </div>
             </div>
@@ -776,7 +776,7 @@ export default function Dashboard() {
 
           {/* SPATIAL.TRACKER mini-map */}
           <div className="border-t border-primary/10 p-4 space-y-2">
-            <div className="font-mono text-[10px] text-primary/30 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <div className="hud-glow-hover font-mono text-[10px] text-primary/50 uppercase tracking-wider mb-2 flex items-center gap-1.5">
               <MapPin className="w-3 h-3" /> SPATIAL.TRACKER
             </div>
             <MiniMap />
@@ -804,12 +804,12 @@ function ConsoleLine({ children, kind }: { children: React.ReactNode; kind: "cmd
     error: "text-[#ff3333]/80",
     system: "text-primary/40",
   }[kind];
-  return <div className={`${color} whitespace-pre-wrap break-all leading-5`}>{children}</div>;
+  return <div className={`hud-glow-hover ${color} whitespace-pre-wrap break-all leading-5`}>{children}</div>;
 }
 
 function SummaryRow({ label, value, valueClass }: { label: string; value: string; valueClass: string }) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="hud-glow-hover flex items-center justify-between">
       <span className="text-muted-foreground">{label}:</span>
       <span className={valueClass}>{value}</span>
     </div>
@@ -818,9 +818,9 @@ function SummaryRow({ label, value, valueClass }: { label: string; value: string
 
 function StatusDot({ label, active }: { label: string; active: boolean }) {
   return (
-    <div className="flex items-center gap-2 font-mono text-xs">
-      <Circle className={`w-1.5 h-1.5 fill-current ${active ? "text-[#00ff88]" : "text-primary/20"}`} />
-      <span className={active ? "text-primary/60" : "text-primary/25"}>{label}</span>
+    <div className="hud-glow-hover flex items-center gap-2 font-mono text-xs">
+      <Circle className={`w-1.5 h-1.5 fill-current ${active ? "text-[#00ff88]" : "text-primary/35"}`} />
+      <span className={active ? "text-primary/70" : "text-primary/40"}>{label}</span>
     </div>
   );
 }
@@ -875,7 +875,7 @@ function PluginsCard({
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full text-left relative border overflow-hidden metric-card-glow border-primary/20 bg-primary/5 hover:border-primary/40 transition-colors"
+        className="hud-glow-hover w-full text-left relative border overflow-hidden metric-card-glow border-primary/20 bg-primary/5 hover:border-primary/40 transition-colors"
         aria-expanded={open}
       >
         <HudCorners />
@@ -889,7 +889,7 @@ function PluginsCard({
           </div>
           <div className="mt-auto flex items-center gap-1.5">
             {live && <Circle className="w-1.5 h-1.5 fill-[#00ff88] text-[#00ff88] animate-pulse" />}
-            <span className="font-mono text-[10px] text-primary/30 uppercase tracking-wider">click for details</span>
+            <span className="font-mono text-[10px] text-primary/45 uppercase tracking-wider">click for details</span>
           </div>
         </div>
       </button>
@@ -997,7 +997,7 @@ function MetricCard({
                   :             "text-primary";
 
   return (
-    <div className={`relative border overflow-hidden metric-card-glow ${borderCls}`}>
+    <div className={`hud-glow-hover relative border overflow-hidden metric-card-glow ${borderCls}`}>
       <HudCorners />
       <div className="p-4 flex flex-col gap-2 h-full min-h-[100px]">
         <div className="flex justify-between items-start">
@@ -1028,7 +1028,7 @@ function MetricCard({
           ) : live ? (
             <Circle className="w-1.5 h-1.5 fill-[#00ff88] text-[#00ff88] animate-pulse" />
           ) : compact ? (
-            <span className="font-mono text-xs text-primary/20">ON-DEMAND</span>
+            <span className="font-mono text-xs text-primary/40">ON-DEMAND</span>
           ) : null}
         </div>
       </div>
@@ -1098,7 +1098,7 @@ function BriefingCard({
           </div>
         )}
         {!loading && !generating && !briefing && (
-          <div className="font-mono text-xs text-primary/20">
+          <div className="font-mono text-xs text-primary/45">
             No briefings generated yet. Click GENERATE NOW to create the first one, or wait for 06:00.
           </div>
         )}
@@ -1115,9 +1115,9 @@ function BriefingCard({
                   { label: "MEMORIES", value: stats.memoriesStored },
                   { label: "FEEDBACK", value: stats.feedbackSignals },
                 ].map(({ label, value }) => (
-                  <div key={label} className="border border-primary/15 bg-primary/5 px-2 py-1 font-mono text-[10px] flex items-center gap-1.5">
-                    <span className="text-primary/35 uppercase tracking-wider">{label}</span>
-                    <span className="text-primary/80 font-bold">{value}</span>
+                  <div key={label} className="hud-glow-hover border border-primary/20 bg-primary/5 px-2 py-1 font-mono text-[10px] flex items-center gap-1.5">
+                    <span className="text-primary/50 uppercase tracking-wider">{label}</span>
+                    <span className="text-primary/90 font-bold">{value}</span>
                   </div>
                 ))}
               </div>
@@ -1146,14 +1146,14 @@ function PresenceStrip() {
   const avColor = presence ? (AVAIL_COLOR[presence.availability ?? ""] ?? "rgba(var(--primary-rgb),0.33)") : "rgba(var(--primary-rgb),0.2)";
 
   return (
-    <div className="border border-primary/15 bg-card/30 px-4 py-2.5 flex items-center gap-4 font-mono text-xs">
+    <div className="hud-glow-hover border border-primary/20 bg-card/30 px-4 py-2.5 flex items-center gap-4 font-mono text-xs">
       <div className="flex items-center gap-2 shrink-0">
-        <Radio className="w-3.5 h-3.5 text-primary/50" />
-        <span className="text-primary/40 uppercase tracking-wider">COGNITIVE.PULSE</span>
+        <Radio className="w-3.5 h-3.5 text-primary/60" />
+        <span className="text-primary/55 uppercase tracking-wider">COGNITIVE.PULSE</span>
       </div>
       <div className="w-px h-4 bg-primary/10 shrink-0" />
       <div className="flex items-center gap-1.5 shrink-0">
-        <span className="text-primary/30">PRESENCE</span>
+        <span className="text-primary/45">PRESENCE</span>
         <span className="font-bold uppercase" style={{ color: avColor }}>
           {presence ? presence.availability : "MONITORING"}
         </span>
@@ -1165,10 +1165,10 @@ function PresenceStrip() {
       </div>
       <div className="w-px h-4 bg-primary/10 shrink-0" />
       <div className="flex-1 min-w-0 flex items-center gap-2">
-        <Zap className="w-3 h-3 text-primary/30 shrink-0" />
-        <span className="text-primary/20">Event stream active — monitoring all channels</span>
+        <Zap className="w-3 h-3 text-primary/45 shrink-0" />
+        <span className="text-primary/40">Event stream active — monitoring all channels</span>
       </div>
-      <Link href="/commands" className="shrink-0 text-primary/30 hover:text-primary transition-colors uppercase tracking-wider">
+      <Link href="/commands" className="shrink-0 text-primary/45 hover:text-primary transition-colors uppercase tracking-wider">
         CONSOLE →
       </Link>
     </div>
