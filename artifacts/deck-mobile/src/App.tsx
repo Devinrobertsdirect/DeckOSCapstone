@@ -351,15 +351,20 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
   const tierByRequestRef = useRef<Map<string, string>>(new Map());
 
   const handleWsMessage = useCallback((data: unknown) => {
-    const msg = data as { type?: string; payload?: { requestId?: string; tier?: string } };
+    const msg = data as { type?: string; payload?: Record<string, unknown> };
+
     if (msg.type === "ai.inference_started" && msg.payload?.requestId && msg.payload?.tier) {
       const map = tierByRequestRef.current;
-      map.set(msg.payload.requestId, msg.payload.tier);
+      map.set(msg.payload.requestId as string, msg.payload.tier as string);
       if (map.size > 50) {
         map.delete(map.keys().next().value!);
       }
     }
-  }, []);
+
+    if (msg.type === "persona.updated" && msg.payload) {
+      setPersona((prev) => ({ ...prev, ...(msg.payload as Persona) }));
+    }
+  }, [setPersona]);
 
   const { wsState, sendMessage } = useWebSocket(handleWsMessage);
   useSensorBridge(sendMessage, wsState);

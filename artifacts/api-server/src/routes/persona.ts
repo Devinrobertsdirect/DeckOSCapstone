@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db, aiPersonaTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { bus } from "../lib/bus.js";
+import { broadcast } from "../lib/ws-server.js";
 
 const router = Router();
 
@@ -72,6 +73,8 @@ router.put("/ai/persona", async (req, res) => {
     type:   "system.config_changed",
     payload: { component: "ai_persona", changes: updates },
   });
+
+  broadcast({ type: "persona.updated", payload: updated });
 
   res.json(updated);
 });
