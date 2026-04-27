@@ -91,6 +91,8 @@ function loadData(): TutorialData {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw) as TutorialData;
   } catch {}
+  // First time: suppress the old slideshow guide so we own the first-run UX
+  try { localStorage.setItem("deckos_setup_guide_seen", "1"); } catch {}
   return { phase: "prompt", completedSteps: [] };
 }
 
@@ -152,13 +154,6 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     const timer = setTimeout(() => completeStep("welcome"), 600);
     return () => clearTimeout(timer);
   }, [data.phase, completeStep]);
-
-  // Suppress old slideshow guide on first load so our tutorial takes over
-  useEffect(() => {
-    if (!localStorage.getItem("deckos_setup_guide_seen")) {
-      localStorage.setItem("deckos_setup_guide_seen", "1");
-    }
-  }, []);
 
   // Route-based step completion
   useEffect(() => {

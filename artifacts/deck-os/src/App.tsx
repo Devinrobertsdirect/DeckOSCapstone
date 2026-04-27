@@ -10,6 +10,8 @@ import { Onboarding, isInitialized, applyColor, applyHexColor, getStoredColor } 
 import { StartScreen } from "@/components/StartScreen";
 import { CinematicOnboarding, isCinematicDone } from "@/components/CinematicOnboarding";
 import { SetupGuideModal } from "@/components/SetupGuideModal";
+import { TutorialProvider } from "@/contexts/TutorialContext";
+import { TutorialOverlay } from "@/components/TutorialOverlay";
 import NotFound from "@/pages/not-found";
 
 import Dashboard from "@/pages/Dashboard";
@@ -95,8 +97,11 @@ function App() {
               <Onboarding onComplete={() => setInitialized(true)} />
             ) : (
               <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-                <Router />
-                <SetupGuideModal />
+                <TutorialProvider>
+                  <Router />
+                  <SetupGuideModal />
+                  <TutorialOverlay />
+                </TutorialProvider>
               </WouterRouter>
             )}
             <Toaster />

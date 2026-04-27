@@ -221,7 +221,7 @@ function StepHint() {
 
   if (isActionStep) {
     return (
-      <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[140] pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-400">
+      <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[140] pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-300">
         <div
           className="border border-primary/50 bg-card/95 backdrop-blur-sm px-4 py-2.5 font-mono text-xs flex items-center gap-2.5 shadow-lg"
           style={{ boxShadow: "0 0 16px rgba(var(--primary-rgb),0.25)" }}
@@ -243,14 +243,14 @@ function StepHint() {
   // Nav step — position to the right of the sidebar (sidebar is w-52 = 208px)
   return (
     <div
-      className="fixed z-[140] pointer-events-none animate-in fade-in slide-in-from-left-2 duration-400"
+      className="fixed z-[140] pointer-events-none animate-in fade-in slide-in-from-left-2 duration-300"
       style={{ left: 220, top: "50%", transform: "translateY(-50%)" }}
     >
       <div className="flex items-center gap-2">
         {/* Arrow from sidebar */}
         <div className="flex items-center">
           <div className="h-px w-6 bg-primary/40" />
-          <div className="w-0 h-0 border-t-4 border-b-4 border-l-6 border-t-transparent border-b-transparent" style={{ borderLeftColor: "hsl(var(--primary) / 0.5)" }} />
+          <div className="w-0 h-0 border-t-4 border-b-4 border-t-transparent border-b-transparent" style={{ borderLeftWidth: 6, borderLeftStyle: "solid", borderLeftColor: "hsl(var(--primary) / 0.5)" }} />
         </div>
         <div
           className="border border-primary/50 bg-card/95 backdrop-blur-sm px-3 py-2 font-mono max-w-[180px]"

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useCamera } from "@/hooks/useCamera";
 import { useHealthCheck, getHealthCheckQueryKey } from "@workspace/api-client-react";
+import { useTutorial } from "@/contexts/TutorialContext";
 import { useVisualMode, type VisualMode } from "@/contexts/VisualMode";
 import { useWebSocket, useLatestPayload, useActivityLevel } from "@/contexts/WebSocketContext";
 import { EventLogPanel } from "@/components/EventLogPanel";
@@ -125,6 +126,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [now, setNow] = useState(() => new Date());
   const { status: wsStatus, events } = useWebSocket();
   const activityLevel = useActivityLevel();
+  const { currentStep: tutorialStep } = useTutorial();
+  const tutorialTargetRoute = tutorialStep?.targetRoute ?? null;
   const faceStyle = useFaceStyle();
   const [aiSpeaking, setAiSpeaking] = useState(false);
   const speakTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -634,7 +637,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   <ChevronRight className="w-3 h-3" />{section.label}
                 </div>
                 {section.items.map(({ href, icon, label }) => (
-                  <NavLink key={href} href={href} icon={icon} label={label} active={location === href} />
+                  <NavLink
+                    key={href}
+                    href={href}
+                    icon={icon}
+                    label={label}
+                    active={location === href}
+                    tutorialTarget={tutorialTargetRoute === href && location !== href}
+                  />
                 ))}
               </div>
             ))}
@@ -1141,24 +1151,33 @@ function VisualModeOption({
 }
 
 function NavLink({
-  href, icon: Icon, label, active,
+  href, icon: Icon, label, active, tutorialTarget,
 }: {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   active: boolean;
+  tutorialTarget?: boolean;
 }) {
   return (
     <Link
       href={href}
-      className={`flex items-center gap-2 px-3 py-2 border font-mono text-xs transition-all nav-link ${
+      className={`flex items-center gap-2 px-3 py-2 border font-mono text-xs transition-all nav-link relative ${
         active
           ? "border-primary/50 bg-primary/10 text-primary nav-active"
+          : tutorialTarget
+          ? "border-primary/30 text-primary/80 hover:border-primary/50 bg-primary/5"
           : "border-transparent text-muted-foreground hover:border-primary/30 hover:text-foreground"
       }`}
     >
       <Icon className="w-3.5 h-3.5 shrink-0" />
       <span className="tracking-wider">{label}</span>
+      {tutorialTarget && !active && (
+        <span className="ml-auto flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping absolute right-2.5" />
+          <span className="w-1.5 h-1.5 rounded-full bg-primary absolute right-2.5" />
+        </span>
+      )}
     </Link>
   );
 }
