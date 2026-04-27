@@ -24,7 +24,7 @@ Set-Location $dir
 Write-Header
 
 # 1. Node.js
-Write-Step 1 5 "Checking Node.js..."
+Write-Step 1 6 "Checking Node.js..."
 try {
   $nodeVer = & node --version 2>&1
   Write-Ok "Node.js $nodeVer"
@@ -36,14 +36,14 @@ try {
 }
 
 # 2. pnpm
-Write-Step 2 5 "Checking pnpm..."
+Write-Step 2 6 "Checking pnpm..."
 $pnpmOk = $false
 try { & pnpm --version 2>&1 | Out-Null; $pnpmOk = $true } catch {}
 if (-not $pnpmOk) {
   Write-Host "        Installing pnpm..." -ForegroundColor Yellow
   & npm install -g pnpm
   if ($LASTEXITCODE -ne 0) {
-    Write-Err "Could not install pnpm. Try right-clicking START_WINDOWS.bat and Run as Administrator."
+    Write-Err "Could not install pnpm. Try right-clicking START_WINDOWS.bat and choosing Run as Administrator."
     Read-Host "  Press Enter to close"; exit 1
   }
 }
@@ -51,7 +51,7 @@ $pnpmVer = & pnpm --version 2>&1
 Write-Ok "pnpm $pnpmVer"
 
 # 3. .env
-Write-Step 3 5 "Checking configuration..."
+Write-Step 3 6 "Checking configuration..."
 if (-not (Test-Path ".env")) {
   if (Test-Path ".env.example") {
     Copy-Item ".env.example" ".env"
@@ -75,7 +75,7 @@ Get-Content ".env" | ForEach-Object {
 }
 
 # 4. Dependencies
-Write-Step 4 5 "Installing dependencies (first run: 1-2 minutes)..."
+Write-Step 4 6 "Installing dependencies (first run: 1-2 minutes)..."
 & pnpm install --ignore-scripts
 if ($LASTEXITCODE -ne 0) {
   Write-Err "Dependency install failed. See messages above."
@@ -85,8 +85,27 @@ if ($LASTEXITCODE -ne 0) {
 & pnpm rebuild 2>&1 | Out-Null
 Write-Ok "Dependencies ready"
 
-# 5. Launch
-Write-Step 5 5 "Starting services..."
+# 5. Desktop shortcut
+Write-Step 5 6 "Creating desktop shortcut..."
+try {
+  $desktop = [System.Environment]::GetFolderPath("Desktop")
+  $shortcutPath = Join-Path $desktop "Deck OS.lnk"
+  $batPath = Join-Path $dir "START_WINDOWS.bat"
+
+  $wsh = New-Object -ComObject WScript.Shell
+  $shortcut = $wsh.CreateShortcut($shortcutPath)
+  $shortcut.TargetPath = $batPath
+  $shortcut.WorkingDirectory = $dir
+  $shortcut.Description = "Launch Deck OS JARVIS Command Center"
+  $shortcut.WindowStyle = 1
+  $shortcut.Save()
+  Write-Ok "Shortcut created on Desktop"
+} catch {
+  Write-Host "        (Could not create shortcut -- you can run START_WINDOWS.bat directly)" -ForegroundColor Gray
+}
+
+# 6. Launch
+Write-Step 6 6 "Starting Deck OS..."
 Start-Process cmd -ArgumentList "/c title Deck OS API && pnpm --filter @workspace/api-server run dev" -WindowStyle Minimized
 Start-Sleep -Seconds 4
 Start-Process cmd -ArgumentList "/c title Deck OS Frontend && pnpm --filter @workspace/deck-os run dev" -WindowStyle Minimized
@@ -97,9 +116,15 @@ Start-Process "http://localhost:3000"
 Write-Host ""
 Write-Host "  ==========================================" -ForegroundColor Green
 Write-Host "   Deck OS is running!" -ForegroundColor Green
+Write-Host ""
 Write-Host "   Browser opened to http://localhost:3000" -ForegroundColor White
-Write-Host "   If blank, wait 30 sec then press F5." -ForegroundColor Gray
+Write-Host "   If blank, wait 30 sec and press F5." -ForegroundColor Gray
+Write-Host ""
+Write-Host "   A shortcut was added to your Desktop." -ForegroundColor White
+Write-Host "   Double-click it any time to start Deck OS." -ForegroundColor Gray
+Write-Host ""
 Write-Host "   To STOP: close the two minimized windows" -ForegroundColor Gray
+Write-Host "   in your taskbar labeled Deck OS." -ForegroundColor Gray
 Write-Host "  ==========================================" -ForegroundColor Green
 Write-Host ""
 Read-Host "  Press Enter to close this window"
