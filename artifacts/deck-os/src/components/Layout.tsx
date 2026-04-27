@@ -112,6 +112,7 @@ const NAV_PAGE_ORDER = [
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
+  const [scanlineVisible, setScanlineVisible] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [autonomyOpen, setAutonomyOpen] = useState(false);
   const [eventLogOpen, setEventLogOpen] = useState(false);
@@ -258,6 +259,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const iv = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(iv);
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => setScanlineVisible(false), 30_000);
+    return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
@@ -411,7 +417,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen flex flex-col overflow-hidden relative">
-      <div className="scanline z-50" />
+      {scanlineVisible && <div className="scanline z-50" />}
 
       {/* ── Cinematic overlay layers (CSS hides unless cinematic mode) ── */}
       <div className="cinematic-vignette"      aria-hidden="true" />

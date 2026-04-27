@@ -9,6 +9,7 @@ import { WebSocketProvider } from "@/contexts/WebSocketContext";
 import { Onboarding, isInitialized, applyColor, getStoredColor } from "@/components/Onboarding";
 import { StartScreen } from "@/components/StartScreen";
 import { CinematicOnboarding, isCinematicDone } from "@/components/CinematicOnboarding";
+import { SetupGuideModal } from "@/components/SetupGuideModal";
 import NotFound from "@/pages/not-found";
 
 import Dashboard from "@/pages/Dashboard";
@@ -88,6 +89,7 @@ function App() {
             ) : (
               <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
                 <Router />
+                <SetupGuideModal />
               </WouterRouter>
             )}
             <Toaster />
