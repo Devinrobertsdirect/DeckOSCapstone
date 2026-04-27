@@ -11,6 +11,18 @@ import { useAudioPlayback } from "@/hooks/useAudioPlayback";
 
 const GREET_SESSION_KEY = "deckos_ai_greeted";
 
+function getTimeGreeting(): string {
+  try {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) return "Good morning";
+    if (hour >= 12 && hour < 17) return "Good afternoon";
+    if (hour >= 17 && hour < 22) return "Good evening";
+    return "Good night";
+  } catch {
+    return "Hello";
+  }
+}
+
 const MODES = ["DIRECT_EXECUTION", "LIGHT_REASONING", "DEEP_REASONING", "HYBRID_MODE"] as const;
 type Mode = typeof MODES[number];
 
@@ -124,11 +136,13 @@ export default function AiControl() {
     const greet = async () => {
       setGreetingLoading(true);
       try {
+        const timeGreeting = getTimeGreeting();
+        const nameClause = userName ? `, ${userName}` : "";
         const res = await fetch(`${import.meta.env.BASE_URL}api/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            message: "Greet the user as they open the app. Be brief, warm, and natural — one or two sentences at most. Reference the time of day if helpful. Do not list capabilities or ask what you can help with. Just say hello.",
+            message: `Greet the user as they open the app. Start your greeting with "${timeGreeting}${nameClause}." — use exactly that phrase to open. Be brief, warm, and natural — one or two sentences at most. Do not list capabilities or ask what you can help with. Just say hello.`,
             channel: "system",
           }),
         });
