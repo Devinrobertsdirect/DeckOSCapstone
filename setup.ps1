@@ -138,10 +138,10 @@ try {
 # 6. Launch
 Write-Step 6 6 "Starting Deck OS..."
 Write-Info "Starting the API server (backend) -- a window will open..."
-Start-Process cmd -ArgumentList "/c pnpm --filter @workspace/api-server run dev > api-server.log 2>&1" -WindowStyle Minimized
+Start-Process cmd -ArgumentList "/c pnpm --filter @workspace/api-server run dev > "$dir\api-server.log" 2>&1" -WorkingDirectory $dir -WindowStyle Minimized
 Start-Sleep -Seconds 5
 Write-Info "Starting the frontend (dashboard) -- another window will open..."
-Start-Process cmd -ArgumentList "/c pnpm --filter @workspace/deck-os run dev > frontend.log 2>&1" -WindowStyle Minimized
+Start-Process cmd -ArgumentList "/c pnpm --filter @workspace/deck-os run dev > "$dir\frontend.log" 2>&1" -WorkingDirectory $dir -WindowStyle Minimized
 
 Write-Host ""
 Write-Info "Waiting up to 60 seconds for services to start..."
