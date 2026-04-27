@@ -94,7 +94,7 @@ export default function AiControl() {
   const faceStyle = useFaceStyle();
   const aiName = useAiName();
   const userName = useUserName();
-  const { speak } = useAudioPlayback();
+  const { speak, playbackState } = useAudioPlayback();
 
   // ── Ollama auto-connect: call refresh endpoint on mount so the server
   //    re-probes localhost:11434 immediately (without waiting for the 15s poll).
@@ -336,7 +336,7 @@ export default function AiControl() {
       <div className="flex items-center gap-4 px-4 py-2 border border-primary/20 bg-primary/[0.03]">
         <AIFace
           style={faceStyle}
-          speaking={!!streamingText}
+          speaking={!!streamingText || playbackState === "speaking"}
           size={faceStyle === "iris" ? 48 : 72}
           color="var(--color-primary)"
         />
