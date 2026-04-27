@@ -142,6 +142,10 @@ export async function startCmd(opts = {}) {
         fail(`Dependency install failed: ${e.message}`);
       }
     }
+    // Rebuild native binaries that --ignore-scripts skipped (esbuild, etc.)
+    try {
+      sh('pnpm rebuild esbuild', repoDir);
+    } catch { /* non-fatal — migration will surface the error if it matters */ }
   }
 
   step(5, TOTAL_STEPS, 'Running database migrations...');
