@@ -983,6 +983,8 @@ export default function AiPersonality() {
     return () => window.removeEventListener(VOICE_CHANGED_EVENT, onVoiceChanged);
   }, []);
 
+  const currentFaceStyle = useFaceStyle();
+
   const set = useCallback((key: keyof AiPersona, value: string | number) => {
     setForm(prev => ({ ...prev, [key]: value }));
   }, []);
@@ -1307,8 +1309,28 @@ export default function AiPersonality() {
                            text-primary placeholder:text-primary/20 outline-none focus:border-primary/50 transition-all"
               />
             </div>
-            <div className="mt-2 text-primary/20 font-mono text-[9px]">
-              Applied to the AI's name and accent elements across the UI on next refresh.
+            <div className="mt-3 flex items-center justify-center">
+              <div
+                className="flex items-center justify-center border transition-all"
+                style={{
+                  width: 120,
+                  height: currentFaceStyle === "iris" ? 120 : 68,
+                  borderColor: `${form.textColor ?? "#00d4ff"}40`,
+                  background: `${form.textColor ?? "#00d4ff"}08`,
+                  boxShadow: `0 0 18px ${form.textColor ?? "#00d4ff"}22`,
+                  transition: "border-color 0.25s, box-shadow 0.25s",
+                }}
+              >
+                <AIFace
+                  style={currentFaceStyle}
+                  speaking={true}
+                  size={currentFaceStyle === "iris" ? 100 : 110}
+                  color={form.textColor ?? "#00d4ff"}
+                />
+              </div>
+            </div>
+            <div className="mt-2 text-primary/20 font-mono text-[9px] text-center">
+              Live preview — save to apply globally
             </div>
           </div>
 

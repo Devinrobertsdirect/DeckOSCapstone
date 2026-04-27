@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { AIFace } from "@/components/AIFace";
 
 // ─────────────────────────────────────────────
 // Types
@@ -401,7 +402,25 @@ function ColorPickPhase({ onNext }: { onNext: (c: ColorScheme) => void }) {
           ))}
         </div>
 
-        <div className="flex flex-col items-center gap-3">
+        <div className="flex flex-col items-center gap-4">
+          <div
+            className="flex items-center justify-center border"
+            style={{
+              width: 120,
+              height: 68,
+              borderColor: "rgba(var(--primary-rgb),0.25)",
+              background: "rgba(var(--primary-rgb),0.04)",
+              boxShadow: "0 0 20px rgba(var(--primary-rgb),0.12)",
+              transition: "border-color 0.3s, box-shadow 0.3s",
+            }}
+          >
+            <AIFace
+              style="vocoder"
+              speaking={true}
+              size={110}
+              color="var(--color-primary)"
+            />
+          </div>
           <ObButton onClick={() => onNext(selected)}>
             Confirm — Begin Setup →
           </ObButton>
