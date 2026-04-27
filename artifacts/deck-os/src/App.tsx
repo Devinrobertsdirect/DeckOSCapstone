@@ -49,7 +49,8 @@ function Router() {
   return (
     <Layout>
       <Switch>
-        <Route path="/" component={Dashboard} />
+        <Route path="/" component={AiControl} />
+        <Route path="/hud" component={Dashboard} />
         <Route path="/ai" component={AiControl} />
         <Route path="/ai/personality" component={AiPersonality} />
         <Route path="/plugins" component={PluginManager} />

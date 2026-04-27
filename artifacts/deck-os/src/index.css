@@ -49,26 +49,26 @@
 
 :root, .dark {
   --background: 220 50% 4%;
-  --foreground: 217 70% 80%;
-  --border: 217 60% 28%;
+  --foreground: 217 55% 93%;
+  --border: 217 60% 32%;
 
   --card: 220 50% 6%;
-  --card-foreground: 217 70% 80%;
-  --card-border: 217 60% 28%;
+  --card-foreground: 217 55% 93%;
+  --card-border: 217 60% 32%;
 
   --popover: 220 50% 6%;
-  --popover-foreground: 217 70% 80%;
-  --popover-border: 217 60% 28%;
+  --popover-foreground: 217 55% 93%;
+  --popover-border: 217 60% 32%;
 
-  --primary: 217 88% 60%;
+  --primary: 217 88% 65%;
   --primary-foreground: 220 50% 4%;
-  --primary-rgb: 63, 132, 243;
+  --primary-rgb: 77, 144, 246;
 
   --secondary: 220 60% 15%;
-  --secondary-foreground: 217 70% 80%;
+  --secondary-foreground: 217 55% 93%;
 
   --muted: 220 40% 12%;
-  --muted-foreground: 217 40% 68%;
+  --muted-foreground: 217 35% 82%;
 
   --accent: 217 80% 18%;
   --accent-foreground: 217 80% 90%;

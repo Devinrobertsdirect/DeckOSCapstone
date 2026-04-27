@@ -106,7 +106,7 @@ function eventToAction(type: string, payload: Record<string, unknown>): ActionFl
 }
 
 const NAV_PAGE_ORDER = [
-  "/", "/ai", "/ai/personality", "/plugins", "/plugins/store",
+  "/", "/hud", "/ai/personality", "/plugins", "/plugins/store",
   "/memory", "/devices", "/commands", "/routines",
   "/briefings", "/lie-detector", "/timeline", "/settings", "/map",
 ] as const;
@@ -234,6 +234,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         setHttpOllamaOnline(false);
       }
     }
+
+    fetch("/api/ai-router/refresh", { method: "POST" }).catch(() => {});
 
     pollAiStatus();
     const iv = setInterval(pollAiStatus, 30_000);
@@ -402,19 +404,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
     {
       label: "SYSTEM",
       items: [
-        { href: "/",        icon: Activity,       label: "SYS.HUD"   },
-        { href: "/ai",             icon: Microchip,      label: "AI.ROUTER" },
+        { href: "/",               icon: TerminalSquare, label: "AI.CONSOLE" },
+        { href: "/hud",            icon: Activity,       label: "SYS.HUD"    },
         { href: "/ai/personality", icon: Bot,            label: "AI.PERSONA" },
-        { href: "/plugins", icon: Settings,        label: "PLUGINS"   },
-        { href: "/plugins/store", icon: Package,     label: "PLUGIN.STORE" },
-        { href: "/memory",  icon: HardDrive,       label: "MEMORY.BANK" },
-        { href: "/devices", icon: Network,         label: "DEVICES"   },
-        { href: "/commands",  icon: TerminalSquare,  label: "CONSOLE"   },
-        { href: "/routines",   icon: Clock,           label: "ROUTINES"  },
-        { href: "/briefings",      icon: Newspaper,   label: "BRIEFINGS" },
-        { href: "/lie-detector",   icon: Scan,        label: "POLYGRAPH" },
-        { href: "/timeline",       icon: GitBranch,   label: "TIMELINE"  },
-        { href: "/settings",       icon: Settings,    label: "SETTINGS"  },
+        { href: "/plugins",        icon: Settings,       label: "PLUGINS"    },
+        { href: "/plugins/store",  icon: Package,        label: "PLUGIN.STORE" },
+        { href: "/memory",         icon: HardDrive,      label: "MEMORY.BANK" },
+        { href: "/devices",        icon: Network,        label: "DEVICES"    },
+        { href: "/commands",       icon: Microchip,      label: "SYS.CONSOLE" },
+        { href: "/routines",       icon: Clock,          label: "ROUTINES"   },
+        { href: "/briefings",      icon: Newspaper,      label: "BRIEFINGS"  },
+        { href: "/lie-detector",   icon: Scan,           label: "POLYGRAPH"  },
+        { href: "/timeline",       icon: GitBranch,      label: "TIMELINE"   },
+        { href: "/settings",       icon: Settings,       label: "SETTINGS"   },
       ],
     },
     {
