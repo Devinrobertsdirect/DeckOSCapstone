@@ -158,4 +158,51 @@ if ($apiUp -and $webUp) {
 }
 Write-Host "  ==========================================" -ForegroundColor Cyan
 Write-Host ""
+
+# ── OpenClaw (optional messaging bridge) ────────────────────────────────────
+Write-Host ""
+Write-Host "  -- OpenClaw Status --" -ForegroundColor Cyan
+
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$wslPath = "C:\Windows\System32\wsl.exe"
+$wslAvailable = Test-Path $wslPath
+if ($wslAvailable) {
+  try { & $wslPath --status 2>&1 | Out-Null; $wslAvailable = $LASTEXITCODE -eq 0 } catch { $wslAvailable = $false }
+}
+
+if (-not $wslAvailable) {
+  Write-Host "  OpenClaw requires WSL2 which is not yet active." -ForegroundColor Yellow
+  if ($isAdmin) {
+    Write-Host "  Enabling WSL2 features (a restart will be required)..." -ForegroundColor Gray
+    & C:\Windows\System32\dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart 2>&1 | Out-Null
+    & C:\Windows\System32\dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart 2>&1 | Out-Null
+    Write-Host "  WSL2 features enabled. RESTART your computer, then run setup again." -ForegroundColor Yellow
+    Write-Host "  After restart, in a terminal run: wsl --install -d Ubuntu" -ForegroundColor Gray
+  } else {
+    Write-Host "  If you already ran DISM -> restart your computer then run setup again." -ForegroundColor Gray
+    Write-Host "  Otherwise -> right-click START_WINDOWS.bat and Run as Administrator." -ForegroundColor Gray
+    Write-Host "  After restart, in a terminal run: wsl --install -d Ubuntu" -ForegroundColor Gray
+  }
+} else {
+  $clawUp = $false
+  try { $t = New-Object System.Net.Sockets.TcpClient; $t.Connect("localhost", 18789); $t.Close(); $clawUp = $true } catch {}
+  if (-not $clawUp) {
+    $openclawInstalled = $false
+    try { $r = & $wslPath -e which openclaw 2>&1; $openclawInstalled = $LASTEXITCODE -eq 0 } catch {}
+    if ($openclawInstalled) {
+      Write-Host "  Starting OpenClaw gateway..." -ForegroundColor Gray
+      Start-Process $wslPath -ArgumentList "-e ollama launch openclaw" -WindowStyle Hidden
+      Start-Sleep -Seconds 6
+      try { $t = New-Object System.Net.Sockets.TcpClient; $t.Connect("localhost", 18789); $t.Close(); $clawUp = $true } catch {}
+    } else {
+      Write-Host "  OpenClaw not found in WSL. To install:" -ForegroundColor Yellow
+      Write-Host "    1. Open a terminal and type: wsl" -ForegroundColor Gray
+      Write-Host "    2. Then run: curl -fsSL https://docs.openclaw.ai/install.sh | bash" -ForegroundColor Gray
+    }
+  }
+  if ($clawUp) {
+    Write-Host "  OpenClaw gateway running on port 18789 - connected to Deck OS" -ForegroundColor Green
+  }
+}
+
 Read-Host "  Press Enter to close this setup window"
