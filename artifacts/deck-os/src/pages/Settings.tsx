@@ -125,6 +125,13 @@ export default function Settings() {
   const [pairingResetting, setPairingResetting] = useState(false);
   const [urlCopied, setUrlCopied]           = useState(false);
 
+  const [ocRunning, setOcRunning]       = useState<boolean | null>(null);
+  const [ocInstalled, setOcInstalled]   = useState<boolean | null>(null);
+  const [ocWslOk, setOcWslOk]           = useState<boolean | null>(null);
+  const [ocLaunching, setOcLaunching]   = useState(false);
+  const [ocSteps, setOcSteps]           = useState<string[]>([]);
+  const [ocError, setOcError]           = useState<string | null>(null);
+
   const [version, setVersion]               = useState<string | null>(null);
   const [adminConfigured, setAdminConfigured] = useState<boolean | null>(null);
   const [serverEnvironment, setServerEnvironment] = useState<"docker" | "bare-metal" | null>(null);
@@ -381,6 +388,43 @@ export default function Settings() {
       })
       .catch(() => {});
   }, []);
+
+  // OpenClaw status poll — runs on connection tab mount + after launch
+  const fetchOcStatus = useCallback(async () => {
+    try {
+      const r = await fetch("/api/openclaw/status");
+      if (!r.ok) return;
+      const d = await r.json() as {
+        running: boolean; installed: boolean;
+        wsl?: { available: boolean } | null;
+      };
+      setOcRunning(d.running);
+      setOcInstalled(d.installed);
+      setOcWslOk(d.wsl == null ? true : d.wsl.available);
+    } catch { /* server unreachable — ignore */ }
+  }, []);
+
+  useEffect(() => { void fetchOcStatus(); }, [fetchOcStatus]);
+
+  const launchOpenClaw = async () => {
+    setOcLaunching(true);
+    setOcSteps([]);
+    setOcError(null);
+    try {
+      const r = await fetch("/api/openclaw/launch", { method: "POST" });
+      const d = await r.json() as { ok: boolean; steps?: string[]; error?: string; pending?: boolean };
+      setOcSteps(d.steps ?? []);
+      if (d.ok || d.pending) {
+        await fetchOcStatus();
+      } else {
+        setOcError(d.error ?? "Launch failed");
+      }
+    } catch (err) {
+      setOcError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setOcLaunching(false);
+    }
+  };
 
   function change<K extends keyof ConfigState>(key: K, value: ConfigState[K]) {
     setCfg((prev) => ({ ...prev, [key]: value }));
@@ -860,29 +904,103 @@ export default function Settings() {
               <CardTitle className="font-mono text-xs text-primary flex items-center gap-2">
                 <span className="text-[#cc44ff]">◈</span>
                 OPENCLAW — LOCAL AI AGENT GATEWAY
+                <span className="ml-auto flex items-center gap-2">
+                  {ocRunning === null ? (
+                    <span className="text-primary/30">CHECKING…</span>
+                  ) : ocRunning ? (
+                    <span className="flex items-center gap-1 text-[#11d97a]"><CheckCircle2 className="w-3 h-3" />RUNNING</span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-[#f03248]"><XCircle className="w-3 h-3" />OFFLINE</span>
+                  )}
+                </span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4 space-y-4">
               <p className="font-mono text-xs text-primary/50 leading-relaxed">
-                OpenClaw runs locally via <span className="text-primary">ollama launch openclaw</span> and starts a gateway
-                on <span className="text-primary">port 18789</span>. Requires WSL2 on Windows. Deck OS connects automatically
-                once it's running — no API key needed.
+                OpenClaw runs inside <span className="text-primary">WSL2 Ubuntu</span> and exposes a local AI agent gateway
+                on <span className="text-primary">port 18789</span>. Click Launch and Deck OS will install and start it
+                automatically — no manual steps needed.
               </p>
-              <div className="p-3 border border-[#cc44ff]/20 bg-[#cc44ff]/[0.03] font-mono text-xs space-y-2">
-                <div className="text-[#cc44ff] mb-1">QUICK START (WSL2 required)</div>
-                <div className="text-primary/60 space-y-0.5">
-                  <div>1. Open WSL terminal: <span className="text-primary">wsl</span></div>
-                  <div>2. Start gateway: <span className="text-primary">ollama launch openclaw</span></div>
-                  <div>3. Install skills: <span className="text-primary">clawhub install github/github</span></div>
-                  <div>4. Deck OS detects gateway on port 18789 automatically</div>
-                </div>
+
+              {/* Status row */}
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: "WSL2 UBUNTU", ok: ocWslOk },
+                  { label: "INSTALLED",   ok: ocInstalled },
+                  { label: "GATEWAY",     ok: ocRunning },
+                ].map(({ label, ok }) => (
+                  <div key={label} className="p-2 border border-primary/10 bg-primary/5 font-mono text-xs text-center">
+                    <div className="text-primary/40 mb-1">{label}</div>
+                    {ok === null ? (
+                      <span className="text-primary/30">—</span>
+                    ) : ok ? (
+                      <span className="text-[#11d97a]">OK</span>
+                    ) : (
+                      <span className="text-[#f03248]">NO</span>
+                    )}
+                  </div>
+                ))}
               </div>
+
+              {/* Launch button */}
+              {!ocRunning && (
+                <button
+                  onClick={() => void launchOpenClaw()}
+                  disabled={ocLaunching}
+                  className="w-full p-2.5 border border-[#cc44ff]/40 bg-[#cc44ff]/10 hover:bg-[#cc44ff]/20 font-mono text-xs text-[#cc44ff] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+                >
+                  {ocLaunching ? (
+                    <><Loader2 className="w-3.5 h-3.5 animate-spin" />INSTALLING &amp; LAUNCHING VIA UBUNTU…</>
+                  ) : (
+                    <><Terminal className="w-3.5 h-3.5" />LAUNCH OPENCLAW (AUTO-INSTALL IF NEEDED)</>
+                  )}
+                </button>
+              )}
+
+              {ocRunning && (
+                <div className="flex items-center gap-2 p-2.5 border border-[#11d97a]/20 bg-[#11d97a]/5 font-mono text-xs text-[#11d97a]">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  Gateway running on port 18789 — OpenClaw is ready
+                  <button
+                    onClick={() => void fetchOcStatus()}
+                    className="ml-auto text-primary/30 hover:text-primary/60 transition-colors"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+
+              {/* Step log */}
+              {ocSteps.length > 0 && (
+                <div className="p-3 border border-primary/10 bg-black/30 font-mono text-xs space-y-0.5 max-h-36 overflow-y-auto">
+                  {ocSteps.map((s, i) => (
+                    <div key={i} className="text-primary/60">
+                      <span className="text-primary/30 mr-2">{String(i + 1).padStart(2, "0")}.</span>{s}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Error */}
+              {ocError && (
+                <div className="p-3 border border-[#f03248]/30 bg-[#f03248]/5 font-mono text-xs text-[#f03248] space-y-1">
+                  <div className="flex items-center gap-1.5"><AlertTriangle className="w-3 h-3" />LAUNCH FAILED</div>
+                  <div className="text-primary/50 mt-1">{ocError}</div>
+                  {!ocWslOk && (
+                    <div className="mt-2 text-primary/40">
+                      Ubuntu not found in WSL2. Install it first:{" "}
+                      <span className="text-primary">wsl --install -d Ubuntu</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="p-3 border border-primary/10 bg-primary/5 font-mono text-xs text-primary/40 space-y-1">
                 <div className="text-primary/60 mb-1">OPENCLAW RESOURCES</div>
                 <div>• Skills registry: <span className="text-primary">clawhub.ai</span></div>
                 <div>• Curated list (5200+): <span className="text-primary">github.com/VoltAgent/awesome-openclaw-skills</span></div>
                 <div>• Windows guide: <span className="text-primary">docs.openclaw.ai/windows</span></div>
-                <div>• After WSL2 + Ubuntu install, run: <span className="text-primary">wsl --install -d Ubuntu</span></div>
+                <div>• If Ubuntu is missing: <span className="text-primary">wsl --install -d Ubuntu</span></div>
               </div>
             </CardContent>
           </Card>

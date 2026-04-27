@@ -1,12 +1,21 @@
 import { Router } from "express";
+import { exec }   from "child_process";
+import { promisify } from "util";
 import { logger } from "../lib/logger.js";
 import { getConfig } from "../lib/app-config.js";
 import { bus } from "../lib/bus.js";
 
-const router = Router();
+const router   = Router();
+const execAsync = promisify(exec);
 
-const OPENCLAW_PORT = 18789;
-const CLAWHUB_API   = "https://clawhub.ai/api/v1";
+const OPENCLAW_PORT   = 18789;
+const CLAWHUB_API     = "https://clawhub.ai/api/v1";
+const WSL_DISTRO      = "Ubuntu";
+const IS_WINDOWS      = process.platform === "win32";
+
+// Install script — official OpenClaw installer
+const OPENCLAW_INSTALL_CMD =
+  `curl -fsSL https://openclaw.ai/install.sh | bash`;
 
 type ClawSkill = {
   slug:         string;
@@ -18,10 +27,61 @@ type ClawSkill = {
   tags:         string[];
 };
 
-// ── Connectivity helpers ───────────────────────────────────────────────────
+// ── WSL2 helpers ───────────────────────────────────────────────────────────
 
+/**
+ * Run a command inside WSL2 Ubuntu (Windows) or directly on Linux/Mac.
+ * Returns { stdout, stderr } — rejects on non-zero exit.
+ */
+async function runInEnv(cmd: string): Promise<{ stdout: string; stderr: string }> {
+  if (IS_WINDOWS) {
+    return execAsync(`wsl -d ${WSL_DISTRO} -- bash -c ${JSON.stringify(cmd)}`, {
+      timeout: 30_000,
+    });
+  }
+  return execAsync(cmd, { timeout: 30_000 });
+}
+
+/**
+ * Check whether the WSL Ubuntu distro is installed and running.
+ * Returns null if not on Windows (always OK on Linux).
+ */
+async function detectWsl(): Promise<{ available: boolean; distros: string[] }> {
+  if (!IS_WINDOWS) return { available: true, distros: [] };
+  try {
+    const { stdout } = await execAsync("wsl --list --quiet", { timeout: 5_000 });
+    // stdout may contain UTF-16 null bytes on older Windows — strip them
+    const distros = stdout
+      .replace(/\0/g, "")
+      .split(/\r?\n/)
+      .map((d) => d.trim())
+      .filter(Boolean);
+    const available = distros.some((d) =>
+      d.toLowerCase().startsWith(WSL_DISTRO.toLowerCase()),
+    );
+    return { available, distros };
+  } catch {
+    return { available: false, distros: [] };
+  }
+}
+
+/**
+ * Check whether the `openclaw` binary exists inside the Ubuntu environment.
+ */
+async function isOpenClawInstalled(): Promise<boolean> {
+  try {
+    await runInEnv("which openclaw || command -v openclaw");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check whether the OpenClaw gateway is already listening on OPENCLAW_PORT.
+ * WSL2 port-forwards automatically, so localhost works from Windows too.
+ */
 async function isOpenClawRunning(): Promise<boolean> {
-  // OpenClaw follows Ollama's API format — try multiple endpoints
   const endpoints = [
     `http://localhost:${OPENCLAW_PORT}/api/tags`,
     `http://localhost:${OPENCLAW_PORT}/`,
@@ -42,25 +102,126 @@ async function isOpenClawRunning(): Promise<boolean> {
 
 async function getOpenClawModel(): Promise<string> {
   try {
-    return (await getConfig("OPENCLAW_MODEL")) ?? process.env["OPENCLAW_MODEL"] ?? "gemma4";
+    return (await getConfig("OPENCLAW_MODEL")) ?? process.env["OPENCLAW_MODEL"] ?? "default";
   } catch {
-    return process.env["OPENCLAW_MODEL"] ?? "gemma4";
+    return process.env["OPENCLAW_MODEL"] ?? "default";
   }
 }
 
 // ── GET /api/openclaw/status ───────────────────────────────────────────────
 
 router.get("/openclaw/status", async (_req, res) => {
-  const [running, model] = await Promise.all([isOpenClawRunning(), getOpenClawModel()]);
+  const [running, model, wsl, installed] = await Promise.all([
+    isOpenClawRunning(),
+    getOpenClawModel(),
+    detectWsl(),
+    isOpenClawInstalled(),
+  ]);
   res.json({
     running,
+    installed,
     gateway: `http://localhost:${OPENCLAW_PORT}`,
     model,
     port: OPENCLAW_PORT,
-    wslNote: "OpenClaw requires WSL2 on Windows. Run: ollama launch openclaw",
+    platform: process.platform,
+    wsl: IS_WINDOWS
+      ? { available: wsl.available, distro: WSL_DISTRO, distros: wsl.distros }
+      : null,
     docsUrl: "https://docs.openclaw.ai",
     clawHubUrl: "https://clawhub.ai",
   });
+});
+
+// ── POST /api/openclaw/launch ──────────────────────────────────────────────
+// Install (if needed) and start the OpenClaw gateway via WSL2 Ubuntu.
+
+router.post("/openclaw/launch", async (_req, res) => {
+  const steps: string[] = [];
+
+  // 1. Check if already running — nothing to do
+  if (await isOpenClawRunning()) {
+    res.json({ ok: true, alreadyRunning: true, steps: ["OpenClaw gateway already running"] });
+    return;
+  }
+
+  // 2. On Windows — verify WSL2 Ubuntu exists
+  if (IS_WINDOWS) {
+    const wsl = await detectWsl();
+    if (!wsl.available) {
+      res.status(503).json({
+        ok: false,
+        error: `WSL2 Ubuntu distro not found. Installed distros: ${wsl.distros.join(", ") || "none"}`,
+        fix: "Install Ubuntu from the Microsoft Store, then run: wsl --install -d Ubuntu",
+        steps,
+      });
+      return;
+    }
+    steps.push(`WSL2 Ubuntu distro confirmed`);
+  }
+
+  // 3. Install OpenClaw if not present
+  const installed = await isOpenClawInstalled();
+  if (!installed) {
+    steps.push("OpenClaw not found — installing via official installer…");
+    logger.info("OpenClaw: not installed — running installer in Ubuntu");
+    try {
+      await runInEnv(OPENCLAW_INSTALL_CMD);
+      steps.push("OpenClaw installed successfully");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err }, "OpenClaw install failed");
+      res.status(500).json({
+        ok: false,
+        error: `Install failed: ${msg}`,
+        fix: `Run manually in Ubuntu: ${OPENCLAW_INSTALL_CMD}`,
+        steps,
+      });
+      return;
+    }
+  } else {
+    steps.push("OpenClaw already installed");
+  }
+
+  // 4. Launch the gateway (detached so it survives this request)
+  steps.push("Starting OpenClaw gateway…");
+  try {
+    const launchCmd = [
+      "mkdir -p ~/.openclaw/logs",
+      "nohup openclaw gateway > ~/.openclaw/logs/gateway.log 2>&1 &",
+      "disown",
+    ].join(" && ");
+
+    await runInEnv(launchCmd);
+    steps.push("Gateway process started (detached)");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ err }, "OpenClaw gateway launch failed");
+    res.status(500).json({
+      ok: false,
+      error: `Launch failed: ${msg}`,
+      fix: IS_WINDOWS
+        ? `Open Ubuntu and run: openclaw gateway`
+        : `Run: openclaw gateway`,
+      steps,
+    });
+    return;
+  }
+
+  // 5. Wait up to 8 s for the gateway to become reachable
+  steps.push("Waiting for gateway to become ready…");
+  let ready = false;
+  for (let i = 0; i < 8; i++) {
+    await new Promise((r) => setTimeout(r, 1_000));
+    if (await isOpenClawRunning()) { ready = true; break; }
+  }
+
+  if (ready) {
+    steps.push("Gateway is up and accepting connections");
+    res.json({ ok: true, alreadyRunning: false, steps });
+  } else {
+    steps.push("Gateway started but did not become reachable within 8 s — check logs in Ubuntu: ~/.openclaw/logs/gateway.log");
+    res.status(202).json({ ok: false, pending: true, steps });
+  }
 });
 
 // ── POST /api/openclaw/chat ────────────────────────────────────────────────
@@ -82,7 +243,7 @@ router.post("/openclaw/chat", async (req, res) => {
   if (!running) {
     res.status(503).json({
       error: "OpenClaw gateway is not running",
-      fix: "Run in WSL2: ollama launch openclaw",
+      fix: "POST /api/openclaw/launch to auto-install and start it via WSL2 Ubuntu",
       docsUrl: "https://docs.openclaw.ai/windows",
     });
     return;
