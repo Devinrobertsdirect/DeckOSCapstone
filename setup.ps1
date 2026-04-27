@@ -112,7 +112,7 @@ Write-Step 6 6 "Starting Deck OS..."
 $apiLog = Join-Path $dir "api-server.log"
 $webLog = Join-Path $dir "frontend.log"
 # Kill any leftover processes from a previous run (fast netstat method)
-foreach ($port in @(8080, 3000)) { netstat -ano 2>NUL | Select-String ":$ports" | ForEach-Object { if ($_ -match "s+(d+)$") { Stop-Process -Id ([int]$Matches[1]) -Force -ErrorAction SilentlyContinue } } }
+foreach ($port in @(8080, 3000)) { netstat -ano 2>$null | Select-String ":$port" | ForEach-Object { if ($_ -match '\s+(\d+)$') { Stop-Process -Id ([int]$Matches[1]) -Force -ErrorAction SilentlyContinue } } }
 
 Write-Info "Starting API server..."
 $env:PORT = "8080"
