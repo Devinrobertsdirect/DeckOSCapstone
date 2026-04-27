@@ -10,6 +10,10 @@ let apiProcess = null;
 let tray = null;
 let mainWindow = null;
 
+// True when the app was launched automatically at login (via --startup arg).
+// In this mode we start hidden in the tray instead of opening the main window.
+const startMinimized = process.argv.includes("--startup");
+
 // ─── AI Status ───────────────────────────────────────────────────────────────
 // Possible states: "offline" | "online" | "speaking"
 let aiStatus = "offline";
@@ -382,24 +386,29 @@ async function createWindow() {
   createTray();
   startApiServer();
 
-  const splash = new BrowserWindow({
-    width: 480,
-    height: 320,
-    frame: false,
-    transparent: true,
-    resizable: false,
-    alwaysOnTop: true,
-    icon: path.join(__dirname, "build", "icon.png"),
-    webPreferences: { nodeIntegration: false, contextIsolation: true },
-  });
+  // When auto-launched at login (--startup) skip the splash entirely so the
+  // app starts silently in the background without flashing any window.
+  let splash = null;
+  if (!startMinimized) {
+    splash = new BrowserWindow({
+      width: 480,
+      height: 320,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      alwaysOnTop: true,
+      icon: path.join(__dirname, "build", "icon.png"),
+      webPreferences: { nodeIntegration: false, contextIsolation: true },
+    });
 
-  splash.loadURL(
-    "data:text/html,<html><body style='background:#000;display:flex;align-items:center;justify-content:center;height:100vh;margin:0'>" +
-      "<img src='file://" +
-      path.join(__dirname, "build", "icon.png").replace(/\\/g, "/") +
-      "' style='width:220px;filter:drop-shadow(0 0 24px #3f84f3);animation:p 2s ease-in-out infinite' />" +
-      "<style>@keyframes p{0%,100%{opacity:.6}50%{opacity:1}}</style></body></html>"
-  );
+    splash.loadURL(
+      "data:text/html,<html><body style='background:#000;display:flex;align-items:center;justify-content:center;height:100vh;margin:0'>" +
+        "<img src='file://" +
+        path.join(__dirname, "build", "icon.png").replace(/\\/g, "/") +
+        "' style='width:220px;filter:drop-shadow(0 0 24px #3f84f3);animation:p 2s ease-in-out infinite' />" +
+        "<style>@keyframes p{0%,100%{opacity:.6}50%{opacity:1}}</style></body></html>"
+    );
+  }
 
   try {
     await waitForApi(API_PORT, STARTUP_TIMEOUT_MS);
@@ -427,8 +436,12 @@ async function createWindow() {
   mainWindow.loadURL(`http://127.0.0.1:${API_PORT}/`);
 
   mainWindow.once("ready-to-show", () => {
-    splash.destroy();
-    mainWindow.show();
+    if (splash) splash.destroy();
+    // When auto-launched (--startup) keep the window hidden so the app lives
+    // silently in the tray; the user can open it from the tray or taskbar.
+    if (!startMinimized) {
+      mainWindow.show();
+    }
     connectStatusWs();
     tray.setContextMenu(buildTrayMenu());
   });
