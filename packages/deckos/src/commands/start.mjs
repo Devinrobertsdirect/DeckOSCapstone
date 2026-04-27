@@ -95,6 +95,8 @@ export async function startCmd(opts = {}) {
   step(3, TOTAL_STEPS, 'Setting up environment...');
   await ensureEnvFile(repoDir);
   const env = loadEnvFile(repoDir);
+  // Inject into process.env so all child processes (pnpm, drizzle-kit, etc.) can see them
+  Object.assign(process.env, env);
 
   // ── 5. Install & migrate ─────────────────────────────────────────────────
   const useDocker = !forceBare && (forceDocker || (docker && dockerCompose));
