@@ -13,4 +13,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("notifications-enabled-changed", handler);
     return () => ipcRenderer.removeListener("notifications-enabled-changed", handler);
   },
+
+  // Launch at login (Windows startup / macOS Login Items)
+  getLaunchOnStartup: () => ipcRenderer.invoke("get-launch-on-startup"),
+  setLaunchOnStartup: (enabled) => ipcRenderer.invoke("set-launch-on-startup", enabled),
+  onLaunchOnStartupChanged: (callback) => {
+    const handler = (_event, value) => callback(value);
+    ipcRenderer.on("launch-on-startup-changed", handler);
+    return () => ipcRenderer.removeListener("launch-on-startup-changed", handler);
+  },
 });

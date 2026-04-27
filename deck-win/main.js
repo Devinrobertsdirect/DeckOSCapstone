@@ -253,6 +253,8 @@ function updateTray() {
 }
 
 function buildTrayMenu() {
+  const launchOnStartup = app.getLoginItemSettings().openAtLogin;
+
   return Menu.buildFromTemplate([
     {
       label: "Open Deck OS",
@@ -274,6 +276,20 @@ function buildTrayMenu() {
         // Notify the renderer if it's listening
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send("notifications-enabled-changed", notificationsEnabled);
+        }
+      },
+    },
+    {
+      label: launchOnStartup ? "Disable Launch at Login" : "Enable Launch at Login",
+      click: () => {
+        const next = !launchOnStartup;
+        app.setLoginItemSettings({
+          openAtLogin: next,
+          args: next && process.platform === "win32" ? ["--startup"] : [],
+        });
+        tray.setContextMenu(buildTrayMenu());
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("launch-on-startup-changed", next);
         }
       },
     },
@@ -485,4 +501,22 @@ ipcMain.handle("set-notifications-enabled", (_event, enabled) => {
     mainWindow.webContents.send("notifications-enabled-changed", notificationsEnabled);
   }
   return notificationsEnabled;
+});
+
+ipcMain.handle("get-launch-on-startup", () => {
+  return app.getLoginItemSettings().openAtLogin;
+});
+
+ipcMain.handle("set-launch-on-startup", (_event, enabled) => {
+  const openAtLogin = Boolean(enabled);
+  app.setLoginItemSettings({
+    openAtLogin,
+    // Pass --startup so the app can detect it was auto-launched and start hidden
+    args: openAtLogin && process.platform === "win32" ? ["--startup"] : [],
+  });
+  tray.setContextMenu(buildTrayMenu());
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("launch-on-startup-changed", openAtLogin);
+  }
+  return openAtLogin;
 });

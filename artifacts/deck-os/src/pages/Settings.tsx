@@ -3,7 +3,7 @@ import {
   Settings as SettingsIcon, Wifi, Key, Cpu, CheckCircle2,
   XCircle, Loader2, Eye, EyeOff, Save, AlertTriangle, RotateCcw, Zap,
   Volume2, Mic, Globe, HardDrive, ShieldCheck, RefreshCw, Database, Server,
-  Info, Terminal, Download, Bell, BellOff,
+  Info, Terminal, Download, Bell, BellOff, Rocket,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -104,6 +104,7 @@ export default function Settings() {
 
   const [isElectron, setIsElectron]                     = useState(false);
   const [desktopNotifEnabled, setDesktopNotifEnabled]   = useState(true);
+  const [launchOnStartup, setLaunchOnStartup]           = useState(false);
 
   const [version, setVersion]               = useState<string | null>(null);
   const [adminConfigured, setAdminConfigured] = useState<boolean | null>(null);
@@ -236,12 +237,18 @@ export default function Settings() {
     const api = window.electronAPI;
     if (!api?.getNotificationsEnabled) return;
     setIsElectron(true);
+
     api.getNotificationsEnabled().then((v) => setDesktopNotifEnabled(v));
-    let cleanup: (() => void) | undefined;
+    api.getLaunchOnStartup?.().then((v) => setLaunchOnStartup(v));
+
+    const cleanups: Array<() => void> = [];
     if (api.onNotificationsEnabledChanged) {
-      cleanup = api.onNotificationsEnabledChanged((v) => setDesktopNotifEnabled(v));
+      cleanups.push(api.onNotificationsEnabledChanged((v) => setDesktopNotifEnabled(v)));
     }
-    return () => cleanup?.();
+    if (api.onLaunchOnStartupChanged) {
+      cleanups.push(api.onLaunchOnStartupChanged((v) => setLaunchOnStartup(v)));
+    }
+    return () => cleanups.forEach((fn) => fn());
   }, []);
 
   useEffect(() => {
@@ -1050,6 +1057,49 @@ export default function Settings() {
                     ? <><Bell className="w-3 h-3" />ENABLED</>
                     : <><BellOff className="w-3 h-3" />MUTED</>
                   }
+                </button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Launch on Startup — only shown inside the Electron wrapper */}
+          {isElectron && (
+            <Card className="bg-card/40 border-primary/20 rounded-none">
+              <CardHeader className="border-b border-primary/20 p-4">
+                <CardTitle className="font-mono text-xs text-primary flex items-center gap-2">
+                  <Rocket className={`w-3.5 h-3.5 ${launchOnStartup ? "" : "text-primary/40"}`} />
+                  LAUNCH AT LOGIN
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 flex items-center justify-between gap-6">
+                <div className="space-y-1.5 flex-1">
+                  <p className="font-mono text-xs text-primary/60 leading-relaxed">
+                    Start Deck OS automatically when you log in to Windows or macOS.
+                    The app will appear in the system tray — no manual launch needed.
+                  </p>
+                  {launchOnStartup && (
+                    <p className="font-mono text-xs text-[#11d97a]/70 flex items-center gap-1">
+                      <Rocket className="w-3 h-3" />
+                      JARVIS will be ready in your tray from the moment you log in.
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={async () => {
+                    const api = window.electronAPI;
+                    if (!api?.setLaunchOnStartup) return;
+                    const next = !launchOnStartup;
+                    setLaunchOnStartup(next);
+                    await api.setLaunchOnStartup(next);
+                  }}
+                  className={`shrink-0 flex items-center gap-2 px-5 py-2 border font-mono text-xs transition-all ${
+                    launchOnStartup
+                      ? "border-primary/60 bg-primary/10 text-primary hover:bg-primary/20"
+                      : "border-primary/20 text-primary/40 hover:border-primary/40 hover:text-primary/60"
+                  }`}
+                >
+                  <Rocket className="w-3 h-3" />
+                  {launchOnStartup ? "ENABLED" : "DISABLED"}
                 </button>
               </CardContent>
             </Card>
