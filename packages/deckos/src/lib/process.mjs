@@ -53,10 +53,13 @@ export function killProc(pid) {
   }
 }
 
+const isWindows = process.platform === 'win32';
+
 export function spawnDetached(cmd, args, opts = {}) {
   const child = spawn(cmd, args, {
     detached: true,
     stdio: 'ignore',
+    shell: isWindows,
     ...opts,
   });
   child.unref();
@@ -66,6 +69,7 @@ export function spawnDetached(cmd, args, opts = {}) {
 export function spawnAttached(cmd, args, opts = {}) {
   return spawn(cmd, args, {
     stdio: 'inherit',
+    shell: isWindows,
     ...opts,
   });
 }
