@@ -1,6 +1,27 @@
-# Deck OS — JARVIS Command Center
+# Deck OS
 
-A local-first AI command center inspired by Iron Man's JARVIS. Deck OS runs entirely on your machine using Ollama for private, offline AI inference — no cloud required.
+> **You re-explain yourself to your AI every single session. Deck OS ends that.**
+
+Your AI doesn't know you. It forgets your name, your goals, your home, your history the moment you close the tab. You pay $20/month for a chat box that treats you like a stranger every time.
+
+Deck OS replaces it. One private command center — running entirely on your own hardware — with an AI that knows your context, remembers your goals, controls your environment, and gets smarter the longer you use it. No cloud. No subscription. No data leaving your machine.
+
+```bash
+npx deckos start
+```
+
+Running in under a minute.
+
+---
+
+**What it replaces specifically:**
+
+| Before | After |
+|--------|-------|
+| ChatGPT that forgets you every session | JARVIS that carries full memory across every conversation |
+| 8 disconnected apps (weather, todos, smart home, health, calendar...) | One screen. One AI. Everything connected. |
+| Paying for cloud AI that trains on your data | Local Ollama inference — your conversations never leave your machine |
+| Smart home apps you have to open separately | Voice + text commands that trigger your actual devices in real time |
 
 ---
 
