@@ -25,7 +25,14 @@ interface Props {
   onComplete: () => void;
 }
 
-type Step = "boot" | "name" | "quiz" | "voice" | "face" | "firstcontact";
+type Step = "boot" | "name" | "gender" | "quiz" | "voice" | "face" | "firstcontact";
+
+const GENDERS = [
+  { value: "neutral",   label: "NEUTRAL",     desc: "No gender pronoun preference",  symbol: "◈" },
+  { value: "male",      label: "MALE",        desc: "He / Him pronouns",              symbol: "♂" },
+  { value: "female",    label: "FEMALE",      desc: "She / Her pronouns",             symbol: "♀" },
+  { value: "nonbinary", label: "NON-BINARY",  desc: "They / Them pronouns",           symbol: "⬡" },
+] as const;
 
 export const QUIZ_QUESTIONS = [
   {
@@ -315,7 +322,7 @@ function NameStep({ onComplete }: { onComplete: (name: string) => void }) {
     <div className="relative w-full h-full flex flex-col items-center justify-center px-8">
       <div className="w-full max-w-lg">
         <div className="font-mono text-xs tracking-widest mb-2" style={{ color: "rgba(63,132,243,0.5)" }}>
-          CALIBRATION — STEP 1 OF 5
+          CALIBRATION — STEP 1 OF 6
         </div>
         <div className="mb-1 font-mono text-xs tracking-widest uppercase" style={{ color: "#ffc820" }}>
           IDENTITY ASSIGNMENT
@@ -378,6 +385,101 @@ function NameStep({ onComplete }: { onComplete: (name: string) => void }) {
   );
 }
 
+function GenderStep({ aiName, onComplete }: { aiName: string; onComplete: (gender: string) => void }) {
+  const [selected, setSelected] = useState<string>("neutral");
+  const [confirmed, setConfirmed] = useState(false);
+
+  function handleConfirm() {
+    if (confirmed) return;
+    setConfirmed(true);
+    setTimeout(() => onComplete(selected), 300);
+  }
+
+  return (
+    <div className="relative w-full h-full flex flex-col items-center justify-center px-8">
+      <div className="w-full max-w-xl">
+        <div className="font-mono text-xs tracking-widest mb-2" style={{ color: "rgba(63,132,243,0.5)" }}>
+          CALIBRATION — STEP 2 OF 6
+        </div>
+        <div className="mb-1 font-mono text-xs tracking-widest uppercase" style={{ color: "#ffc820" }}>
+          VOICE PERSONA
+        </div>
+        <h2
+          className="text-3xl font-bold mb-2"
+          style={{ fontFamily: "var(--font-sans)", color: "var(--color-foreground)", letterSpacing: "0.05em" }}
+        >
+          Gender / Pronouns
+        </h2>
+        <p className="text-sm mb-8" style={{ color: "rgba(var(--primary-rgb),0.6)", fontFamily: "var(--font-mono)" }}>
+          {aiName} will use this to choose the right voice and pronouns. You can change this later.
+        </p>
+
+        <div className="grid grid-cols-2 gap-3 mb-8">
+          {GENDERS.map((g) => {
+            const active = selected === g.value;
+            return (
+              <button
+                key={g.value}
+                onClick={() => setSelected(g.value)}
+                className="relative text-left p-4 border transition-all"
+                style={{
+                  borderColor:   active ? "var(--color-primary)" : "rgba(63,132,243,0.15)",
+                  background:    active ? "rgba(63,132,243,0.1)" : "rgba(63,132,243,0.03)",
+                  boxShadow:     active ? "0 0 20px rgba(63,132,243,0.15), inset 0 0 12px rgba(63,132,243,0.05)" : "none",
+                  transform:     active ? "scale(1.02)" : "scale(1)",
+                  transitionDuration: "0.2s",
+                }}
+              >
+                <div
+                  className="font-mono text-xl mb-2"
+                  style={{ color: active ? "var(--color-primary)" : "rgba(63,132,243,0.35)" }}
+                >
+                  {g.symbol}
+                </div>
+                <div
+                  className="font-mono text-sm font-bold tracking-widest"
+                  style={{ color: active ? "var(--color-foreground)" : "rgba(var(--primary-rgb),0.55)" }}
+                >
+                  {g.label}
+                </div>
+                <div
+                  className="font-mono text-xs mt-1"
+                  style={{ color: active ? "rgba(var(--primary-rgb),0.65)" : "rgba(var(--primary-rgb),0.35)" }}
+                >
+                  {g.desc}
+                </div>
+                {active && (
+                  <div
+                    className="absolute top-2 right-2 font-mono text-xs"
+                    style={{ color: "var(--color-primary)" }}
+                  >
+                    ✓
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={handleConfirm}
+          disabled={confirmed}
+          className="w-full py-3 font-mono font-bold tracking-widest uppercase text-sm border transition-all"
+          style={{
+            borderColor: "var(--color-primary)",
+            color:        confirmed ? "rgba(var(--primary-rgb),0.4)" : "var(--color-primary)",
+            background:   "rgba(var(--primary-rgb),0.08)",
+            boxShadow:    confirmed ? "none" : "0 0 20px rgba(var(--primary-rgb),0.15)",
+            cursor:       confirmed ? "not-allowed" : "pointer",
+          }}
+        >
+          {confirmed ? "CONFIRMED…" : "CONFIRM SELECTION →"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function QuizStep({ aiName, onComplete }: { aiName: string; onComplete: (answers: Record<string, number>) => void }) {
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({});
@@ -411,7 +513,7 @@ function QuizStep({ aiName, onComplete }: { aiName: string; onComplete: (answers
       <div className="w-full max-w-xl">
         <div className="flex justify-between items-center mb-4">
           <div className="font-mono text-xs tracking-widest" style={{ color: "rgba(63,132,243,0.5)" }}>
-            CALIBRATION — STEP 2 OF 5
+            CALIBRATION — STEP 3 OF 6
           </div>
           <div className="font-mono text-xs tracking-widest" style={{ color: "rgba(63,132,243,0.5)" }}>
             {currentQ + 1}/{QUIZ_QUESTIONS.length}
@@ -637,7 +739,7 @@ function VoiceStep({ aiName, onComplete }: { aiName: string; onComplete: (voice:
     <div className="relative w-full h-full flex flex-col items-center justify-center px-8 overflow-y-auto py-8">
       <div className="w-full max-w-xl">
         <div className="font-mono text-xs tracking-widest mb-1" style={{ color: "rgba(63,132,243,0.5)" }}>
-          CALIBRATION — STEP 3 OF 5
+          CALIBRATION — STEP 4 OF 6
         </div>
         <div className="font-mono text-xs tracking-widest uppercase mb-2" style={{ color: "#ffc820" }}>
           VOICE SYNTHESIS MODULE
@@ -741,7 +843,7 @@ function FaceStep({ aiName, onComplete }: { aiName: string; onComplete: (face: F
     <div className="relative w-full h-full flex flex-col items-center justify-center px-8">
       <div className="w-full max-w-2xl">
         <div className="font-mono text-xs tracking-widest mb-1" style={{ color: "rgba(63,132,243,0.5)" }}>
-          CALIBRATION — STEP 4 OF 5
+          CALIBRATION — STEP 5 OF 6
         </div>
         <div className="font-mono text-xs tracking-widest uppercase mb-2" style={{ color: "#ffc820" }}>
           VISUAL INTERFACE MODULE
@@ -918,7 +1020,7 @@ function FirstContactStep({
     <div className="relative w-full h-full flex flex-col items-center justify-center px-8">
       <div className="w-full max-w-lg flex flex-col items-center text-center">
         <div className="font-mono text-xs tracking-widest mb-6" style={{ color: "rgba(63,132,243,0.5)" }}>
-          CALIBRATION — STEP 5 OF 5 — FIRST CONTACT
+          CALIBRATION — STEP 6 OF 6 — FIRST CONTACT
         </div>
 
         <div
@@ -1024,10 +1126,12 @@ export function CinematicOnboarding({ onComplete }: Props) {
     answers: Record<string, number>,
     voiceId: string,
     face: FaceStyle,
+    selectedGender: string,
   ) {
     try {
       const identityData: Record<string, unknown> = {
         aiName: name,
+        gender: selectedGender,
         onboardingComplete: true,
         onboardingVersion: 2,
         firstContactAt: new Date().toISOString(),
@@ -1065,6 +1169,17 @@ export function CinematicOnboarding({ onComplete }: Props) {
   function handleNameComplete(name: string) {
     setAiName(name);
     localStorage.setItem(AI_NAME_KEY, name);
+    setStep("gender");
+  }
+
+  function handleGenderComplete(selectedGender: string) {
+    setGender(selectedGender);
+    // Eagerly persist gender so local TTS uses it from the voice step onward
+    fetch(`${API_BASE}/persona`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gender: selectedGender }),
+    }).catch(() => {});
     setStep("quiz");
   }
 
@@ -1114,7 +1229,7 @@ export function CinematicOnboarding({ onComplete }: Props) {
   }
 
   async function handleFirstContactComplete() {
-    await writeToUCM(aiName, quizAnswers, voice, faceStyle);
+    await writeToUCM(aiName, quizAnswers, voice, faceStyle, gender ?? "neutral");
     localStorage.setItem(CINEMATIC_KEY, "true");
     localStorage.setItem("jarvis.initialized", "true");
     localStorage.setItem("jarvis.user", JSON.stringify({
@@ -1133,7 +1248,7 @@ export function CinematicOnboarding({ onComplete }: Props) {
     setTimeout(() => onComplete(), 500);
   }
 
-  const stepIndex = ["boot", "name", "quiz", "voice", "face", "firstcontact"].indexOf(step);
+  const stepIndex = ["boot", "name", "gender", "quiz", "voice", "face", "firstcontact"].indexOf(step);
 
   return (
     <div
@@ -1156,7 +1271,7 @@ export function CinematicOnboarding({ onComplete }: Props) {
           <div
             className="h-0.5"
             style={{
-              width: `${(stepIndex / 5) * 100}%`,
+              width: `${(stepIndex / 6) * 100}%`,
               background: "linear-gradient(90deg, rgba(63,132,243,0.3), var(--color-primary))",
               transition: "width 0.6s ease",
             }}
@@ -1165,9 +1280,10 @@ export function CinematicOnboarding({ onComplete }: Props) {
       )}
 
       <div className="w-full h-full">
-        {step === "boot" && <BootStep onComplete={handleBootComplete} />}
-        {step === "name" && <NameStep onComplete={handleNameComplete} />}
-        {step === "quiz" && <QuizStep aiName={aiName} onComplete={handleQuizComplete} />}
+        {step === "boot"   && <BootStep onComplete={handleBootComplete} />}
+        {step === "name"   && <NameStep onComplete={handleNameComplete} />}
+        {step === "gender" && <GenderStep aiName={aiName} onComplete={handleGenderComplete} />}
+        {step === "quiz"   && <QuizStep aiName={aiName} onComplete={handleQuizComplete} />}
         {step === "voice" && <VoiceStep aiName={aiName} onComplete={handleVoiceComplete} />}
         {step === "face" && <FaceStep aiName={aiName} onComplete={handleFaceComplete} />}
         {step === "firstcontact" && (

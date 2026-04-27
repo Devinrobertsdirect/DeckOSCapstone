@@ -1,11 +1,15 @@
-import { useEffect, useRef, useState } from "react";
-import { Brain, Zap, Database, Globe, CheckCircle2, XCircle, ChevronRight, Loader2, Copy, Check, Terminal, Package } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Brain, Zap, Database, Globe, CheckCircle2, XCircle, ChevronRight, Loader2, Copy, Check, Terminal, Package, Mic } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWebSocket, useLatestPayload, useWsEvents } from "@/contexts/WebSocketContext";
 import { AIFace, useFaceStyle } from "@/components/AIFace";
 import { useAiName } from "@/hooks/useAiName";
 import { useUserName } from "@/hooks/useUserName";
+import { VoiceMicButton } from "@/components/VoiceMicButton";
+import { useAudioPlayback } from "@/hooks/useAudioPlayback";
+
+const GREET_SESSION_KEY = "deckos_ai_greeted";
 
 const MODES = ["DIRECT_EXECUTION", "LIGHT_REASONING", "DEEP_REASONING", "HYBRID_MODE"] as const;
 type Mode = typeof MODES[number];
@@ -85,10 +89,78 @@ export default function AiControl() {
   const [clawSkills, setClawSkills] = useState<ClawSkill[]>([]);
   const [clawInstalling, setClawInstalling] = useState<string | null>(null);
   const [clawInstallMsg, setClawInstallMsg] = useState<string | null>(null);
+  const [greetingLoading, setGreetingLoading] = useState(false);
   const processedTokenKeysRef = useRef(new Set<string>());
   const faceStyle = useFaceStyle();
   const aiName = useAiName();
   const userName = useUserName();
+  const { speak } = useAudioPlayback();
+
+  // ── Greeting: fires once per browser session when this page mounts ──────
+  useEffect(() => {
+    if (sessionStorage.getItem(GREET_SESSION_KEY)) return;
+    sessionStorage.setItem(GREET_SESSION_KEY, "1");
+
+    const greet = async () => {
+      setGreetingLoading(true);
+      try {
+        const res = await fetch(`${import.meta.env.BASE_URL}api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "Greet the user as they open the app. Be brief, warm, and natural — one or two sentences at most. Reference the time of day if helpful. Do not list capabilities or ask what you can help with. Just say hello.",
+            channel: "system",
+          }),
+        });
+        if (!res.ok) return;
+        const data = await res.json() as { response?: string };
+        const text = data.response?.trim();
+        if (!text) return;
+
+        // Try to speak the greeting (silently fails if browser blocks autoplay)
+        try {
+          const ttsRes = await fetch(`${import.meta.env.BASE_URL}api/vision/tts`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text }),
+          });
+          if (ttsRes.ok) {
+            const { audio, format } = await ttsRes.json() as { audio?: string; format?: string };
+            if (audio) await speak(audio, format ?? "mp3").catch(() => {});
+          }
+        } catch { /* autoplay blocked — text greeting still shows via WS */ }
+      } catch { /* network error — silently skip */ } finally {
+        setGreetingLoading(false);
+      }
+    };
+
+    void greet();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Voice transcript handler for VoiceMicButton ──────────────────────────
+  const handleVoiceTranscript = useCallback(async (transcript: string): Promise<string> => {
+    const requestId = `voice-${Date.now()}`;
+    setSending(true);
+    setPendingRequestId(requestId);
+    setStreamingText("");
+    processedTokenKeysRef.current.clear();
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: transcript, channel: "voice", mode: currentMode, requestId }),
+      });
+      const data = await res.json() as { response?: string };
+      return data.response ?? "";
+    } catch {
+      return "";
+    } finally {
+      setSending(false);
+      setPendingRequestId(null);
+      setStreamingText("");
+    }
+  }, [currentMode]);
 
   useEffect(() => {
     const fetchTiers = () => {
@@ -465,14 +537,29 @@ export default function AiControl() {
           <CardTitle className="font-mono text-sm text-primary">AI.CHAT.CONSOLE</CardTitle>
         </CardHeader>
         <div className="flex-1 overflow-y-auto p-4 space-y-3 font-mono text-xs min-h-0">
-          {outputItems.length === 0 && !sending && (
-            <div className="space-y-1">
-              <div className="text-primary/70 font-mono">
-                {aiName} online. All systems nominal.
+          {outputItems.length === 0 && !sending && !greetingLoading && (
+            <div className="flex flex-col items-center justify-center py-10 gap-4 text-center">
+              <div className="w-px h-8 bg-primary/20" />
+              <div className="font-mono text-xs text-primary/40 tracking-widest uppercase">
+                {aiName} STANDING BY
               </div>
-              <div className="text-primary/50 font-mono">
-                Welcome back, {userName || "Commander"}. Standing by for your command.
+              <div className="font-mono text-sm text-primary/60 max-w-xs leading-relaxed">
+                Type a message below, or hold the mic button to speak.
               </div>
+              <div className="flex items-center gap-3 mt-1">
+                <span className="font-mono text-[10px] text-primary/30 border border-primary/15 px-2 py-0.5">TYPE</span>
+                <span className="text-primary/20 font-mono text-xs">or</span>
+                <span className="font-mono text-[10px] text-primary/30 border border-primary/15 px-2 py-0.5 flex items-center gap-1">
+                  <Mic className="w-2.5 h-2.5" /> SPEAK
+                </span>
+              </div>
+              <div className="w-px h-8 bg-primary/20" />
+            </div>
+          )}
+          {outputItems.length === 0 && !sending && greetingLoading && (
+            <div className="flex items-center gap-2 py-8 text-primary/40 font-mono text-xs">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>{aiName} is initializing…</span>
             </div>
           )}
           {outputItems.map((item, i) => {
@@ -537,20 +624,25 @@ export default function AiControl() {
             </div>
           )}
         </div>
-        <form onSubmit={handleInfer} className="border-t border-primary/20 p-4 flex gap-2">
-          <span className="text-primary font-mono mt-2 text-sm">&gt;</span>
+        <form onSubmit={handleInfer} className="border-t border-primary/20 p-3 flex items-center gap-2">
+          <span className="text-primary font-mono text-sm shrink-0">&gt;</span>
           <Input
             data-testid="infer-input"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            className="font-mono border-none bg-transparent focus-visible:ring-0 text-primary px-0"
-            placeholder="Enter prompt for AI router..."
+            className="font-mono border-none bg-transparent focus-visible:ring-0 text-primary px-0 placeholder:text-primary/30"
+            placeholder={`Message ${aiName}, or hold mic to speak…`}
+          />
+          <VoiceMicButton
+            onTranscript={handleVoiceTranscript}
+            disabled={sending}
+            compact
           />
           <button
             type="submit"
             data-testid="infer-submit"
-            disabled={sending}
-            className="border border-primary/40 px-4 font-mono text-xs text-primary hover:bg-primary/10 transition-all disabled:opacity-50"
+            disabled={sending || !prompt.trim()}
+            className="border border-primary/40 px-4 py-1.5 font-mono text-xs text-primary hover:bg-primary/10 transition-all disabled:opacity-40 shrink-0"
           >
             {sending ? <Loader2 className="w-3 h-3 animate-spin" /> : "SEND"}
           </button>
