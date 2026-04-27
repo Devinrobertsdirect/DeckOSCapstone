@@ -789,6 +789,39 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
+
+          {/* OpenClaw card */}
+          <Card className="bg-card/40 border-primary/20 rounded-none">
+            <CardHeader className="border-b border-primary/20 p-4">
+              <CardTitle className="font-mono text-xs text-primary flex items-center gap-2">
+                <span className="text-[#cc44ff]">◈</span>
+                OPENCLAW — LOCAL AI AGENT GATEWAY
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-4">
+              <p className="font-mono text-xs text-primary/50 leading-relaxed">
+                OpenClaw runs locally via <span className="text-primary">ollama launch openclaw</span> and starts a gateway
+                on <span className="text-primary">port 18789</span>. Requires WSL2 on Windows. Deck OS connects automatically
+                once it's running — no API key needed.
+              </p>
+              <div className="p-3 border border-[#cc44ff]/20 bg-[#cc44ff]/[0.03] font-mono text-xs space-y-2">
+                <div className="text-[#cc44ff] mb-1">QUICK START (WSL2 required)</div>
+                <div className="text-primary/60 space-y-0.5">
+                  <div>1. Open WSL terminal: <span className="text-primary">wsl</span></div>
+                  <div>2. Start gateway: <span className="text-primary">ollama launch openclaw</span></div>
+                  <div>3. Install skills: <span className="text-primary">clawhub install github/github</span></div>
+                  <div>4. Deck OS detects gateway on port 18789 automatically</div>
+                </div>
+              </div>
+              <div className="p-3 border border-primary/10 bg-primary/5 font-mono text-xs text-primary/40 space-y-1">
+                <div className="text-primary/60 mb-1">OPENCLAW RESOURCES</div>
+                <div>• Skills registry: <span className="text-primary">clawhub.ai</span></div>
+                <div>• Curated list (5200+): <span className="text-primary">github.com/VoltAgent/awesome-openclaw-skills</span></div>
+                <div>• Windows guide: <span className="text-primary">docs.openclaw.ai/windows</span></div>
+                <div>• After WSL2 + Ubuntu install, run: <span className="text-primary">wsl --install -d Ubuntu</span></div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 

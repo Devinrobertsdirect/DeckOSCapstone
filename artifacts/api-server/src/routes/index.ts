@@ -27,6 +27,7 @@ import configRouter from "./config";
 import storeRouter from "./store";
 import channelsRouter from "./channels";
 import adminRouter from "./admin";
+import openclawRouter from "./openclaw";
 
 const router: IRouter = Router();
 
@@ -58,5 +59,6 @@ router.use(configRouter);
 router.use(storeRouter);
 router.use(channelsRouter);
 router.use(adminRouter);
+router.use(openclawRouter);
 
 export default router;

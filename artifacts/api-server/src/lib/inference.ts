@@ -68,6 +68,7 @@ const inferenceState: {
   cache: Map<string, { response: string; model: string; tier: string; timestamp: number }>;
   ollamaAvailable: boolean | null;
   openWebUIAvailable: boolean | null;
+  openclawAvailable: boolean | null;
   lastDetected: Date;
 } = {
   totalRequests:      0,
@@ -78,6 +79,7 @@ const inferenceState: {
   cache:              new Map(),
   ollamaAvailable:    null,
   openWebUIAvailable: null,
+  openclawAvailable:  null,
   lastDetected:       new Date(),
 };
 
@@ -126,11 +128,20 @@ export async function detectOllama(): Promise<boolean> {
   }
 }
 
+export async function detectOpenClaw(): Promise<boolean> {
+  try {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 2_000);
+    const res = await fetch("http://localhost:18789/health", { signal: ctrl.signal });
+    return res.status < 500;
+  } catch {
+    return false;
+  }
+}
+
 export async function refreshOllamaDetection(): Promise<void> {
-  [inferenceState.ollamaAvailable, inferenceState.openWebUIAvailable] = await Promise.all([
-    detectOllama(),
-    detectOpenWebUI(),
-  ]);
+  [inferenceState.ollamaAvailable, inferenceState.openWebUIAvailable, inferenceState.openclawAvailable] =
+    await Promise.all([detectOllama(), detectOpenWebUI(), detectOpenClaw()]);
   inferenceState.lastDetected = new Date();
 }
 

@@ -5,6 +5,7 @@ import {
   Store, Download, Trash2, Power, Search, Filter,
   CheckCircle2, Shield, Tag, User, Globe, Loader2, RefreshCw,
   X, BookOpen, Calendar, Info, ChevronRight, Star, MessageSquare, Pencil,
+  Terminal, Package,
 } from "lucide-react";
 
 const API_BASE = "/api";
@@ -37,7 +38,17 @@ interface ReviewEntry {
 }
 type ReviewsMap = Record<string, ReviewEntry>;
 
-type StoreTab = "store" | "installed";
+type StoreTab = "store" | "installed" | "clawhub";
+
+interface ClawSkill {
+  slug: string;
+  name: string;
+  author: string;
+  category: string;
+  description: string;
+  installCount: number;
+  tags: string[];
+}
 
 const CATEGORY_COLORS: Record<string, string> = {
   monitoring: "text-[#00d4ff]",
@@ -589,6 +600,12 @@ export default function PluginStore() {
   const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
   const [replaceMode, setReplaceMode] = useState(false);
   const [selectedPlugin, setSelectedPlugin] = useState<RegistryPlugin | null>(null);
+  const [clawSkills, setClawSkills] = useState<ClawSkill[]>([]);
+  const [clawSearch, setClawSearch] = useState("");
+  const [clawCategory, setClawCategory] = useState("all");
+  const [clawInstalling, setClawInstalling] = useState<string | null>(null);
+  const [clawMsg, setClawMsg] = useState<{ slug: string; text: string } | null>(null);
+  const [clawLoading, setClawLoading] = useState(false);
   const qc = useQueryClient();
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -687,6 +704,40 @@ export default function PluginStore() {
 
   const installedCount = allPlugins.filter((p) => p.installed).length;
 
+  useEffect(() => {
+    if (tab !== "clawhub") return;
+    setClawLoading(true);
+    const params = new URLSearchParams({ limit: "50" });
+    if (clawSearch) params.set("q", clawSearch);
+    if (clawCategory !== "all") params.set("category", clawCategory);
+    fetch(`${API_BASE}/openclaw/skills?${params}`)
+      .then(r => r.json())
+      .then((d: { skills?: ClawSkill[] }) => setClawSkills(d.skills ?? []))
+      .catch(() => {})
+      .finally(() => setClawLoading(false));
+  }, [tab, clawSearch, clawCategory]);
+
+  const handleClawInstall = async (slug: string) => {
+    setClawInstalling(slug);
+    setClawMsg(null);
+    try {
+      const r = await fetch(`${API_BASE}/openclaw/skills/install`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug }),
+      });
+      const d = await r.json() as { installCommand?: string };
+      setClawMsg({ slug, text: d.installCommand ?? `clawhub install ${slug}` });
+      setTimeout(() => setClawMsg(null), 10_000);
+    } catch {
+      setClawMsg({ slug, text: "Error — check console" });
+    } finally {
+      setClawInstalling(null);
+    }
+  };
+
+  const clawCategories = ["all", ...new Set(clawSkills.map(s => s.category))].sort();
+
   const syncedSelectedPlugin = selectedPlugin
     ? (allPlugins.find((p) => p.id === selectedPlugin.id) ?? selectedPlugin)
     : null;
@@ -711,23 +762,24 @@ export default function PluginStore() {
 
       {/* Tab bar */}
       <div className="flex gap-0 border border-primary/20 w-fit font-mono text-xs">
-        {(["store", "installed"] as StoreTab[]).map((t) => (
+        {(["store", "installed", "clawhub"] as StoreTab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-4 py-1.5 transition-all ${
+            className={`px-4 py-1.5 transition-all border-r border-primary/10 last:border-r-0 flex items-center gap-1.5 ${
               tab === t
-                ? "bg-primary/10 text-primary border-r border-primary/20"
-                : "text-primary/40 hover:text-primary/70 border-r border-primary/10 last:border-r-0"
+                ? "bg-primary/10 text-primary"
+                : "text-primary/40 hover:text-primary/70"
             }`}
           >
-            {t === "store" ? "STORE" : `MY PLUGINS (${installedCount})`}
+            {t === "clawhub" && <Terminal className="w-3 h-3 text-[#cc44ff]" />}
+            {t === "store" ? "STORE" : t === "installed" ? `MY PLUGINS (${installedCount})` : "CLAWHUB SKILLS"}
           </button>
         ))}
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
+      {/* Filters (hidden on ClawHub tab) */}
+      {tab !== "clawhub" && <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-1.5 border border-primary/20 px-2 py-1 flex-1 min-w-40">
           <Search className="w-3 h-3 text-primary/40" />
           <input
@@ -762,29 +814,29 @@ export default function PluginStore() {
             RE-INSTALL
           </label>
         )}
-      </div>
+      </div>}
 
-      {/* Content */}
-      {isLoading && (
+      {/* Content — hidden when ClawHub tab is shown */}
+      {tab !== "clawhub" && isLoading && (
         <div className="flex items-center justify-center flex-1 font-mono text-xs text-primary/30">
           <Loader2 className="w-4 h-4 animate-spin mr-2" />
           Loading registry...
         </div>
       )}
 
-      {error && (
+      {tab !== "clawhub" && error && (
         <div className="border border-[#ff3333]/30 p-4 font-mono text-xs text-[#ff3333]/70">
           // Registry unavailable: {(error as Error).message}
         </div>
       )}
 
-      {!isLoading && !error && visiblePlugins.length === 0 && (
+      {tab !== "clawhub" && !isLoading && !error && visiblePlugins.length === 0 && (
         <div className="font-mono text-xs text-primary/30 border border-primary/10 p-4 text-center">
           {tab === "installed" ? "// No plugins installed yet" : "// No plugins match your search"}
         </div>
       )}
 
-      {!isLoading && !error && (
+      {tab !== "clawhub" && !isLoading && !error && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-y-auto flex-1 content-start">
           {visiblePlugins.map((plugin) => {
             const catColor = CATEGORY_COLORS[plugin.category] ?? "text-primary/60";
@@ -996,6 +1048,121 @@ export default function PluginStore() {
           <span>
             {allPlugins.length} plugins · {installedCount} installed
           </span>
+        </div>
+      )}
+
+      {/* ClawHub Skills Tab */}
+      {tab === "clawhub" && (
+        <div className="flex flex-col gap-4 flex-1 min-h-0">
+          <div className="border border-[#cc44ff]/20 bg-[#cc44ff]/[0.03] p-3 font-mono text-xs">
+            <div className="flex items-center gap-2 text-[#cc44ff] mb-1 font-bold">
+              <Terminal className="w-3 h-3" />
+              CLAWHUB — 5200+ OPENCLAW SKILLS
+            </div>
+            <div className="text-primary/40 text-[10px] space-y-0.5">
+              <div>Install skills in WSL: <span className="text-primary/70">clawhub install &lt;author/skill&gt;</span></div>
+              <div>Browse all: <span className="text-primary/70">clawhub.ai</span> · Curated list: <span className="text-primary/70">github.com/VoltAgent/awesome-openclaw-skills</span></div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5 border border-primary/20 px-2 py-1 flex-1 min-w-40">
+              <Search className="w-3 h-3 text-primary/40" />
+              <input
+                value={clawSearch}
+                onChange={(e) => setClawSearch(e.target.value)}
+                placeholder="search clawhub skills..."
+                className="bg-transparent font-mono text-xs text-primary placeholder:text-primary/30 outline-none flex-1"
+              />
+            </div>
+            <div className="flex items-center gap-1.5 border border-primary/20 px-2 py-1">
+              <Filter className="w-3 h-3 text-primary/40" />
+              <select
+                value={clawCategory}
+                onChange={(e) => setClawCategory(e.target.value)}
+                className="bg-transparent font-mono text-xs text-primary outline-none"
+              >
+                {clawCategories.map((c) => (
+                  <option key={c} value={c} className="bg-background">{c.toUpperCase()}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {clawMsg && (
+            <div className="border border-[#22ff44]/30 bg-[#22ff44]/[0.04] p-2 font-mono text-[10px] text-[#22ff44] break-all">
+              <span className="text-primary/40">Run in WSL: </span>{clawMsg.text}
+            </div>
+          )}
+
+          {clawLoading && (
+            <div className="flex items-center gap-2 font-mono text-xs text-primary/30">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              LOADING SKILLS...
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 overflow-y-auto flex-1 content-start">
+            {clawSkills.map((skill) => (
+              <div key={skill.slug} className="border border-primary/15 bg-card/30 p-4 flex flex-col gap-3 hover:border-[#cc44ff]/40 transition-all">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="font-mono text-sm text-primary font-bold">{skill.name}</div>
+                    <div className="font-mono text-[10px] text-primary/40">{skill.author}</div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <span className="font-mono text-[9px] text-[#cc44ff]/60 border border-[#cc44ff]/20 px-1.5 py-0.5 uppercase">
+                      {skill.category}
+                    </span>
+                    <span className="font-mono text-[9px] text-primary/25">
+                      {skill.installCount.toLocaleString()} installs
+                    </span>
+                  </div>
+                </div>
+
+                <div className="font-mono text-xs text-primary/50 leading-relaxed line-clamp-2">
+                  {skill.description}
+                </div>
+
+                <div className="flex flex-wrap gap-1">
+                  {skill.tags.slice(0, 4).map((tag) => (
+                    <span key={tag} className="font-mono text-[9px] text-primary/30 border border-primary/10 px-1">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between mt-auto pt-2 border-t border-primary/10">
+                  <a
+                    href={`https://clawhub.ai/${skill.slug}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-[10px] text-primary/30 hover:text-primary/60 transition-all flex items-center gap-1"
+                  >
+                    <Globe className="w-2.5 h-2.5" />
+                    VIEW ON CLAWHUB
+                  </a>
+                  <button
+                    onClick={() => handleClawInstall(skill.slug)}
+                    disabled={clawInstalling === skill.slug}
+                    className="flex items-center gap-1.5 border border-[#cc44ff]/30 px-3 py-1 font-mono text-[10px] text-[#cc44ff]/70 hover:text-[#cc44ff] hover:border-[#cc44ff]/60 transition-all disabled:opacity-40"
+                  >
+                    {clawInstalling === skill.slug ? (
+                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    ) : (
+                      <Package className="w-2.5 h-2.5" />
+                    )}
+                    INSTALL
+                  </button>
+                </div>
+              </div>
+            ))}
+            {!clawLoading && clawSkills.length === 0 && (
+              <div className="font-mono text-xs text-primary/30 border border-primary/10 p-4 col-span-full text-center">
+                // No skills found — try a different search or category
+              </div>
+            )}
+          </div>
         </div>
       )}
 

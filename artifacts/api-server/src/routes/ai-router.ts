@@ -109,6 +109,7 @@ router.get("/ai-router/status", async (req, res) => {
   // Attach extended tier stats alongside standard shape
   res.json({
     ...body,
+    openclawAvailable: state.openclawAvailable ?? false,
     models: {
       cortex:    MODEL_CONFIG.REASONING,
       reflex:    MODEL_CONFIG.FAST,

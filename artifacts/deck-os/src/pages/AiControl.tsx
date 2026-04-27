@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Brain, Zap, Database, Globe, CheckCircle2, XCircle, ChevronRight, Loader2, Copy, Check } from "lucide-react";
+import { Brain, Zap, Database, Globe, CheckCircle2, XCircle, ChevronRight, Loader2, Copy, Check, Terminal, Package } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useWebSocket, useLatestPayload, useWsEvents } from "@/contexts/WebSocketContext";
@@ -28,12 +28,30 @@ type RouterStatusPayload = {
   mode?: string;
   ollamaAvailable?: boolean;
   cloudAvailable?: boolean;
+  openclawAvailable?: boolean;
   totalRequests?: number;
   cacheHitRate?: number;
   lastDetectedAt?: string;
   timestamp?: string;
   models?: { cortex?: string; reflex?: string; autopilot?: string };
   tierStats?: { cortexRequests?: number; reflexRequests?: number; autopilotRequests?: number };
+};
+
+type OpenClawStatus = {
+  running: boolean;
+  gateway: string;
+  model: string;
+  port: number;
+};
+
+type ClawSkill = {
+  slug: string;
+  name: string;
+  author: string;
+  category: string;
+  description: string;
+  installCount: number;
+  tags: string[];
 };
 
 type ChatResponsePayload = {
@@ -63,6 +81,10 @@ export default function AiControl() {
   const [streamingText, setStreamingText] = useState("");
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [tierStatus, setTierStatus] = useState<TierStatus | null>(null);
+  const [openclawStatus, setOpenclawStatus] = useState<OpenClawStatus | null>(null);
+  const [clawSkills, setClawSkills] = useState<ClawSkill[]>([]);
+  const [clawInstalling, setClawInstalling] = useState<string | null>(null);
+  const [clawInstallMsg, setClawInstallMsg] = useState<string | null>(null);
   const processedTokenKeysRef = useRef(new Set<string>());
   const faceStyle = useFaceStyle();
   const aiName = useAiName();
@@ -93,6 +115,44 @@ export default function AiControl() {
     const id = setInterval(fetchTiers, 10_000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    const fetchClaw = () => {
+      fetch(`${import.meta.env.BASE_URL}api/openclaw/status`)
+        .then(r => r.json())
+        .then((d: OpenClawStatus) => setOpenclawStatus(d))
+        .catch(() => {});
+    };
+    fetchClaw();
+    const id = setInterval(fetchClaw, 15_000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}api/openclaw/skills?limit=12`)
+      .then(r => r.json())
+      .then((d: { skills?: ClawSkill[] }) => setClawSkills(d.skills ?? []))
+      .catch(() => {});
+  }, []);
+
+  const handleClawInstall = async (slug: string) => {
+    setClawInstalling(slug);
+    setClawInstallMsg(null);
+    try {
+      const r = await fetch(`${import.meta.env.BASE_URL}api/openclaw/skills/install`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug }),
+      });
+      const d = await r.json() as { installCommand?: string };
+      setClawInstallMsg(`Run in WSL: ${d.installCommand ?? `clawhub install ${slug}`}`);
+    } catch {
+      setClawInstallMsg("Failed to get install command.");
+    } finally {
+      setClawInstalling(null);
+      setTimeout(() => setClawInstallMsg(null), 8_000);
+    }
+  };
 
   const routerStatus = useLatestPayload<RouterStatusPayload>("ai.router.status");
   const latestChatResponse = useLatestPayload<ChatResponsePayload>("ai.chat.response");
@@ -159,6 +219,7 @@ export default function AiControl() {
 
   const ollamaOk = routerStatus?.ollamaAvailable ?? false;
   const cloudOk = routerStatus?.cloudAvailable ?? false;
+  const clawOk = openclawStatus?.running ?? (routerStatus?.openclawAvailable ?? false);
 
   const outputItems = chatResponses.slice(-20).reverse();
 
@@ -185,8 +246,9 @@ export default function AiControl() {
         {sending && <Loader2 className="w-3 h-3 text-primary/30 animate-spin ml-auto" />}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatusTile label="OLLAMA.LOCAL" value={ollamaOk ? "CONNECTED" : "OFFLINE"} ok={ollamaOk} />
+        <StatusTile label="OPENCLAW.GATEWAY" value={clawOk ? "RUNNING :18789" : "OFFLINE"} ok={clawOk} />
         <StatusTile label="CLOUD.API" value={cloudOk ? "AVAILABLE" : "UNAVAILABLE"} ok={cloudOk} />
         <StatusTile label="AI.EVENTS" value={`${aiEvents.length} EVENTS`} ok={aiEvents.length > 0} />
       </div>
@@ -241,6 +303,84 @@ export default function AiControl() {
         </div>
         <div className="mt-3 text-primary/20 text-[9px]">
           Task routing: chat/reasoning → CORTEX (Gemma) · classification/commands → REFLEX (phi3) · system/devices → AUTOPILOT (rule engine)
+        </div>
+      </div>
+
+      {/* ── OpenClaw Integration Panel ───────────────────────────────────── */}
+      <div className="border border-primary/20 bg-card/40 p-5 font-mono">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2 text-primary/50 text-[10px] uppercase tracking-widest">
+            <Terminal className="w-3 h-3 text-[#cc44ff]" />
+            <span>OPENCLAW.GATEWAY // LOCAL AI AGENT + 5200+ SKILLS</span>
+          </div>
+          <div className={`flex items-center gap-1.5 text-[10px] font-bold ${clawOk ? "text-[#22ff44]" : "text-[#ff3333]/70"}`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${clawOk ? "bg-[#22ff44] animate-pulse" : "bg-[#ff3333]/50"}`} />
+            {clawOk ? "GATEWAY LIVE — PORT 18789" : "GATEWAY OFFLINE"}
+          </div>
+        </div>
+
+        {!clawOk && (
+          <div className="border border-[#ffaa00]/20 bg-[#ffaa00]/[0.03] p-3 mb-4 text-[10px]">
+            <div className="text-[#ffaa00] mb-1 font-bold">START OPENCLAW</div>
+            <div className="text-primary/50 space-y-0.5">
+              <div>1. Open WSL terminal</div>
+              <div>2. Run: <span className="text-primary/80">ollama launch openclaw</span></div>
+              <div>3. Gateway starts on port 18789 — Deck OS connects automatically</div>
+              <div className="pt-1 text-primary/30">Guide: docs.openclaw.ai/windows · Skills: clawhub.ai</div>
+            </div>
+          </div>
+        )}
+
+        {clawOk && (
+          <div className="grid grid-cols-3 gap-3 mb-4 text-[10px]">
+            <div className="border border-primary/10 bg-card/20 p-2">
+              <div className="text-primary/30 mb-0.5">GATEWAY</div>
+              <div className="text-[#22ff44]">{openclawStatus?.gateway ?? "localhost:18789"}</div>
+            </div>
+            <div className="border border-primary/10 bg-card/20 p-2">
+              <div className="text-primary/30 mb-0.5">MODEL</div>
+              <div className="text-[#cc44ff] truncate">{openclawStatus?.model ?? "gemma3:9b"}</div>
+            </div>
+            <div className="border border-primary/10 bg-card/20 p-2">
+              <div className="text-primary/30 mb-0.5">SKILLS.REGISTRY</div>
+              <div className="text-[#00d4ff]">CLAWHUB.AI</div>
+            </div>
+          </div>
+        )}
+
+        {clawInstallMsg && (
+          <div className="border border-[#22ff44]/30 bg-[#22ff44]/[0.04] p-2 mb-3 text-[10px] text-[#22ff44] font-mono break-all">
+            {clawInstallMsg}
+          </div>
+        )}
+
+        <div className="mb-2 flex items-center gap-2 text-[9px] text-primary/30 uppercase">
+          <Package className="w-2.5 h-2.5" />
+          <span>FEATURED CLAWHUB SKILLS</span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+          {clawSkills.slice(0, 8).map((skill) => (
+            <div key={skill.slug} className="border border-primary/10 bg-card/20 p-2.5 space-y-1.5">
+              <div className="flex items-start justify-between gap-1">
+                <div className="text-[10px] text-primary/80 font-bold leading-tight">{skill.name}</div>
+                <div className="text-[8px] text-primary/30 shrink-0">{(skill.installCount / 1000).toFixed(1)}k</div>
+              </div>
+              <div className="text-[9px] text-primary/40 leading-snug line-clamp-2">{skill.description}</div>
+              <div className="flex items-center justify-between pt-0.5">
+                <span className="text-[8px] text-primary/25 uppercase">{skill.category}</span>
+                <button
+                  onClick={() => handleClawInstall(skill.slug)}
+                  disabled={clawInstalling === skill.slug}
+                  className="text-[8px] border border-primary/20 px-1.5 py-0.5 text-primary/50 hover:text-primary hover:border-primary/50 transition-all disabled:opacity-40"
+                >
+                  {clawInstalling === skill.slug ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : "INSTALL"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 text-[9px] text-primary/20">
+          5200+ community skills · Install via clawhub CLI inside WSL · clawhub.ai · github.com/VoltAgent/awesome-openclaw-skills
         </div>
       </div>
 
