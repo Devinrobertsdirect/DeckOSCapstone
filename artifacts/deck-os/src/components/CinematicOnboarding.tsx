@@ -1175,8 +1175,8 @@ export function CinematicOnboarding({ onComplete }: Props) {
   function handleGenderComplete(selectedGender: string) {
     setGender(selectedGender);
     // Eagerly persist gender so local TTS uses it from the voice step onward
-    fetch(`${API_BASE}/persona`, {
-      method: "PATCH",
+    fetch(`${API_BASE}/ai/persona`, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ gender: selectedGender }),
     }).catch(() => {});
@@ -1224,10 +1224,10 @@ export function CinematicOnboarding({ onComplete }: Props) {
 
   async function handleFirstContactComplete() {
     const finalGender = gender ?? "neutral";
-    // Authoritative persona PATCH at completion — ensures gender is persisted even if
-    // the earlier eager PATCH (handleGenderComplete) failed due to a network error.
-    await fetch(`${API_BASE}/persona`, {
-      method: "PATCH",
+    // Authoritative persona PUT at completion — ensures gender is persisted even if
+    // the earlier eager PUT (handleGenderComplete) failed due to a network error.
+    await fetch(`${API_BASE}/ai/persona`, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ gender: finalGender }),
     }).catch(() => {});
