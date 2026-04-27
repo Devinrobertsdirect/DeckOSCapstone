@@ -363,8 +363,12 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
 
     if (msg.type === "persona.updated" && msg.payload) {
       setPersona((prev) => ({ ...prev, ...(msg.payload as Persona) }));
+      const incoming = msg.payload as Persona;
+      if (incoming.aiName?.trim()) {
+        setAiName(incoming.aiName.trim());
+      }
     }
-  }, [setPersona]);
+  }, [setPersona, setAiName]);
 
   const { wsState, sendMessage } = useWebSocket(handleWsMessage);
   useSensorBridge(sendMessage, wsState);
@@ -929,6 +933,16 @@ function SettingsPanel({
   );
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
   const sampleAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Keep draft in sync with live prop updates (e.g. from desktop rename via WebSocket),
+  // but only when the user hasn't already diverged the field from the last known prop value.
+  const prevAiNameRef = useRef(aiName);
+  useEffect(() => {
+    if (draftAiName === prevAiNameRef.current) {
+      setDraftAiName(aiName);
+    }
+    prevAiNameRef.current = aiName;
+  }, [aiName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Stop any playing sample when the panel closes
   useEffect(() => () => { sampleAudioRef.current?.pause(); }, []);
