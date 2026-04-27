@@ -111,8 +111,8 @@ try {
 Write-Step 6 6 "Starting Deck OS..."
 $apiLog = Join-Path $dir "api-server.log"
 $webLog = Join-Path $dir "frontend.log"
-"" | Out-File $apiLog -Encoding utf8
-"" | Out-File $webLog -Encoding utf8
+# Kill any leftover processes from a previous run
+Get-Process | Where-Object { try { (Get-NetTCPConnection -OwningProcess $_.Id -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -in 8080,3000 }) } catch {} } | Stop-Process -Force -ErrorAction SilentlyContinue
 
 Write-Info "Starting API server..."
 $env:PORT = "8080"
