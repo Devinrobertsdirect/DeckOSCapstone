@@ -3,7 +3,7 @@ import {
   Settings as SettingsIcon, Wifi, Key, Cpu, CheckCircle2,
   XCircle, Loader2, Eye, EyeOff, Save, AlertTriangle, RotateCcw, Zap,
   Volume2, Mic, Globe, HardDrive, ShieldCheck, RefreshCw, Database, Server,
-  Info, Terminal, Download,
+  Info, Terminal, Download, Bell, BellOff,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -101,6 +101,9 @@ export default function Settings() {
 
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [healthChecking, setHealthChecking] = useState(false);
+
+  const [isElectron, setIsElectron]                     = useState(false);
+  const [desktopNotifEnabled, setDesktopNotifEnabled]   = useState(true);
 
   const [version, setVersion]               = useState<string | null>(null);
   const [adminConfigured, setAdminConfigured] = useState<boolean | null>(null);
@@ -228,6 +231,19 @@ export default function Settings() {
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [updateLog]);
+
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const api = (window as any).electronAPI;
+    if (!api?.getNotificationsEnabled) return;
+    setIsElectron(true);
+    api.getNotificationsEnabled().then((v: boolean) => setDesktopNotifEnabled(v));
+    let cleanup: (() => void) | undefined;
+    if (api.onNotificationsEnabledChanged) {
+      cleanup = api.onNotificationsEnabledChanged((v: boolean) => setDesktopNotifEnabled(v));
+    }
+    return () => cleanup?.();
+  }, []);
 
   useEffect(() => {
     fetch("/api/features")
@@ -991,6 +1007,55 @@ export default function Settings() {
               )}
             </CardContent>
           </Card>
+
+          {/* Desktop Notifications — only shown when running inside the Electron wrapper */}
+          {isElectron && (
+            <Card className="bg-card/40 border-primary/20 rounded-none">
+              <CardHeader className="border-b border-primary/20 p-4">
+                <CardTitle className="font-mono text-xs text-primary flex items-center gap-2">
+                  {desktopNotifEnabled
+                    ? <Bell className="w-3.5 h-3.5" />
+                    : <BellOff className="w-3.5 h-3.5 text-primary/40" />
+                  }
+                  DESKTOP NOTIFICATIONS
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 flex items-center justify-between gap-6">
+                <div className="space-y-1.5 flex-1">
+                  <p className="font-mono text-xs text-primary/60 leading-relaxed">
+                    Native OS alerts for system warnings, plugin errors, and completed routines.
+                    Fires even when the Deck OS window is hidden in the tray.
+                  </p>
+                  {!desktopNotifEnabled && (
+                    <p className="font-mono text-xs text-[#ffc820]/70 flex items-center gap-1">
+                      <BellOff className="w-3 h-3" />
+                      Notifications are muted — you can also unmute via the tray icon menu.
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={async () => {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const api = (window as any).electronAPI;
+                    if (!api?.setNotificationsEnabled) return;
+                    const next = !desktopNotifEnabled;
+                    setDesktopNotifEnabled(next);
+                    await api.setNotificationsEnabled(next);
+                  }}
+                  className={`shrink-0 flex items-center gap-2 px-5 py-2 border font-mono text-xs transition-all ${
+                    desktopNotifEnabled
+                      ? "border-primary/60 bg-primary/10 text-primary hover:bg-primary/20"
+                      : "border-primary/20 text-primary/40 hover:border-primary/40 hover:text-primary/60"
+                  }`}
+                >
+                  {desktopNotifEnabled
+                    ? <><Bell className="w-3 h-3" />ENABLED</>
+                    : <><BellOff className="w-3 h-3" />MUTED</>
+                  }
+                </button>
+              </CardContent>
+            </Card>
+          )}
 
           <div className="p-3 border border-primary/10 bg-primary/5 font-mono text-xs text-primary/40 space-y-1.5">
             <div className="text-primary/60 mb-1">DOCKER QUICK REFERENCE</div>
