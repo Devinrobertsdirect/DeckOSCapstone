@@ -247,7 +247,7 @@ function ExecutionLog({ routineId, onClose }: { routineId: number; onClose: () =
           <Loader2 className="w-3 h-3 animate-spin" /> Loading…
         </div>
       ) : !data?.executions?.length ? (
-        <div className="font-mono text-xs text-primary/20">No executions yet.</div>
+        <div className="font-mono text-xs text-primary/50">No executions yet.</div>
       ) : (
         <div className="space-y-1 max-h-52 overflow-y-auto">
           {data.executions.map(e => (
@@ -310,16 +310,16 @@ function RoutineRow({ routine, onToggle, onDelete, onTrigger, onEdit }: {
             )}
           </div>
           <div className="flex items-center gap-3 mt-0.5">
-            <span className="font-mono text-[11px] text-primary/35">{routine.triggerValue}</span>
-            <span className="font-mono text-[11px] text-primary/25">→</span>
-            <span className="font-mono text-[11px] text-primary/50">{ACTION_LABELS[routine.actionType]}</span>
+            <span className="font-mono text-[11px] text-primary/60">{routine.triggerValue}</span>
+            <span className="font-mono text-[11px] text-primary/40">→</span>
+            <span className="font-mono text-[11px] text-primary/70">{ACTION_LABELS[routine.actionType]}</span>
           </div>
         </div>
 
         {/* Timing */}
         <div className="hidden sm:flex flex-col items-end gap-0.5 shrink-0 w-24">
-          <div className="font-mono text-[10px] text-primary/25">last: {timeAgo(routine.lastRunAt)}</div>
-          <div className="font-mono text-[10px] text-primary/25">
+          <div className="font-mono text-[10px] text-primary/60">last: {timeAgo(routine.lastRunAt)}</div>
+          <div className="font-mono text-[10px] text-primary/60">
             {routine.triggerType === "cron" ? `next: ${timeUntil(routine.nextRunAt)}` : "—"}
           </div>
         </div>
@@ -443,7 +443,7 @@ function HistoryView({ routines }: { routines: Routine[] }) {
 
       {/* Results count */}
       {data && (
-        <div className="font-mono text-xs text-primary/25 px-0.5">
+        <div className="font-mono text-xs text-primary/55 px-0.5">
           {data.total} execution{data.total !== 1 ? "s" : ""} found
           {data.total === 200 ? " (showing latest 200)" : ""}
         </div>
@@ -466,8 +466,8 @@ function HistoryView({ routines }: { routines: Routine[] }) {
       {!isLoading && data?.executions.length === 0 && (
         <div className="border border-primary/10 p-8 text-center">
           <History className="w-8 h-8 text-primary/10 mx-auto mb-3" />
-          <div className="font-mono text-sm text-primary/25">No executions found.</div>
-          <div className="font-mono text-xs text-primary/15 mt-1">Trigger a routine or adjust filters.</div>
+          <div className="font-mono text-sm text-primary/55">No executions found.</div>
+          <div className="font-mono text-xs text-primary/45 mt-1">Trigger a routine or adjust filters.</div>
         </div>
       )}
 
@@ -475,7 +475,7 @@ function HistoryView({ routines }: { routines: Routine[] }) {
       {data && data.executions.length > 0 && (
         <div className="space-y-1">
           {/* Header row */}
-          <div className="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center px-3 py-1.5 font-mono text-[10px] text-primary/25 uppercase tracking-wider border-b border-primary/10">
+          <div className="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center px-3 py-1.5 font-mono text-[10px] text-primary/50 uppercase tracking-wider border-b border-primary/10">
             <span className="w-5" />
             <span>Routine · Action</span>
             <span className="w-20 text-right">Outcome</span>
@@ -676,8 +676,8 @@ export default function RoutinesPage() {
           {!isLoading && routines.length === 0 && (
             <div className="border border-primary/10 p-8 text-center">
               <Clock className="w-8 h-8 text-primary/10 mx-auto mb-3" />
-              <div className="font-mono text-sm text-primary/25">No routines configured.</div>
-              <div className="font-mono text-xs text-primary/15 mt-1">Create your first routine above.</div>
+              <div className="font-mono text-sm text-primary/55">No routines configured.</div>
+              <div className="font-mono text-xs text-primary/45 mt-1">Create your first routine above.</div>
             </div>
           )}
 
@@ -686,7 +686,7 @@ export default function RoutinesPage() {
               {/* Enabled section */}
               {routines.filter(r => r.enabled).length > 0 && (
                 <div>
-                  <div className="font-mono text-[10px] text-primary/25 uppercase tracking-widest px-1 mb-2 flex items-center gap-1.5">
+                  <div className="font-mono text-[10px] text-primary/55 uppercase tracking-widest px-1 mb-2 flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#11d97a] inline-block animate-pulse" />
                     Active
                   </div>
@@ -707,7 +707,7 @@ export default function RoutinesPage() {
               {/* Disabled section */}
               {routines.filter(r => !r.enabled).length > 0 && (
                 <div className="mt-4">
-                  <div className="font-mono text-[10px] text-primary/20 uppercase tracking-widest px-1 mb-2 flex items-center gap-1.5">
+                  <div className="font-mono text-[10px] text-primary/45 uppercase tracking-widest px-1 mb-2 flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-primary/20 inline-block" />
                     Disabled
                   </div>
