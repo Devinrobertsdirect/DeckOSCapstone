@@ -1,18 +1,14 @@
 @echo off
-title Deck OS — Starting...
+setlocal enabledelayedexpansion
+title Deck OS Launcher
 color 0A
 cls
 
 echo.
-echo  ██████╗ ███████╗ ██████╗██╗  ██╗     ██████╗ ███████╗
-echo  ██╔══██╗██╔════╝██╔════╝██║ ██╔╝    ██╔═══██╗██╔════╝
-echo  ██║  ██║█████╗  ██║     █████╔╝     ██║   ██║███████╗
-echo  ██║  ██║██╔══╝  ██║     ██╔═██╗     ██║   ██║╚════██║
-echo  ██████╔╝███████╗╚██████╗██║  ██╗    ╚██████╔╝███████║
-echo  ╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝     ╚═════╝ ╚══════╝
-echo.
-echo  JARVIS Command Center — Windows Launcher
-echo  ════════════════════════════════════════
+echo  ==========================================
+echo   DECK OS -- JARVIS Command Center
+echo   Local AI Dashboard Launcher
+echo  ==========================================
 echo.
 
 :: ── Step 1: Check Node.js ───────────────────────────────────────────────────
@@ -22,40 +18,41 @@ if errorlevel 1 (
   color 0C
   echo.
   echo  ERROR: Node.js is not installed.
-  echo  Please download and install it from: https://nodejs.org
-  echo  Choose the LTS version, then run this file again.
+  echo  Please visit https://nodejs.org and install the LTS version.
+  echo  Then double-click this file again.
   echo.
   pause
   exit /b 1
 )
-for /f "tokens=*" %%v in ('node --version') do echo         Found %%v
+for /f %%v in ('node --version') do echo         Found Node.js %%v
 
-:: ── Step 2: Check / install pnpm ────────────────────────────────────────────
+:: ── Step 2: Check pnpm ──────────────────────────────────────────────────────
 echo  [2/5] Checking pnpm...
 pnpm --version >nul 2>&1
 if errorlevel 1 (
   echo         Installing pnpm...
-  npm install -g pnpm >nul 2>&1
+  call npm install -g pnpm
   if errorlevel 1 (
     color 0C
     echo.
-    echo  ERROR: Could not install pnpm. Try running this as Administrator.
+    echo  ERROR: Could not install pnpm.
+    echo  Try right-clicking this file and running as Administrator.
     echo.
     pause
     exit /b 1
   )
 )
-for /f "tokens=*" %%v in ('pnpm --version') do echo         Found pnpm %%v
+for /f %%v in ('pnpm --version') do echo         Found pnpm %%v
 
 :: ── Step 3: Check .env ──────────────────────────────────────────────────────
-echo  [3/5] Checking environment...
+echo  [3/5] Checking configuration...
 if not exist .env (
   if exist .env.example (
     copy .env.example .env >nul
-    echo         Created .env from .env.example
     echo.
-    echo  ACTION REQUIRED: Open the .env file and set your DATABASE_URL.
-    echo  Then run this launcher again.
+    echo  ACTION REQUIRED:
+    echo  A .env file was created. Open it in Notepad and set your DATABASE_URL.
+    echo  Save the file, then double-click this launcher again.
     echo.
     start notepad .env
     pause
@@ -63,38 +60,33 @@ if not exist .env (
   ) else (
     color 0C
     echo.
-    echo  ERROR: No .env file found. Create one with your DATABASE_URL.
+    echo  ERROR: No .env file found. Please add your database credentials.
     echo.
     pause
     exit /b 1
   )
-) else (
-  echo         .env found
 )
+echo         Configuration found
 
-:: ── Load DATABASE_URL from .env ─────────────────────────────────────────────
+:: ── Load env vars from .env ─────────────────────────────────────────────────
 for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
-  set "line=%%a"
-  if "!line:~0,1!" neq "#" (
-    if "%%a"=="DATABASE_URL" set "DATABASE_URL=%%b"
-  )
-)
-setlocal enabledelayedexpansion
-for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
-  set "line=%%a"
-  if "!line:~0,1!" neq "#" (
-    set "%%a=%%b"
+  set "firstchar=%%a"
+  set "firstchar=!firstchar:~0,1!"
+  if not "!firstchar!"=="#" (
+    if not "%%a"=="" (
+      set "%%a=%%b"
+    )
   )
 )
 
 :: ── Step 4: Install dependencies ────────────────────────────────────────────
-echo  [4/5] Installing dependencies (first run may take 1-2 minutes)...
-call pnpm install --ignore-scripts >nul 2>&1
+echo  [4/5] Installing dependencies...
+echo         (first run may take 1-2 minutes, please wait)
+call pnpm install --ignore-scripts
 if errorlevel 1 (
   color 0C
   echo.
-  echo  ERROR: Dependency installation failed.
-  echo  Try deleting the node_modules folder and running again.
+  echo  ERROR: Dependency installation failed. See above for details.
   echo.
   pause
   exit /b 1
@@ -104,31 +96,26 @@ call pnpm rebuild >nul 2>&1
 echo         Dependencies ready
 
 :: ── Step 5: Start services ──────────────────────────────────────────────────
-echo  [5/5] Starting Deck OS...
-echo.
+echo  [5/5] Starting services...
+start "Deck OS API" /min cmd /c "pnpm --filter @workspace/api-server run dev 2>&1"
+timeout /t 4 /nobreak >nul
+start "Deck OS Frontend" /min cmd /c "pnpm --filter @workspace/deck-os run dev 2>&1"
 
-start "Deck OS — API" /min cmd /c "pnpm --filter @workspace/api-server run dev"
-timeout /t 3 /nobreak >nul
-start "Deck OS — Frontend" /min cmd /c "pnpm --filter @workspace/deck-os run dev"
-
-echo  Waiting for services to start...
-timeout /t 8 /nobreak >nul
+echo         Waiting for startup...
+timeout /t 10 /nobreak >nul
 
 echo.
-echo  ════════════════════════════════════════════════════════
+echo  ==========================================
+echo   Deck OS is running!
 echo.
-echo   Deck OS is starting!
+echo   Opening browser to http://localhost:3000
+echo   If the page is blank, wait 30 seconds
+echo   and press F5 to refresh.
 echo.
-echo   Opening your browser to: http://localhost:3000
-echo.
-echo   If the page is blank, wait 30 seconds and refresh.
-echo.
-echo   To stop Deck OS: close the two minimized windows
-echo   titled "Deck OS — API" and "Deck OS — Frontend"
-echo.
-echo  ════════════════════════════════════════════════════════
+echo   To STOP: close the two minimized windows
+echo   named "Deck OS API" and "Deck OS Frontend"
+echo  ==========================================
 echo.
 
 start "" "http://localhost:3000"
-
 pause
