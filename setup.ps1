@@ -84,12 +84,13 @@ Get-Content ".env" | ForEach-Object {
 Write-Step 4 6 "Installing dependencies..."
 Write-Info "This may take 1-2 minutes on first run. Please wait..."
 Write-Host ""
-& pnpm install --ignore-scripts --force
+Write-Info "Removing Linux lockfile so Windows packages are resolved correctly..."
+if (Test-Path "pnpm-lock.yaml") { Remove-Item "pnpm-lock.yaml" -Force }
+& pnpm install --ignore-scripts
 if ($LASTEXITCODE -ne 0) {
   Write-Err "Dependency install failed."; Read-Host "  Press Enter to close"; exit 1
 }
 Write-Info "Finalizing native components..."
-& pnpm rebuild esbuild 2>&1 | Out-Null
 & pnpm rebuild 2>&1 | Out-Null
 Write-Ok "All dependencies installed and ready"
 
@@ -114,11 +115,14 @@ $webLog = Join-Path $dir "frontend.log"
 "" | Out-File $webLog -Encoding utf8
 
 Write-Info "Starting API server..."
-$apiProc = Start-Process cmd -ArgumentList "/c pnpm --filter @workspace/api-server run dev" -WorkingDirectory $dir -RedirectStandardOutput $apiLog -RedirectStandardError (Join-Path $dir "api-server-err.log") -WindowStyle Hidden -PassThru
+$env:PORT = "8080"
+$env:BASE_PATH = "/"
+$env:NODE_ENV = "development"
+$apiProc = Start-Process cmd -ArgumentList "/c set PORT=8080 && set BASE_PATH=/ && set NODE_ENV=development && pnpm --filter @workspace/api-server run dev" -WorkingDirectory $dir -RedirectStandardOutput $apiLog -RedirectStandardError (Join-Path $dir "api-server-err.log") -WindowStyle Hidden -PassThru
 
 Start-Sleep -Seconds 5
 Write-Info "Starting frontend..."
-$webProc = Start-Process cmd -ArgumentList "/c pnpm --filter @workspace/deck-os run dev" -WorkingDirectory $dir -RedirectStandardOutput $webLog -RedirectStandardError (Join-Path $dir "frontend-err.log") -WindowStyle Hidden -PassThru
+$webProc = Start-Process cmd -ArgumentList "/c set PORT=3000 && set BASE_PATH=/ && set NODE_ENV=development && pnpm --filter @workspace/deck-os run dev" -WorkingDirectory $dir -RedirectStandardOutput $webLog -RedirectStandardError (Join-Path $dir "frontend-err.log") -WindowStyle Hidden -PassThru
 
 Write-Host ""
 Write-Info "Waiting up to 60 seconds for services to start..."
