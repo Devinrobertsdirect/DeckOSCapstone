@@ -53,6 +53,29 @@ export function getAceraContext(): string | null {
   return _aceraScene.summary;
 }
 
+// ── STARK bioelectric context (updated by client every 600 ms) ───────────────
+interface StarkScenePayload {
+  mode: string;
+  amplitude: number;
+  contraction: string;
+  brainEvent: string;
+  heartEvent: string;
+  bpm: number | null;
+  sampleRate: number;
+  portName: string;
+  summary: string;
+}
+
+let _starkScene: StarkScenePayload | null = null;
+let _starkLastMs = 0;
+const STARK_STALE_MS = 5_000;
+
+export function getStarkContext(): string | null {
+  if (!_starkScene) return null;
+  if (Date.now() - _starkLastMs > STARK_STALE_MS) return null;
+  return _starkScene.summary;
+}
+
 let mqttTransport: MqttTransport | null = null;
 let wsDeviceTransport: WsDeviceTransport | null = null;
 let stopSimDevices: (() => void) | null = null;
@@ -425,6 +448,16 @@ export async function bootstrap(): Promise<void> {
     if (p && typeof p.summary === "string") {
       _aceraScene  = p;
       _aceraLastMs = Date.now();
+    }
+  });
+
+  // ── STARK bioelectric scene update subscription ───────────────────────────
+  bus.subscribe("stark.scene.update", (event: BusEvent) => {
+    if (event.type !== "stark.scene.update") return;
+    const p = event.payload as StarkScenePayload;
+    if (p && typeof p.summary === "string") {
+      _starkScene  = p;
+      _starkLastMs = Date.now();
     }
   });
 

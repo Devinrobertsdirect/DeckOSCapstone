@@ -24,7 +24,12 @@ A local-first AI command center inspired by Iron Man's JARVIS. Deck OS runs enti
 9. [WebSocket API](#websocket-api)
 10. [Troubleshooting](#troubleshooting)
 11. [Requirements](#requirements)
-12. [License](#license)
+12. [Complete Feature & Component Reference](#complete-feature--component-reference)
+13. [IoT & Hardware Compatibility](#iot--hardware-compatibility)
+14. [ACERA Protocol — Vision Tracking Reference](#acera-protocol--vision-tracking-reference)
+15. [Stark Protocol — Bioelectric Signal Reference](#stark-protocol--bioelectric-signal-reference)
+16. [Use Cases](#use-cases)
+17. [License](#license)
 
 ---
 
@@ -774,6 +779,518 @@ psql $DATABASE_URL -c "SELECT 1"
 | PostgreSQL  | 14      | Or use Docker Compose                    |
 | Docker      | 24      | Only for the `--docker` path             |
 | Ollama      | any     | Optional — https://ollama.com            |
+
+---
+
+## Complete Feature & Component Reference
+
+A full map of every module, page, and sub-system in Deck OS — what it does, where it lives, and how it integrates with the rest of the stack.
+
+---
+
+### Frontend — `artifacts/deck-os/src/`
+
+#### Pages
+
+| Page | Route | File | Description |
+|------|-------|------|-------------|
+| **Dashboard** | `/` | `pages/Dashboard.tsx` | Particle canvas, live MQTT device metrics, AI face idle animation, weather widget, time/date |
+| **AI Router** | `/ai` | `pages/AIRouter.tsx` | Full chat interface with streaming responses, voice STT input, TTS playback, message history |
+| **Command Console** | `/commands` | `pages/CommandsPage.tsx` | Low-latency text REPL, JARVIS quick-action tiles, autonomous task output stream |
+| **Device Monitor** | `/devices` | `pages/Devices.tsx` | Live sensor charts, device registry, per-device status cards, MQTT topic browser |
+| **Memory Bank** | `/memory` | `pages/MemoryPage.tsx` | Short-term and long-term memory viewer, keyword search, manual entry, memory decay controls |
+| **Goal Manager** | `/goals` | `pages/GoalsPage.tsx` | Create/edit goals, AI step-plan generation, progress tracking, goal archiving |
+| **Routines** | `/routines` | `pages/RoutinesPage.tsx` | Visual routine builder, CRON scheduler, step sequencer, autonomy safety level picker |
+| **Spatial Map** | `/map` | `pages/MapPage.tsx` | Leaflet-based device map, geofence editor, live device position updates |
+| **News Feed** | `/news` | `pages/NewsPage.tsx` | AI-curated briefing cards, source configurator, read/unread tracking |
+| **Plugin Store** | `/store` | `pages/StorePage.tsx` | Community plugin browser, one-click install, enable/disable, version info |
+| **Settings** | `/settings` | `pages/Settings.tsx` | Seven tabs: Connection · API Keys · Models · System Health · ACERA Vision · Stark Connect · About |
+| **Start Screen** | `/` (pre-auth) | `components/Onboarding.tsx` | Name/AI-name setup, color theme picker, launch gate |
+
+#### Core Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| **Layout** | `components/Layout.tsx` | Root shell: sidebar nav, Ollama banner, gesture handlers, ACERA + Stark overlays, particle bursts |
+| **AIFace** | `components/AIFace.tsx` | Animated SVG AI avatar; expression changes on inference state |
+| **AceraOverlay** | `components/AceraOverlay.tsx` | Floating cyan HUD — bottom-right; live hand skeleton, gesture badge, waveform |
+| **StarkOverlay** | `components/StarkOverlay.tsx` | Floating red/amber HUD — bottom-left; signal waveform, contraction state, BPM |
+| **ConnectParticles** | `components/ConnectParticles.tsx` | Full-screen canvas burst animation triggered on ACERA/Stark device connect |
+| **EventLogPanel** | `components/EventLogPanel.tsx` | Scrolling EventBus event stream with type filter and JSON payload inspector |
+| **NotificationDrawer** | `components/NotificationDrawer.tsx` | Slide-in notification tray; WS-pushed alerts with read/unread state |
+| **DeviceControl** | `components/DeviceControl.tsx` | Per-device MQTT command panel (on/off, dim, set temperature) |
+| **VisualMode** | `contexts/VisualMode.tsx` | Three render modes: Particle · Minimal · Performance; persisted per-session |
+
+#### Hooks
+
+| Hook | File | Purpose |
+|------|------|---------|
+| `useAceraConnect` | `hooks/useAceraConnect.ts` | MediaPipe hand-tracking lifecycle; gesture classification; WS broadcast |
+| `useStarkConnect` | `hooks/useStarkConnect.ts` | Web Serial API; BioAmp ADC parsing; StarkProcessor pipeline; WS broadcast |
+| `useCamera` | `hooks/useCamera.ts` | Camera permission + vision description via OpenAI vision API |
+| `useWebSocket` | `contexts/WebSocketContext.tsx` | WS client singleton; event subscription/emission; reconnect backoff |
+| `useAiName` | `hooks/useAiName.ts` | Reads persona name from DB/WS; reactive updates |
+| `useUserName` | `hooks/useUserName.ts` | User identity from localStorage + onboarding |
+| `useHealthCheck` | `(api-client-react)` | Periodic `/api/healthz` polling with cached query key |
+
+#### Signal Processing Libraries
+
+| Library | File | Purpose |
+|---------|------|---------|
+| `starkSignals` | `lib/starkSignals.ts` | RingBuffer, StarkProcessor (EMG/EEG/EKG), adaptive baseline EWMA, RMS window, contraction state machine, auto-mode detection, action mapping |
+| `aceraGestures` | `lib/aceraGestures.ts` | Gesture classifier (8 gestures), latch debouncing, DashboardAction mapping |
+| `audioAnalyser` | `lib/audioAnalyser.ts` | Microphone FFT, voice-activity detection, wake-word passthrough |
+
+---
+
+### Backend — `artifacts/api-server/src/`
+
+#### API Routes
+
+| Route | File | Methods | Description |
+|-------|------|---------|-------------|
+| `/api/healthz` | `routes/health.ts` | GET | System + DB + Ollama status |
+| `/api/chat` | `routes/chat.ts` | POST | LLM inference with ACERA + Stark context injection |
+| `/api/chat/stream` | `routes/chat.ts` | POST (SSE) | Streaming chat response (token-by-token) |
+| `/api/memory` | `routes/memory.ts` | GET POST DELETE | Short/long-term memory CRUD |
+| `/api/goals` | `routes/goals.ts` | GET POST PATCH DELETE | Goal + AI step-plan management |
+| `/api/routines` | `routes/routines.ts` | GET POST PATCH DELETE | Routine CRON scheduler |
+| `/api/devices` | `routes/devices.ts` | GET POST PATCH | Device registry; MQTT command dispatch |
+| `/api/devices/:id/command` | `routes/devices.ts` | POST | Fire a device command (on/off/dim/set) |
+| `/api/autonomy/config` | `routes/autonomy.ts` | GET PATCH | Safety level + autonomy on/off |
+| `/api/autonomy/log` | `routes/autonomy.ts` | GET | Autonomous action history |
+| `/api/plugins` | `routes/plugins.ts` | GET POST DELETE | Plugin registry management |
+| `/api/plugins/:id/execute` | `routes/plugins.ts` | POST | Run a plugin command |
+| `/api/store` | `routes/store.ts` | GET POST | Plugin marketplace browser + install |
+| `/api/news` | `routes/news.ts` | GET | AI news briefing fetch |
+| `/api/map` | `routes/map.ts` | GET POST | Spatial device positions + geofences |
+| `/api/notifications` | `routes/notifications.ts` | GET POST PATCH | Notification CRUD |
+| `/api/persona` | `routes/persona.ts` | GET PATCH | AI name, gender, personality dials |
+| `/api/config` | `routes/config.ts` | GET PATCH | Runtime env var overrides |
+| `/api/self-update` | `routes/self-update.ts` | POST | `git pull` + `pnpm install` + migration |
+
+#### Core Server Libraries
+
+| Module | File | Purpose |
+|--------|------|---------|
+| **Bootstrap** | `lib/bootstrap.ts` | Wires all subsystems at startup; ACERA + Stark scene context store |
+| **Inference Engine** | `lib/inference.ts` | 3-tier routing (Ollama → OpenAI → rule engine); caching; streaming |
+| **EventBus** | `lib/bus.ts` | In-process async pub/sub; typed event dispatch |
+| **WS Server** | `lib/ws-server.ts` | WebSocket server; broadcast; per-client subscriptions |
+| **Plugin Registry** | `lib/plugin-registry.ts` | Load/reload community `.mjs` plugins in Worker sandboxes |
+| **Memory Service** | `lib/memory-service.ts` | Short/long-term memory; embedding search |
+| **Cognitive Loop** | `lib/cognitive-loop.ts` | Background autonomous task engine; safety evaluation |
+| **Routine Runner** | `lib/routine-runner.ts` | CRON-based routine scheduler; step execution |
+| **Device Manager** | `lib/device-manager.ts` | Device registry; state aggregation; command dispatch |
+| **MQTT Transport** | `lib/mqtt-transport.ts` | Subscribe/publish IoT telemetry; topic auto-mapping |
+| **WS Device Transport** | `lib/ws-device-transport.ts` | WebSocket-based device bridge (ESP32, custom firmware) |
+| **Presence Manager** | `lib/presence-manager.ts` | Per-channel user presence tracking |
+| **Narrative Manager** | `lib/narrative-manager.ts` | Daily briefing generation; contextual event summarisation |
+| **Initiative Engine** | `lib/initiative-engine.ts` | Proactive AI suggestions triggered by inactivity / events |
+| **System Prompt** | `lib/system-prompt.ts` | Builds personalised system prompt from persona + memory + scene context |
+| **Simulated Devices** | `lib/simulated-devices.js` | Built-in demo IoT sensor data for offline testing |
+| **Easter Eggs** | `lib/easter-eggs.ts` | Hard-coded JARVIS/Iron Man easter-egg responses |
+| **Logger** | `lib/logger.ts` | Pino structured logging with request/response timing |
+
+#### Built-in TypeScript Plugins (`src/plugins/`)
+
+| Plugin | File | What it does |
+|--------|------|--------------|
+| `system_monitor` | `system_monitor.ts` | CPU, RAM, disk, network metrics every 5 s |
+| `weather_monitor` | `weather_monitor.ts` | Open-Meteo weather API poll every 30 min |
+| `ai_chat`         | `ai_chat.ts`         | Autonomous chat initiation and follow-up |
+| `daily_briefing`  | `daily_briefing.ts`  | 06:00 scheduled AI briefing generation |
+| `memory_enricher` | `memory_enricher.ts` | Background memory consolidation and decay |
+
+---
+
+### Shared Libraries — `lib/`
+
+| Package | Directory | Description |
+|---------|-----------|-------------|
+| `@workspace/db` | `lib/db/` | Drizzle ORM schema, migrations, connection pool |
+| `@workspace/event-bus` | `lib/event-bus/` | EventBus class, `BusEvent` types, Zod schemas for all 40+ event types |
+| `@workspace/api-zod` | `lib/api-zod/` | Shared Zod request/response schemas used by both frontend and backend |
+| `@workspace/api-client-react` | `lib/api-client-react/` | TanStack Query hooks generated from the API spec |
+
+#### Database Tables (PostgreSQL + Drizzle)
+
+| Table | Key Columns | Purpose |
+|-------|-------------|---------|
+| `chat_messages` | session_id, role, content, channel | Full conversation history |
+| `memory_entries` | type, content, embedding, decay_score | Short/long-term AI memory |
+| `goals` | title, steps (JSON), status, priority | User goals + AI plans |
+| `routines` | name, cron, steps (JSON), autonomy_level | Scheduled automation |
+| `device_profiles` | device_id, type, capabilities | IoT device metadata |
+| `device_locations` | device_id, lat, lon, geofences | Spatial device tracking |
+| `autonomy_config` | enabled, safety_level | Global autonomy settings |
+| `autonomy_log` | action, result, safety_check | Autonomous action audit trail |
+| `ai_persona` | ai_name, gender, gravity, snarkiness | Personality configuration |
+| `voice_identity` | tone, formality, verbosity | TTS voice style profile |
+| `notifications` | type, message, read | System notification queue |
+
+---
+
+## IoT & Hardware Compatibility
+
+Deck OS ships with pre-programmed support for the following device categories, protocols, and hardware. All communication goes through the MQTT broker or WebSocket device transport — no vendor SDKs required.
+
+---
+
+### Communication Protocols
+
+| Protocol | Library / Standard | Use Case |
+|----------|--------------------|----------|
+| **MQTT 3.1.1 / 5.0** | HiveMQ, Mosquitto, AWS IoT, Azure IoT | Primary IoT telemetry + command bus |
+| **WebSocket** | Native WS (ws package) | Browser-to-server realtime; device bridge |
+| **HTTP/SSE** | Express 5 | REST API, streaming AI responses |
+| **Web Serial API** | W3C spec (Chromium) | Upside Down Labs BioAmp direct USB |
+| **MediaPipe WASM** | Google MediaPipe Tasks | ACERA hand/face landmark tracking |
+
+---
+
+### Supported IoT Ecosystems
+
+#### Smart Home Platforms
+
+| Platform | Integration | Notes |
+|----------|-------------|-------|
+| **Home Assistant** | MQTT discovery topics (`homeassistant/#`) | Auto-maps HA MQTT entities to device registry |
+| **Node-RED** | MQTT pub/sub | Use the `deck-os-out` node to push events into Deck OS |
+| **OpenHAB** | MQTT binding | Publish sensor readings to configured topics |
+| **ESPHome** | MQTT native | ESP32/ESP8266 sensors auto-detected by device_id |
+| **Tasmota** | `tele/+/SENSOR` and `stat/+/POWER` topics | Shelly-compatible topic schema |
+| **Zigbee2MQTT** | `zigbee2mqtt/+/+` | Bridges all Zigbee devices to MQTT |
+
+#### Devices Pre-Programmed
+
+**Lighting**
+- Shelly 1 / Shelly Plus 1 / Shelly Dimmer 2 (on/off, dim via MQTT)
+- Philips Hue (via MQTT bridge or Hue MQTT adapter)
+- LIFX bulbs (via MQTT bridge)
+- Tasmota-flashed smart bulbs (generic on/off/dim)
+- WLED LED strips (brightness, effect, color via MQTT)
+
+**Power & Switches**
+- Shelly Plug S / Shelly EM (on/off, power monitoring)
+- Sonoff Basic / Sonoff Mini R2 (Tasmota firmware, on/off)
+- TP-Link Kasa (via MQTT bridge)
+- Generic smart plugs with Tasmota (on/off, energy monitoring)
+
+**Sensors**
+- DHT22 / DHT11 — temperature + humidity (Arduino/ESP MQTT publisher)
+- BME280 / BME680 — temperature, humidity, pressure, air quality
+- DS18B20 — waterproof temperature probe
+- PIR HC-SR501 — passive infrared motion sensor
+- MQ-2 / MQ-135 — gas / air quality sensors
+- HC-SR04 — ultrasonic distance sensor
+- Soil moisture sensors (resistive and capacitive)
+- Rain gauge sensors
+- Light-dependent resistor (LDR) brightness sensors
+- AM312 / AS312 mini PIR sensors
+
+**Environmental / Weather**
+- RTL-SDR + rtl_433 weather station receivers (piped to MQTT)
+- Ecowitt / Fine Offset WiFi weather stations (MQTT bridge)
+- Open-Meteo API (built-in HTTP plugin — no hardware required)
+- WeatherLink MQTT adapters
+
+**Energy Monitoring**
+- Shelly EM / Shelly 3EM (3-phase power monitoring)
+- Emporia Vue (via MQTT bridge)
+- SolarEdge / Fronius inverters (via MQTT bridge)
+- Victron Energy MPPT controllers (VE.Direct → MQTT)
+
+**HVAC & Climate**
+- Generic MQTT thermostats (set_temperature, mode: cool/heat/fan)
+- Mitsubishi/Daikin/LG HVAC via IR blasters (Tasmota IRSend)
+- Nest/Ecobee (via Home Assistant MQTT bridge)
+
+**Security**
+- Door/window reed switch sensors
+- Alarmo (Home Assistant alarm panel via MQTT)
+- Generic camera streams (snapshot URL configurable per device)
+- RFID reader feedback (UID published to MQTT → identity event)
+
+**Robotics & Automation**
+- Roomba (via dorita980 MQTT bridge)
+- Litter-Robot (via MQTT API bridge)
+- Custom Arduino relay boards
+
+**Networking**
+- Unifi Controller metrics (via MQTT bridge)
+- Pi-hole stats (via MQTT bridge)
+- Router bandwidth (via MQTT publisher script)
+
+---
+
+### DIY / Maker Hardware
+
+| Hardware | Protocol | Example Use |
+|----------|----------|-------------|
+| Arduino Uno / Nano | USB Serial + MQTT | Sensor reading, BioAmp host |
+| ESP32 / ESP8266 | WiFi MQTT (native) | Wireless sensor nodes, relay control |
+| Raspberry Pi | MQTT publisher (Python/Node) | Camera feed, GPIO sensors, local broker |
+| Raspberry Pi Pico W | MQTT (MicroPython) | Lightweight sensor endpoints |
+| M5Stack Core | MQTT (native) | Display + sensor all-in-one node |
+| Seeed XIAO ESP32C3 | MQTT | Ultra-compact sensor nodes |
+| STM32 / STM8 | Serial-to-MQTT bridge | Industrial sensor adapters |
+| Teensy 4.x | USB HID + Serial | High-speed signal acquisition |
+
+---
+
+## ACERA Protocol — Vision Tracking Reference
+
+**ACERA** (Augmented Cognition and Environmental Response Architecture) uses Google MediaPipe Tasks Vision WASM to track hands and face in real-time via the device camera. All processing runs locally in the browser — no frames are transmitted.
+
+### Architecture
+
+```
+Camera → MediaPipe WASM → Landmark extraction → Gesture classifier
+      → GestureResult → aceraGestures.ts → DashboardAction
+      → WebSocket emit → AI context (acera.scene.update)
+      → AceraOverlay render
+```
+
+### Recognised Gestures
+
+| Gesture | Description | Default Action |
+|---------|-------------|----------------|
+| `SWIPE_LEFT` | Open-palm horizontal sweep left | `nav:prev` — previous page |
+| `SWIPE_RIGHT` | Open-palm horizontal sweep right | `nav:next` — next page |
+| `PEACE` | Index + middle finger V-sign | `nav:console` — Command Console |
+| `THUMBS_UP` | Closed fist, thumb extended up | `nav:ai` — AI Router |
+| `OPEN_PALM` | All five fingers extended | `ui:fullscreen` — fullscreen toggle |
+| `CLOSED_FIST` | All fingers closed | `ui:dismiss` — cancel / dismiss |
+| `THREE_FINGERS` | Index + middle + ring extended | `ui:confirm` — confirm action |
+| `PINCH` | Thumb + index finger pinch | `ui:confirm` — select / activate |
+
+### Keyboard Shortcut
+- `Ctrl+Shift+G` — toggle ACERA overlay on/off
+
+### AI Scene Context
+Every 500 ms while active, ACERA pushes a summary to the server:
+```
+[ACERA] 1 hand detected. Dominant gesture: OPEN_PALM (confidence 0.97). Activity: active.
+Right hand palm at (0.52, 0.63). Fingers: [true, true, true, true, true].
+```
+This text is appended to the AI system prompt during chat sessions.
+
+---
+
+## Stark Protocol — Bioelectric Signal Reference
+
+**Stark** (Synaptic Transmission and Augmented Reality Kinetics) uses the **Web Serial API** to read raw ADC samples from Upside Down Labs BioAmp hardware over USB, then classifies the bioelectric signal into machine-readable events that drive dashboard actions — working in tandem with ACERA.
+
+### Compatible Hardware
+
+| Device | Modes | ADC | Notes |
+|--------|-------|-----|-------|
+| **BioAmp EXG Pill** | EMG · EEG · EKG | 10-bit (0–1023) | Universal — snap-on electrode pads; the primary recommended board |
+| **Muscle BioAmp Shield** | EMG | 10-bit | Arduino Uno shield form factor; 3 electrode connectors |
+| **BioAmp Band** | EMG | 10-bit | Textile electrode band; forearm / bicep placement |
+| **BioAmp Candy** | EMG · EEG | 10-bit | Compact USB-C form factor; direct computer connection |
+| **Muscle BioAmp Patchy** | EMG | 10-bit | Wireless patch (BLE bridge required for Stark) |
+| **Any Arduino + AD8232** | EKG | 10-bit | DIY EKG shield; standard 3-lead clinical placement |
+| **Teensy 4.x + custom amp** | EMG/EEG | 12-bit (0–4095) | High-speed acquisition; supported by auto-range detection |
+
+### Serial Line Format
+
+All supported firmware prints one reading per line at up to 1000 Hz:
+
+```
+512\n                  # single ADC value (most BioAmp examples)
+1234,512\n             # counter,value (BioAmp Candy and some examples)
+1234,512,510,511\n     # counter + multi-channel; Stark takes the last value
+```
+
+### Signal Processing Pipeline
+
+```
+Raw ADC sample (0–1023)
+  → Adaptive DC baseline (EWMA α=0.001, ~1000-sample time constant)
+  → Center: raw − baseline
+  → Normalize: |centered| / 512
+  → RMS window: √(mean(x²)) over last 128 samples (~256 ms at 500 Hz)
+  → Calibrated amplitude: RMS / adaptive_max  →  clamped 0–1
+  → Mode-specific classifier (EMG / EEG / EKG)
+  → StarkAction mapping → DashboardAction
+```
+
+### EMG Signal States
+
+| State | Trigger | Duration | Default Action | Visual |
+|-------|---------|----------|----------------|--------|
+| `IDLE` | Amplitude < 0.25 (threshold) | — | none | Dim red |
+| `FLEX` | Amplitude ≥ 0.25, rising edge | Transient | `ui:confirm` | Bright red pulse |
+| `DOUBLE_FLEX` | Two FLEXes within 480 ms | Transient | `ui:dismiss` | Orange flash |
+| `SUSTAINED` | FLEX held ≥ 800 ms | While held | `ui:fullscreen` | Amber glow |
+| `RELAX` | Falling edge from FLEX | One frame | none | Green flash |
+
+### EEG Signal States
+
+| State | Trigger | Default Action |
+|-------|---------|----------------|
+| `IDLE` | Low amplitude, no distinct pattern | none |
+| `BLINK` | Amplitude spike > 0.72 (large artifact) | `nav:next` |
+| `FOCUS` | Amplitude 0.18–0.55 sustained (beta activity) | `nav:console` |
+| `RELAX_ALPHA` | Amplitude 0.05–0.18 (alpha wave dominance) | `nav:prev` |
+
+### EKG Signal States
+
+| State | Trigger | Notes |
+|-------|---------|-------|
+| `IDLE` | Between beats | Tracks inter-peak intervals |
+| `BEAT` | Amplitude > 0.42 (R-peak), refractory 280 ms | BPM = 60 000 / avg interval |
+
+### Auto-Mode Detection
+
+After 600 samples (~1.2 s at 500 Hz), `StarkProcessor` analyses the signal:
+1. Counts large peaks separated by 100+ samples — 2–6 regular peaks → **EKG**
+2. Computes signal variance → high variance (`> 0.008`) → **EMG**; low variance → **EEG**
+
+### Keyboard Shortcut
+- `Ctrl+Shift+S` — toggle Stark overlay on/off
+
+### AI Scene Context
+Every 600 ms while active, Stark pushes a summary to the server:
+```
+[STARK] BioAmp device connected (VID:1A86 PID:7523). Mode: EMG.
+Signal amplitude: 67% of calibrated max. Sample rate: 498 Hz. Muscle state: FLEX.
+```
+This block is appended to the AI system prompt, allowing the AI to reference the user's biometric state in conversation.
+
+### Electrode Placement Guide
+
+**EMG (Muscle)**
+- Positive: muscle belly (e.g., forearm flexor, bicep, tibialis anterior)
+- Negative: 2 cm distal from positive on same muscle
+- Reference (ground): bony prominence (elbow, wrist, knee)
+
+**EEG (Brain)**
+- Positive: Fp1 or Fp2 (forehead, ~2 cm above eyebrow)
+- Negative: A1 or A2 (behind ear, mastoid bone)
+- Reference: opposite mastoid or vertex (Cz)
+
+**EKG (Heart)**
+- Right Arm (RA): right inner wrist or right collarbone
+- Left Arm (LA): left inner wrist or left collarbone
+- Right Leg (RL/ground): right inner ankle or abdomen
+
+---
+
+## Use Cases
+
+Deck OS + ACERA + Stark are designed for a wide range of real-world applications. Below are documented use cases grouped by domain.
+
+---
+
+### Smart Home & Ambient Intelligence
+
+1. **Gesture-controlled lighting** — Wave left/right with ACERA to cycle room lighting scenes; muscle flex (Stark EMG) triggers on/off
+2. **Hands-free appliance control** — Forearm flex turns on coffee maker or kettle while cooking; no need to touch the phone
+3. **Wake-word room control** — "JARVIS, dim the bedroom to 30%" via AI Console while EMG monitors background biometrics
+4. **Occupancy-aware automation** — ACERA detects when no hands are visible for 5 minutes → trigger "leaving home" routine
+5. **Morning briefing station** — Briefing plays TTS at 06:00; thumbs-up gesture (ACERA) snoozes; double flex (Stark) dismisses
+6. **Geofenced device automation** — Phone GPS piped to MQTT → Deck OS fires "arriving home" routine when inside defined radius
+7. **Energy monitoring dashboard** — Shelly EM readings visualised in real-time; AI alerts on unexpected spikes
+8. **HVAC gesture control** — Peace sign (ACERA) opens climate panel; sustained flex (Stark) increments target temperature
+9. **Smart lock integration** — RFID UID published to MQTT → Deck OS logs entry, greets by name via TTS
+10. **Sleep-mode automation** — EEG alpha state detected (Stark) → system triggers "night mode" routine: lights off, thermostat down, phone silent
+
+---
+
+### Health & Wellness Monitoring
+
+11. **Heart rate tracking during exercise** — EKG mode on BioAmp; BPM streamed to Deck OS dashboard and logged every minute
+12. **Stress detection** — Sustained elevated EMG amplitude or elevated BPM (> 100) → AI sends a calming suggestion
+13. **Posture alert** — EMG electrodes on upper trapezius; SUSTAINED state triggers Deck OS notification "Check your posture"
+14. **Rehabilitation tracking** — Physical therapist-designed routines; EMG FLEX counts logged per session; progress graphed over time
+15. **Fatigue detection** — Declining EMG max amplitude across a session → AI suggests break via TTS
+16. **Meditation assistant** — EEG alpha waves (RELAX_ALPHA) displayed in real time; Deck OS logs session quality score
+17. **Focus timer integration** — EEG FOCUS state increments a Pomodoro timer; IDLE state pauses it automatically
+18. **Sleep stage approximation** — EEG electrode on forehead; delta-wave dominance (low amplitude, slow) logged overnight
+19. **Pre-workout readiness** — Grip-strength EMG test at session start; AI compares to baseline and adjusts workout recommendation
+20. **Biometric journaling** — At end of day, Deck OS AI generates a biometric summary: avg BPM, focus time, flex count, peak amplitude
+
+---
+
+### Accessibility
+
+21. **Single-switch scanning interface** — One EMG electrode on cheek muscle; FLEX selects highlighted item in Deck OS UI
+22. **Eye-blink navigation** — EEG blink detection cycles through menu items; a second blink confirms selection
+23. **Hands-free web browsing** — ACERA gestures scroll and click within an embedded browser pane in the dashboard
+24. **Voice + gesture combined input** — STT captures commands while ACERA/Stark provide navigation; reduces cognitive load for motor-impaired users
+25. **Facial muscle typing** — Facial EMG mapped to a scan-keyboard for users with severe motor limitations
+26. **Smart wheelchair integration** — Arduino EMG shield publishes FLEX/DOUBLE_FLEX to MQTT → wheelchair drive commands
+27. **ALS/MND communication aid** — Lateral eye movement mapped to EEG artifact; letters selected by blink sequence
+28. **Remote control for bedridden users** — Stark EMG wristband fires MQTT commands to control TV, lights, and nurse call from bed
+
+---
+
+### Productivity & Focus
+
+29. **Distraction detection** — ACERA sees user looking away from screen (hand tracking goes idle, face tracking detects head turn) → plays subtle audio cue
+30. **Flow state preservation** — EEG alpha + beta balance classified as FOCUS; Deck OS silences all notifications automatically
+31. **Meeting focus mode** — Thumbs-up gesture (ACERA) starts a silent timer; closed fist ends it; AI logs duration
+32. **Hands-free note dictation** — Peace sign opens AI console, voice input activates automatically; muscle flex sends message
+33. **Gesture-controlled presentation** — ACERA swipe controls slide deck embedded in dashboard; sustained flex (Stark) toggles laser-pointer mode
+34. **Context-aware reminders** — AI monitors memory bank; when FOCUS state is detected via EEG, surfaces deferred reminders
+35. **Biometric Pomodoro** — Work timer automatically pauses when EEG drops from FOCUS to IDLE; resumes when focus returns
+36. **Wrist EMG macro pad** — Each of 4 forearm flexors mapped to different macro commands (FLEX / DOUBLE / SUSTAINED per channel)
+
+---
+
+### Gaming & Entertainment
+
+37. **Gesture game controller** — ACERA gestures map to keyboard shortcuts in any PC game via synthetic events
+38. **Muscle-strength power meter** — EMG amplitude drives an in-game power bar (shot power, jump height)
+39. **Heartbeat integration** — EKG BPM fed into game as a "fear/stress" mechanic; higher BPM = harder enemies
+40. **Calm-to-play gating** — Game start requires EEG alpha state for 5 seconds — forces a pre-game breathing exercise
+41. **Biometric tournament stats** — Stark logs peak BPM, average focus, and max EMG during a gaming session; Deck OS AI summarises performance
+42. **VR hand tracking** — ACERA MediaPipe landmarks piped to virtual environment via WebSocket for controller-free VR interaction
+43. **Music playback control** — ACERA swipe gestures skip tracks; EMG intensity modulates playback volume in real time
+44. **Interactive art installation** — Stark EMG drives generative art parameters (particle speed, colour hue) via WebSocket to a p5.js canvas
+
+---
+
+### Workshop & Maker Projects
+
+45. **CNC machine emergency stop** — Double flex (Stark) published to MQTT → Deck OS fires relay OFF command in < 350 ms
+46. **3D printer monitoring** — Printer telemetry via MQTT; AI alerts when print fails (temperature drop or motion halt)
+47. **Soldering station control** — EMG flex turns on solder station; SUSTAINED state sets temperature via MQTT
+48. **Electronics bench assistant** — AI Console answers component questions; ACERA gesture captures schematic photo via camera
+49. **Oscilloscope overlay** — Arduino serial data piped into Stark overlay for waveform visualisation without a dedicated scope
+50. **Pick-and-place robot arm** — ACERA hand landmarks drive robot arm joint angles via WebSocket-to-ROS bridge
+
+---
+
+### Security & Monitoring
+
+51. **Biometric door lock** — Specific double-flex sequence (Stark) + camera face detection (ACERA) = two-factor physical access
+52. **Server room temperature alert** — BME280 sensor → MQTT → AI fires TTS alert + Slack notification if temp > 30 °C
+53. **Intrusion detection** — PIR sensor triggers MQTT → Deck OS logs event, sends notification, captures camera snapshot
+54. **Panic button** — Forearm sustained flex (Stark) for 3 seconds → publishes to MQTT → triggers alarm siren relay
+
+---
+
+### Scientific & Research
+
+55. **EMG gait analysis** — Tibialis anterior electrode during walking; FLEX events logged with timestamps for stride analysis
+56. **Attention research** — EEG alpha/beta ratio tracked over a 30-minute cognitive task; exported as CSV via Deck OS API
+57. **Neurofeedback training** — RELAX_ALPHA state triggers audio reward tone via TTS; trains alpha wave control over sessions
+58. **Cardiovascular fitness testing** — EKG BPM during step test; AI plots BPM recovery curve and compares to baseline
+59. **Tremor quantification** — High-frequency EMG amplitude variance logged during rest; AI computes tremor index per session
+
+---
+
+### Industrial & Commercial
+
+60. **Operator fatigue monitoring** — Sustained high EMG + BPM spike → alert supervisor; log to compliance database
+61. **Ergonomic workstation** — Deck OS adjusts desk height, monitor brightness, and HVAC via MQTT based on posture EMG
+62. **Inventory IoT** — Weight sensors on shelves → MQTT → Deck OS AI generates restock requests automatically
+63. **Fleet telematics dashboard** — Vehicle GPS + OBD MQTT bridge → live map + AI anomaly detection
+64. **Cold-chain monitoring** — DS18B20 temperature probes in refrigerated trucks → MQTT → AI alerts on excursion
 
 ---
 

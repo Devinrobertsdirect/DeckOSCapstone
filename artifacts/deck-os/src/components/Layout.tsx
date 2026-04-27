@@ -6,6 +6,9 @@ import { AIFace, useFaceStyle } from "@/components/AIFace";
 import { Link, useLocation } from "wouter";
 import { useAceraConnect } from "@/hooks/useAceraConnect";
 import { AceraOverlay } from "@/components/AceraOverlay";
+import { useStarkConnect } from "@/hooks/useStarkConnect";
+import { StarkOverlay } from "@/components/StarkOverlay";
+import { ConnectParticles } from "@/components/ConnectParticles";
 import type { DashboardAction } from "@/lib/aceraGestures";
 import {
   Activity, HardDrive, Cpu as Microchip, Network, Settings,
@@ -132,6 +135,27 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const showOllamaBanner = ollamaOnline === false && !ollamaBannerDismissed;
   const camera = useCamera();
   const acera = useAceraConnect();
+  const stark = useStarkConnect();
+
+  // Particle burst when ACERA or Stark go active for the first time
+  const [showAceraParticles, setShowAceraParticles] = useState(false);
+  const [showStarkParticles, setShowStarkParticles] = useState(false);
+  const prevAceraStatus = useRef<string>("idle");
+  const prevStarkStatus = useRef<string>("idle");
+
+  useEffect(() => {
+    if (acera.status === "active" && prevAceraStatus.current !== "active") {
+      setShowAceraParticles(true);
+    }
+    prevAceraStatus.current = acera.status;
+  }, [acera.status]);
+
+  useEffect(() => {
+    if (stark.status === "active" && prevStarkStatus.current !== "active") {
+      setShowStarkParticles(true);
+    }
+    prevStarkStatus.current = stark.status;
+  }, [stark.status]);
 
   // Gesture → navigation handler
   const handleGestureAction = useCallback((action: DashboardAction) => {
@@ -151,16 +175,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, [location, navigate]);
 
   // Ctrl+Shift+G → toggle ACERA Connect
+  // Ctrl+Shift+S → toggle Stark Connect
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.ctrlKey && e.shiftKey && e.key === "G") {
         e.preventDefault();
         acera.toggle();
       }
+      if (e.ctrlKey && e.shiftKey && e.key === "S") {
+        e.preventDefault();
+        stark.toggle();
+      }
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [acera]);
+  }, [acera, stark]);
 
   const [autonomyConfig, setAutonomyConfig] = useState<AutonomyConfig | null>(null);
   const [recentActions, setRecentActions] = useState<ActionFlash[]>([]);
@@ -1034,9 +1063,33 @@ export function Layout({ children }: { children: React.ReactNode }) {
         onUnreadChange={setUnreadCount}
       />
 
-      {/* ACERA CONNECT OVERLAY */}
+      {/* ACERA CONNECT OVERLAY — bottom-right, cyan theme */}
       {acera.enabled && (
         <AceraOverlay acera={acera} onAction={handleGestureAction} />
+      )}
+
+      {/* STARK CONNECT OVERLAY — bottom-left, red/amber theme */}
+      {stark.enabled && (
+        <StarkOverlay
+          stark={stark}
+          onAction={(a) => handleGestureAction(a as DashboardAction)}
+        />
+      )}
+
+      {/* ACERA activation particle burst — plays once on camera connect */}
+      {showAceraParticles && (
+        <ConnectParticles
+          variant="acera"
+          onComplete={() => setShowAceraParticles(false)}
+        />
+      )}
+
+      {/* STARK activation particle burst — plays once on serial device connect */}
+      {showStarkParticles && (
+        <ConnectParticles
+          variant="stark"
+          onComplete={() => setShowStarkParticles(false)}
+        />
       )}
     </div>
   );

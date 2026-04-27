@@ -113,6 +113,13 @@ export const AceraEventTypeSchema = z.enum([
   "acera.scene.update",
 ]);
 
+export const StarkEventTypeSchema = z.enum([
+  "stark.tracking.started",
+  "stark.tracking.stopped",
+  "stark.signal.event",
+  "stark.scene.update",
+]);
+
 export const EventTypeSchema = z.union([
   SystemEventTypeSchema,
   PluginEventTypeSchema,
@@ -123,6 +130,7 @@ export const EventTypeSchema = z.union([
   ClientEventTypeSchema,
   NotificationEventTypeSchema,
   AceraEventTypeSchema,
+  StarkEventTypeSchema,
 ]);
 
 export type EventType = z.infer<typeof EventTypeSchema>;

@@ -4,8 +4,10 @@ import {
   XCircle, Loader2, Eye, EyeOff, Save, AlertTriangle, RotateCcw, Zap,
   Volume2, Mic, Globe, HardDrive, ShieldCheck, RefreshCw, Database, Server,
   Info, Terminal, Download, Bell, BellOff, Rocket, SlidersHorizontal, Hand,
+  Activity, Brain, Plug, Unplug, Heart,
 } from "lucide-react";
 import { ACERA_KEY } from "@/hooks/useAceraConnect";
+import { STARK_KEY } from "@/hooks/useStarkConnect";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type FeatureInfo = { available: boolean; provider: string | null; local?: boolean };
@@ -17,7 +19,7 @@ type FeatureMap = {
   store: FeatureInfo;
 };
 
-type Tab = "connection" | "apikeys" | "models" | "system" | "about" | "vision";
+type Tab = "connection" | "apikeys" | "models" | "system" | "about" | "vision" | "stark";
 
 type HealthStatus = {
   ok: boolean | null;
@@ -86,6 +88,7 @@ export default function Settings() {
   const [features, setFeatures] = useState<FeatureMap | null>(null);
 
   const [aceraEnabled, setAceraEnabled] = useState<boolean>(() => localStorage.getItem(ACERA_KEY) === "true");
+  const [starkEnabled, setStarkEnabled] = useState<boolean>(() => localStorage.getItem(STARK_KEY) === "true");
 
   const [testing, setTesting]       = useState(false);
   const [testResult, setTestResult] = useState<TestResult>(null);
@@ -531,6 +534,7 @@ export default function Settings() {
     { id: "models",     label: "MODELS",        icon: <Cpu className="w-3 h-3" /> },
     { id: "system",     label: "SYSTEM HEALTH", icon: <ShieldCheck className="w-3 h-3" /> },
     { id: "vision",     label: "ACERA VISION",  icon: <Hand className="w-3 h-3" /> },
+    { id: "stark",      label: "STARK CONNECT", icon: <Activity className="w-3 h-3" /> },
     { id: "about",      label: "ABOUT & UPDATE",icon: <Info className="w-3 h-3" /> },
   ];
 
@@ -1498,6 +1502,183 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* STARK CONNECT tab */}
+      {tab === "stark" && (
+        <div className="grid gap-6 max-w-2xl">
+
+          {/* Master toggle card */}
+          <Card className="bg-card/40 border-primary/20 rounded-none">
+            <CardHeader className="border-b border-primary/20 p-4">
+              <CardTitle className="font-mono text-xs text-primary flex items-center gap-2">
+                <Activity className="w-3.5 h-3.5" />
+                STARK.CONNECT — BIOELECTRIC SIGNAL CONTROL
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-5">
+              {/* Toggle row */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <div className="font-mono text-sm text-primary">Stark Connect</div>
+                  <div className="font-mono text-xs text-primary/50 max-w-xs leading-relaxed">
+                    Enables bioelectric signal control via Upside Down Labs BioAmp devices.
+                    EMG muscle signals, EEG brain waves, and EKG heartbeat data map to
+                    dashboard actions — working in tandem with ACERA hand tracking.
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    const next = !starkEnabled;
+                    localStorage.setItem(STARK_KEY, String(next));
+                    setStarkEnabled(next);
+                  }}
+                  className={`relative w-12 h-6 rounded-full transition-colors border ${
+                    starkEnabled
+                      ? "bg-[#ff4444]/20 border-[#ff4444]/60"
+                      : "bg-primary/5 border-primary/20"
+                  }`}
+                >
+                  <div className={`absolute top-0.5 w-5 h-5 rounded-full transition-all border ${
+                    starkEnabled
+                      ? "left-6 bg-[#ff4444] border-[#ff4444]"
+                      : "left-0.5 bg-primary/30 border-primary/30"
+                  }`} />
+                </button>
+              </div>
+
+              {/* Status badge */}
+              <div className={`flex items-center gap-2 px-3 py-2 border font-mono text-xs ${
+                starkEnabled
+                  ? "border-[#ff4444]/30 bg-[#ff4444]/5 text-[#ff4444]"
+                  : "border-primary/15 bg-primary/5 text-primary/40"
+              }`}>
+                <div className={`w-1.5 h-1.5 rounded-full ${starkEnabled ? "bg-[#ff4444] animate-pulse" : "bg-primary/25"}`} />
+                <span>
+                  {starkEnabled
+                    ? "Stark Connect enabled — overlay visible in dashboard (bottom-left)"
+                    : "Stark Connect disabled"}
+                </span>
+              </div>
+
+              {/* Hardware note */}
+              <div className="text-xs font-mono text-primary/35 space-y-1 leading-relaxed">
+                <div>• Compatible with BioAmp EXG Pill, BioAmp Band, Muscle BioAmp Shield</div>
+                <div>• Connects via USB serial at 115,200 baud (Arduino-based hardware)</div>
+                <div>• Browser dialog appears when you click CONNECT in the overlay</div>
+                <div>• Chrome, Edge, and Electron are supported (Web Serial API)</div>
+                <div>• Keyboard shortcut: <span className="text-primary/60">Ctrl+Shift+S</span> to toggle overlay</div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Signal mode reference */}
+          <Card className="bg-card/40 border-primary/20 rounded-none">
+            <CardHeader className="border-b border-primary/20 p-4">
+              <CardTitle className="font-mono text-xs text-primary flex items-center gap-2">
+                <Brain className="w-3.5 h-3.5" />
+                SIGNAL MODE — ACTION REFERENCE
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              <div className="grid grid-cols-2 gap-px bg-primary/10">
+                {[
+                  { icon: "💪", signal: "Flex (EMG)",        action: "Confirm / Click",    color: "#ff4444" },
+                  { icon: "⚡", signal: "Double Flex (EMG)",  action: "Dismiss / Cancel",   color: "#ff6a00" },
+                  { icon: "🔒", signal: "Sustained Flex",     action: "Fullscreen / Hold",  color: "#ffc820" },
+                  { icon: "👁", signal: "Eye Blink (EEG)",    action: "Next page",          color: "#ff4444" },
+                  { icon: "🌊", signal: "Alpha Wave (EEG)",   action: "Previous page",      color: "#ff6a00" },
+                  { icon: "🧠", signal: "Focus State (EEG)",  action: "Command Console",    color: "#ffc820" },
+                  { icon: "❤", signal: "R-Peak (EKG)",       action: "Heartbeat monitor",  color: "#f03248" },
+                  { icon: "📊", signal: "BPM reading",        action: "AI biometric ctx",   color: "#ff4444" },
+                ].map(({ icon, signal, action, color }) => (
+                  <div key={signal} className="bg-card/60 p-3 flex items-start gap-3">
+                    <span className="text-lg flex-shrink-0 leading-none mt-0.5">{icon}</span>
+                    <div>
+                      <div className="font-mono text-xs font-bold" style={{ color }}>{signal}</div>
+                      <div className="font-mono text-xs text-primary/50 mt-0.5">{action}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 text-xs font-mono text-primary/30 leading-relaxed">
+                Auto-mode detects EMG / EEG / EKG from signal characteristics after ~1 second.
+                Actions fire on state change with a 350 ms debounce. Recalibrate resets the
+                adaptive baseline.
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Device setup card */}
+          <Card className="bg-card/40 border-primary/20 rounded-none">
+            <CardHeader className="border-b border-primary/20 p-4">
+              <CardTitle className="font-mono text-xs text-primary flex items-center gap-2">
+                <Plug className="w-3.5 h-3.5" />
+                DEVICE SETUP — UPSIDE DOWN LABS
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              <div className="space-y-4 font-mono text-xs text-primary/50 leading-relaxed">
+                <div>
+                  <div className="text-primary/70 mb-1">1. UPLOAD FIRMWARE</div>
+                  <div className="pl-3 space-y-1">
+                    <div>• Open Arduino IDE and upload the BioAmp serial sketch</div>
+                    <div>• Firmware: <span className="text-[#ff4444]/80">Serial.println(analogRead(A0))</span> at 500 Hz</div>
+                    <div>• Set baud rate to <span className="text-primary/70">115200</span> in both firmware and IDE</div>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-primary/70 mb-1">2. CONNECT ELECTRODES</div>
+                  <div className="pl-3 space-y-1">
+                    <div>• EMG: Place on muscle belly + reference on bony area</div>
+                    <div>• EEG: Fp1/Fp2 frontal sites + ear reference (A1/A2)</div>
+                    <div>• EKG: Right arm / left arm / right leg lead configuration</div>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-primary/70 mb-1">3. CONNECT IN STARK OVERLAY</div>
+                  <div className="pl-3 space-y-1">
+                    <div>• Enable Stark Connect above, then open the dashboard</div>
+                    <div>• Click CONNECT DEVICE in the bottom-left overlay</div>
+                    <div>• Select your BioAmp device from the browser port picker</div>
+                    <div>• Signal waveform appears immediately on connection</div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Privacy card */}
+          <Card className="bg-card/40 border-primary/20 rounded-none">
+            <CardHeader className="border-b border-primary/20 p-4">
+              <CardTitle className="font-mono text-xs text-primary flex items-center gap-2">
+                <Heart className="w-3.5 h-3.5" />
+                PRIVACY &amp; BIOMETRIC DATA
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              <div className="space-y-3 font-mono text-xs text-primary/50 leading-relaxed">
+                <div className="flex gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#22ff44] flex-shrink-0 mt-0.5" />
+                  <span>All signal processing happens locally in your browser — no raw ADC data is transmitted.</span>
+                </div>
+                <div className="flex gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#22ff44] flex-shrink-0 mt-0.5" />
+                  <span>Only classified events (FLEX / BLINK / BEAT) and anonymised amplitude are sent to the AI.</span>
+                </div>
+                <div className="flex gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#22ff44] flex-shrink-0 mt-0.5" />
+                  <span>No biometric data is stored in the database or transmitted to external servers.</span>
+                </div>
+                <div className="flex gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#22ff44] flex-shrink-0 mt-0.5" />
+                  <span>Disconnect at any time — the serial port is released immediately.</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
         </div>
       )}
 
