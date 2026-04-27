@@ -177,6 +177,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   // Ctrl+Shift+G → toggle ACERA Connect
   // Ctrl+Shift+S → toggle Stark Connect
+  // ? → reopen setup guide
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.ctrlKey && e.shiftKey && e.key === "G") {
@@ -186,6 +187,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
       if (e.ctrlKey && e.shiftKey && e.key === "S") {
         e.preventDefault();
         stark.toggle();
+      }
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (e.key === "?" && tag !== "INPUT" && tag !== "TEXTAREA") {
+        localStorage.removeItem("deckos_setup_guide_seen");
+        window.location.reload();
       }
     }
     window.addEventListener("keydown", handleKey);

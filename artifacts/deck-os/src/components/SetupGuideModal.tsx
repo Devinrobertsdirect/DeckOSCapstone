@@ -690,6 +690,7 @@ export function SetupGuideModal() {
       const t = setTimeout(() => setVisible(true), 1200);
       return () => clearTimeout(t);
     }
+    return undefined;
   }, []);
 
   // Lock NEXT for READ_DELAY_MS on every step change
