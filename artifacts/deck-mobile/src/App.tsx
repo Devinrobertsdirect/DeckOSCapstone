@@ -550,6 +550,10 @@ export default function App() {
                   body: JSON.stringify(fields.persona),
                 });
                 setPersona((prev) => ({ ...prev, ...fields.persona }));
+                // Keep localStorage in sync so TTS fallback always has the latest voice
+                if (fields.persona.voice) {
+                  localStorage.setItem("deckos_voice", fields.persona.voice);
+                }
               }
             } catch {}
             setSettingsSaving(false);
@@ -734,6 +738,15 @@ type SaveFields = {
   persona?: Partial<Persona>;
 };
 
+const MOBILE_VOICES = [
+  { value: "alloy",   label: "ALLOY",   desc: "Neutral, balanced"    },
+  { value: "echo",    label: "ECHO",    desc: "Male, smooth"         },
+  { value: "fable",   label: "FABLE",   desc: "Storytelling"         },
+  { value: "onyx",    label: "ONYX",    desc: "Deep, authoritative"  },
+  { value: "nova",    label: "NOVA",    desc: "Female, energetic"    },
+  { value: "shimmer", label: "SHIMMER", desc: "Soft, gentle"         },
+];
+
 function SettingsPanel({
   aiName, userName, identity, persona, channelStatus, saving, onClose, onSave,
 }: {
@@ -752,6 +765,11 @@ function SettingsPanel({
   const [draftAttitude, setDraftAttitude] = useState(persona?.attitude ?? "professional");
   const [draftDepth, setDraftDepth] = useState(persona?.thinkingDepth ?? "standard");
   const [draftLength, setDraftLength] = useState(persona?.responseLength ?? "balanced");
+  const [draftVoice, setDraftVoice] = useState(
+    persona?.voice ?? localStorage.getItem("deckos_voice") ?? "onyx"
+  );
+  const [playingVoice, setPlayingVoice] = useState<string | null>(null);
+  const sampleAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const handleIdentitySave = async (e: FormEvent) => {
     e.preventDefault();
@@ -762,9 +780,43 @@ function SettingsPanel({
   const handlePersonaSave = async (e: FormEvent) => {
     e.preventDefault();
     await onSave({
-      persona: { attitude: draftAttitude, thinkingDepth: draftDepth, responseLength: draftLength },
+      persona: {
+        attitude: draftAttitude,
+        thinkingDepth: draftDepth,
+        responseLength: draftLength,
+        voice: draftVoice,
+      },
     });
     onClose();
+  };
+
+  const playSample = async (voiceId: string) => {
+    if (playingVoice === voiceId) {
+      sampleAudioRef.current?.pause();
+      setPlayingVoice(null);
+      return;
+    }
+    setPlayingVoice(voiceId);
+    try {
+      const res = await fetch(`${API_BASE}/vision/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: `${voiceId} voice online and ready.`, voice: voiceId }),
+      });
+      if (res.ok) {
+        const { audio } = await res.json() as { audio: string };
+        sampleAudioRef.current?.pause();
+        const el = new Audio(`data:audio/mp3;base64,${audio}`);
+        sampleAudioRef.current = el;
+        el.onended = () => setPlayingVoice(null);
+        el.onerror = () => setPlayingVoice(null);
+        await el.play();
+      } else {
+        setPlayingVoice(null);
+      }
+    } catch {
+      setPlayingVoice(null);
+    }
   };
 
   const ATTITUDES = ["professional", "casual", "witty", "serious", "empathetic", "commanding", "gentle", "playful"];
@@ -908,6 +960,49 @@ function SettingsPanel({
                       }`}
                     >{l}</button>
                   ))}
+                </div>
+              </div>
+
+              {/* Voice Picker */}
+              <div>
+                <label className="block font-mono text-xs text-primary/40 uppercase tracking-widest mb-2">Voice</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {MOBILE_VOICES.map((v) => {
+                    const isSelected = draftVoice === v.value;
+                    const isPlaying  = playingVoice === v.value;
+                    return (
+                      <div
+                        key={v.value}
+                        onClick={() => setDraftVoice(v.value)}
+                        className={`relative flex items-center justify-between px-3 py-2.5 border cursor-pointer transition-colors ${
+                          isSelected
+                            ? "border-primary/60 bg-primary/10 text-primary"
+                            : "border-primary/15 text-primary/35 hover:border-primary/35"
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <p className={`font-mono text-xs tracking-wider ${isSelected ? "text-primary" : "text-primary/50"}`}>
+                            {v.label}
+                          </p>
+                          <p className={`font-mono text-[9px] leading-tight mt-0.5 ${isSelected ? "text-primary/50" : "text-primary/25"}`}>
+                            {v.desc}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); void playSample(v.value); }}
+                          className={`shrink-0 ml-2 w-6 h-6 flex items-center justify-center border text-[9px] transition-colors ${
+                            isPlaying
+                              ? "border-primary/60 text-primary animate-pulse"
+                              : "border-primary/20 text-primary/30 hover:border-primary/50 hover:text-primary/60"
+                          }`}
+                          aria-label={isPlaying ? "Stop sample" : "Play sample"}
+                        >
+                          {isPlaying ? "■" : "▶"}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
