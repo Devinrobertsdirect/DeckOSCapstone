@@ -544,15 +544,17 @@ export default function App() {
                 if (fields.userName !== undefined) setUserName(fields.userName || null);
               }
               if (fields.persona) {
-                await fetch(`${API_BASE}/ai/persona`, {
+                const personaRes = await fetch(`${API_BASE}/ai/persona`, {
                   method: "PUT",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify(fields.persona),
                 });
-                setPersona((prev) => ({ ...prev, ...fields.persona }));
-                // Keep localStorage in sync so TTS fallback always has the latest voice
-                if (fields.persona.voice) {
-                  localStorage.setItem("deckos_voice", fields.persona.voice);
+                if (personaRes.ok) {
+                  setPersona((prev) => ({ ...prev, ...fields.persona }));
+                  // Keep localStorage in sync so TTS fallback always has the latest voice
+                  if (fields.persona.voice) {
+                    localStorage.setItem("deckos_voice", fields.persona.voice);
+                  }
                 }
               }
             } catch {}
@@ -770,6 +772,9 @@ function SettingsPanel({
   );
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
   const sampleAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Stop any playing sample when the panel closes
+  useEffect(() => () => { sampleAudioRef.current?.pause(); }, []);
 
   const handleIdentitySave = async (e: FormEvent) => {
     e.preventDefault();
