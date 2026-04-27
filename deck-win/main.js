@@ -1,5 +1,6 @@
-const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, Notification } = require("electron");
 const path = require("path");
+const fs = require("fs");
 const { spawn } = require("child_process");
 const http = require("http");
 
@@ -14,6 +15,120 @@ let mainWindow = null;
 let aiStatus = "offline";
 let speakingTimer = null;
 let wsClient = null;
+
+// ─── Desktop Notifications ────────────────────────────────────────────────────
+let notificationsEnabled = true;
+
+// Cooldown map: eventType → last-fired timestamp (ms)
+// Prevents notification spam for high-frequency events.
+const NOTIFICATION_COOLDOWN_MS = 60_000;
+const notifCooldowns = new Map();
+
+function getSettingsPath() {
+  return path.join(app.getPath("userData"), "settings.json");
+}
+
+function loadSettings() {
+  try {
+    const raw = fs.readFileSync(getSettingsPath(), "utf8");
+    const data = JSON.parse(raw);
+    if (typeof data.notificationsEnabled === "boolean") {
+      notificationsEnabled = data.notificationsEnabled;
+    }
+  } catch {
+    // No settings file yet — use defaults
+  }
+}
+
+function saveSettings() {
+  try {
+    fs.writeFileSync(getSettingsPath(), JSON.stringify({ notificationsEnabled }), "utf8");
+  } catch (err) {
+    console.error("[deck-win] Failed to save settings:", err.message);
+  }
+}
+
+function showNotification(cooldownKey, title, body) {
+  if (!notificationsEnabled) return;
+  if (!Notification.isSupported()) return;
+
+  const now = Date.now();
+  const lastFired = notifCooldowns.get(cooldownKey) ?? 0;
+  if (now - lastFired < NOTIFICATION_COOLDOWN_MS) return;
+  notifCooldowns.set(cooldownKey, now);
+
+  const notif = new Notification({ title, body, silent: false });
+
+  notif.on("click", () => {
+    if (mainWindow) {
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  notif.show();
+}
+
+function handleWsEventForNotification(msg) {
+  const type = msg.type || msg.event;
+  const payload = msg.payload ?? {};
+
+  switch (type) {
+    case "system.resource.alert": {
+      const resource = payload.resource ?? "resource";
+      const value = payload.value != null ? ` (${Math.round(payload.value)}%)` : "";
+      showNotification(
+        `system.resource.alert.${resource}`,
+        "JARVIS — System Alert",
+        `High ${resource} usage detected${value}. Check the System tab.`
+      );
+      break;
+    }
+
+    case "plugin.error": {
+      const pluginId = payload.pluginId ?? payload.plugin ?? "plugin";
+      showNotification(
+        `plugin.error.${pluginId}`,
+        "JARVIS — Plugin Error",
+        `Plugin "${pluginId}" encountered an error.`
+      );
+      break;
+    }
+
+    case "notification.created": {
+      const title = payload.title ?? "New Notification";
+      const body = payload.body ?? payload.message ?? "";
+      showNotification(
+        `notification.created.${title}`,
+        `JARVIS — ${title}`,
+        body
+      );
+      break;
+    }
+
+    case "routine.completed": {
+      const name = payload.name ?? payload.routineName ?? "Routine";
+      showNotification(
+        `routine.completed.${name}`,
+        "JARVIS — Routine Complete",
+        `"${name}" finished successfully.`
+      );
+      break;
+    }
+
+    case "ai.inference_completed": {
+      // Only notify when the window is hidden — not useful if user is looking at the chat
+      if (mainWindow && !mainWindow.isVisible()) {
+        showNotification(
+          "ai.inference_completed",
+          "JARVIS — Response Ready",
+          payload.summary ?? "AI inference completed."
+        );
+      }
+      break;
+    }
+  }
+}
 
 // ─── Tray icons (16×16 colored circles) ──────────────────────────────────────
 // Each icon is a raw 16×16 RGBA bitmap passed to nativeImage.createFromBuffer.
@@ -140,6 +255,20 @@ function buildTrayMenu() {
     },
     { type: "separator" },
     {
+      label: notificationsEnabled ? "Mute Desktop Notifications" : "Unmute Desktop Notifications",
+      click: () => {
+        notificationsEnabled = !notificationsEnabled;
+        saveSettings();
+        // Rebuild the tray menu to reflect the updated label
+        tray.setContextMenu(buildTrayMenu());
+        // Notify the renderer if it's listening
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("notifications-enabled-changed", notificationsEnabled);
+        }
+      },
+    },
+    { type: "separator" },
+    {
       label: "Quit",
       click: () => {
         app.isQuitting = true;
@@ -200,6 +329,9 @@ function connectStatusWs() {
       } else if (type === "system.boot" || type === "ws.connected") {
         setAiStatus("online");
       }
+
+      // Desktop notifications for key events
+      handleWsEventForNotification(msg);
     });
 
     ws.on("close", () => {
@@ -220,6 +352,7 @@ function connectStatusWs() {
 
 // ─── Main window ──────────────────────────────────────────────────────────────
 async function createWindow() {
+  loadSettings();
   createTray();
   startApiServer();
 
@@ -329,5 +462,13 @@ app.on("before-quit", () => {
   }
 });
 
+// ─── IPC ──────────────────────────────────────────────────────────────────────
 ipcMain.handle("get-app-version", () => app.getVersion());
 ipcMain.handle("get-ai-status", () => aiStatus);
+ipcMain.handle("get-notifications-enabled", () => notificationsEnabled);
+ipcMain.handle("set-notifications-enabled", (_event, enabled) => {
+  notificationsEnabled = Boolean(enabled);
+  saveSettings();
+  tray.setContextMenu(buildTrayMenu());
+  return notificationsEnabled;
+});
