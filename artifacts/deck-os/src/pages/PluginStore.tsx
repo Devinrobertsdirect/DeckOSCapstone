@@ -64,6 +64,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   media:         "text-[#f472b6]",
   homelab:       "text-[#fb923c]",
   security:      "text-[#f87171]",
+  automation:    "text-[#a3e635]",
 };
 
 const PERMISSION_LABELS: Record<string, { label: string; desc: string; risk: "low" | "medium" | "high" }> = {
