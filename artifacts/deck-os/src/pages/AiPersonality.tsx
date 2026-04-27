@@ -405,7 +405,14 @@ function RecalibrateTab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ voice: v }),
       }).catch(() => {});
-    } else if (!v.startsWith("local-")) {
+      // Switching to an OpenAI voice — clear any stale ElevenLabs voice ID
+      // so server-side default TTS doesn't keep using the old ElevenLabs voice.
+      fetch(`${API_BASE}/config/ELEVENLABS_VOICE_ID`, { method: "DELETE" }).catch(() => {});
+    } else if (v.startsWith("local-")) {
+      // Switching to a local voice — clear stale ElevenLabs voice ID too
+      fetch(`${API_BASE}/config/ELEVENLABS_VOICE_ID`, { method: "DELETE" }).catch(() => {});
+    } else {
+      // ElevenLabs voice — persist ID to backend config so all TTS paths use it
       fetch(`${API_BASE}/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

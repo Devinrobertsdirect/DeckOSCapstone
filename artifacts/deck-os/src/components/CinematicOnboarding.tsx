@@ -1087,17 +1087,21 @@ export function CinematicOnboarding({ onComplete }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ gender: local.gender }),
       }).catch(() => {});
+      // Clear any stale ElevenLabs voice ID — not needed for local TTS
+      fetch(`${API_BASE}/config/ELEVENLABS_VOICE_ID`, { method: "DELETE" }).catch(() => {});
     } else {
       setVoice(voiceId);
       localStorage.setItem(VOICE_KEY, voiceId);
-      // If this is an ElevenLabs voice ID (not a standard OpenAI voice),
-      // persist it to backend config so all TTS paths use the right voice.
       if (!openAiVoiceIds.has(voiceId)) {
+        // ElevenLabs voice — persist ID to backend config so all TTS paths use it
         fetch(`${API_BASE}/config`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ELEVENLABS_VOICE_ID: voiceId }),
         }).catch(() => {});
+      } else {
+        // OpenAI standard voice — clear any stale ElevenLabs voice ID
+        fetch(`${API_BASE}/config/ELEVENLABS_VOICE_ID`, { method: "DELETE" }).catch(() => {});
       }
     }
     setStep("face");
