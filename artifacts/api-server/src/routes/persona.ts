@@ -6,7 +6,6 @@ import { bus } from "../lib/bus.js";
 
 const router = Router();
 
-const VALID_VOICES    = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"] as const;
 const VALID_GENDERS   = ["male", "female", "nonbinary", "neutral"] as const;
 const VALID_ATTITUDES = ["professional", "casual", "witty", "serious", "empathetic", "commanding", "gentle", "playful"] as const;
 const VALID_DEPTHS    = ["quick", "standard", "detailed"] as const;
@@ -15,7 +14,9 @@ const VALID_LENGTHS   = ["brief", "balanced", "thorough", "comprehensive"] as co
 const PersonaBody = z.object({
   aiName:               z.string().min(1).max(32).optional(),
   gender:               z.enum(VALID_GENDERS).optional(),
-  voice:                z.enum(VALID_VOICES).optional(),
+  // Accept any non-empty voice string — includes standard OpenAI voices
+  // (alloy/echo/fable/onyx/nova/shimmer) as well as ElevenLabs voice IDs.
+  voice:                z.string().min(1).max(256).optional(),
   attitude:             z.enum(VALID_ATTITUDES).optional(),
   thinkingDepth:        z.enum(VALID_DEPTHS).optional(),
   responseLength:       z.enum(VALID_LENGTHS).optional(),

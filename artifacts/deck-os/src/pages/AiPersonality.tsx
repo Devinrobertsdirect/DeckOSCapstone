@@ -184,7 +184,14 @@ function PersonaPreview({ persona }: { persona: Partial<AiPersona> }) {
   const attitude = ATTITUDES.find(a => a.value === persona.attitude)?.desc ?? "…";
   const depth    = THINKING_DEPTHS.find(d => d.value === persona.thinkingDepth)?.desc ?? "…";
   const length   = RESPONSE_LENGTHS.find(l => l.value === persona.responseLength)?.desc ?? "…";
-  const voice    = VOICES.find(v => v.value === persona.voice)?.desc ?? "…";
+  const openAiVoice = VOICES.find(v => v.value === persona.voice);
+  const voice = openAiVoice
+    ? openAiVoice.desc
+    : persona.voice?.startsWith("local-")
+      ? "Local offline voice"
+      : persona.voice
+        ? `ElevenLabs: ${persona.voice.slice(0, 16)}…`
+        : "…";
   const name     = persona.aiName || "JARVIS";
   const color    = persona.textColor || "#00d4ff";
 
@@ -399,17 +406,16 @@ function RecalibrateTab() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ data: { voice: v }, merge: true }),
     }).catch(() => {});
-    if (PERSONA_VALID_VOICES.has(v)) {
-      fetch(`${API_BASE}/ai/persona`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ voice: v }),
-      }).catch(() => {});
-      // Switching to an OpenAI voice — clear any stale ElevenLabs voice ID
-      // so server-side default TTS doesn't keep using the old ElevenLabs voice.
-      fetch(`${API_BASE}/config/ELEVENLABS_VOICE_ID`, { method: "DELETE" }).catch(() => {});
-    } else if (v.startsWith("local-")) {
-      // Switching to a local voice — clear stale ElevenLabs voice ID too
+    // Always persist the selected voice to the persona table — the backend
+    // now accepts any non-empty string (OpenAI IDs, ElevenLabs IDs, etc.)
+    fetch(`${API_BASE}/ai/persona`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ voice: v }),
+    }).catch(() => {});
+    if (PERSONA_VALID_VOICES.has(v) || v.startsWith("local-")) {
+      // OpenAI or local voice — clear any stale ElevenLabs voice ID so the
+      // server-side TTS default doesn't keep using the old ElevenLabs voice.
       fetch(`${API_BASE}/config/ELEVENLABS_VOICE_ID`, { method: "DELETE" }).catch(() => {});
     } else {
       // ElevenLabs voice — persist ID to backend config so all TTS paths use it
@@ -1148,7 +1154,23 @@ export default function AiPersonality() {
 
           {/* Voice */}
           <div className="border border-primary/20 bg-card/40 p-5">
-            <SectionHeader icon={Mic2} title="VOICE" sub="OpenAI TTS voice used for all spoken output" />
+            <SectionHeader icon={Mic2} title="VOICE" sub="Voice used for all spoken output" />
+            {/* ElevenLabs active indicator */}
+            {form.voice && !PERSONA_VALID_VOICES.has(form.voice) && !form.voice.startsWith("local-") && (
+              <div
+                className="mb-3 flex items-center gap-2 px-3 py-2 border font-mono text-[10px]"
+                style={{ borderColor: "rgba(var(--primary-rgb),0.3)", background: "rgba(var(--primary-rgb),0.06)" }}
+              >
+                <span
+                  className="px-1.5 py-0.5 border text-[8px] tracking-widest"
+                  style={{ borderColor: "rgba(var(--primary-rgb),0.4)", color: "hsl(var(--primary))" }}
+                >
+                  ELEVENLABS
+                </span>
+                <span className="text-primary/60 truncate">Active voice ID: {form.voice}</span>
+                <span className="text-primary/30 ml-auto shrink-0">Change in Recalibrate tab</span>
+              </div>
+            )}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {VOICES.map(v => {
                 const active = form.voice === v.value;
