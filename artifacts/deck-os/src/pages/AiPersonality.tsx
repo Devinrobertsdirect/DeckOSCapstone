@@ -379,6 +379,23 @@ function RecalibrateTab() {
     return () => window.removeEventListener(VOICE_CHANGED_EVENT, onVoiceChanged);
   }, [voice]);
 
+  // ── Sync voice from server on mount so changes made on other devices
+  //    (e.g. from mobile or a different browser) are reflected here too.
+  useEffect(() => {
+    fetch(`${API_BASE}/ai/persona`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((p: { voice?: string } | null) => {
+        const serverVoice = p?.voice?.trim();
+        if (serverVoice && serverVoice !== localStorage.getItem(VOICE_KEY)) {
+          localStorage.setItem(VOICE_KEY, serverVoice);
+          setVoiceLocal(serverVoice);
+          window.dispatchEvent(new CustomEvent(VOICE_CHANGED_EVENT, { detail: { voice: serverVoice } }));
+        }
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     fetch(`${API_BASE}/vision/elevenlabs/voices`)
       .then((r) => (r.ok ? r.json() : null))

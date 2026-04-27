@@ -111,6 +111,7 @@ interface VoiceIdentity {
 
 interface Persona {
   aiName?: string;
+  voice?: string;
   attitude?: string;
   thinkingDepth?: string;
   responseLength?: string;
@@ -420,7 +421,9 @@ export default function App() {
       setMessages((prev) => [...prev.filter((m) => !m.pending), aiMsg]);
 
       setVoiceState("speaking");
-      const storedVoice = localStorage.getItem("deckos_voice") ?? undefined;
+      // Prefer the server-persisted voice from persona (synced across devices),
+      // falling back to the locally stored voice key for offline resilience.
+      const storedVoice = persona?.voice ?? localStorage.getItem("deckos_voice") ?? undefined;
       const ttsRes = await fetch(`${API_BASE}/vision/tts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
