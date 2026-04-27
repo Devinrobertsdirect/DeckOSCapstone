@@ -3,7 +3,7 @@ import {
   Settings as SettingsIcon, Wifi, Key, Cpu, CheckCircle2,
   XCircle, Loader2, Eye, EyeOff, Save, AlertTriangle, RotateCcw, Zap,
   Volume2, Mic, Globe, HardDrive, ShieldCheck, RefreshCw, Database, Server,
-  Info, Terminal, Download, Bell, BellOff, Rocket,
+  Info, Terminal, Download, Bell, BellOff, Rocket, SlidersHorizontal,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -105,6 +105,12 @@ export default function Settings() {
   const [isElectron, setIsElectron]                     = useState(false);
   const [desktopNotifEnabled, setDesktopNotifEnabled]   = useState(true);
   const [launchOnStartup, setLaunchOnStartup]           = useState(false);
+
+  const [cpuThreshold, setCpuThreshold] = useState<number>(80);
+  const [memThreshold, setMemThreshold] = useState<number>(90);
+  const [thresholdSaving, setThresholdSaving] = useState(false);
+  const [thresholdSaveOk, setThresholdSaveOk] = useState(false);
+  const [thresholdDirty, setThresholdDirty] = useState(false);
 
   const [version, setVersion]               = useState<string | null>(null);
   const [adminConfigured, setAdminConfigured] = useState<boolean | null>(null);
@@ -210,6 +216,34 @@ export default function Settings() {
       fetchHealth();
     }
   }, [tab, health, healthChecking, fetchHealth]);
+
+  useEffect(() => {
+    if (tab !== "system") return;
+    fetch("/api/system/thresholds")
+      .then((r) => r.json())
+      .then((data: { cpuThreshold: number; memThreshold: number }) => {
+        setCpuThreshold(data.cpuThreshold);
+        setMemThreshold(data.memThreshold);
+        setThresholdDirty(false);
+      })
+      .catch(() => {});
+  }, [tab]);
+
+  async function saveThresholds() {
+    setThresholdSaving(true);
+    try {
+      await fetch("/api/system/thresholds", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cpuThreshold, memThreshold }),
+      });
+      setThresholdDirty(false);
+      setThresholdSaveOk(true);
+      setTimeout(() => setThresholdSaveOk(false), 3000);
+    } finally {
+      setThresholdSaving(false);
+    }
+  }
 
   useEffect(() => {
     if (tab !== "about" || version !== null) return;
@@ -1104,6 +1138,131 @@ export default function Settings() {
               </CardContent>
             </Card>
           )}
+
+          <Card className="bg-card/40 border-primary/20 rounded-none">
+            <CardHeader className="border-b border-primary/20 p-4">
+              <CardTitle className="font-mono text-xs text-primary flex items-center gap-2 justify-between">
+                <span className="flex items-center gap-2">
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  ALERT.THRESHOLDS // CPU &amp; MEMORY
+                </span>
+                <div className="flex items-center gap-2">
+                  {thresholdSaveOk && (
+                    <span className="text-[#11d97a] flex items-center gap-1 font-mono text-xs">
+                      <CheckCircle2 className="w-3 h-3" /> SAVED
+                    </span>
+                  )}
+                  {thresholdDirty && !thresholdSaveOk && (
+                    <span className="text-[#ffc820] flex items-center gap-1 font-mono text-xs">
+                      <AlertTriangle className="w-3 h-3" /> UNSAVED
+                    </span>
+                  )}
+                  <button
+                    onClick={saveThresholds}
+                    disabled={thresholdSaving || !thresholdDirty}
+                    className="flex items-center gap-1.5 px-3 py-1 border border-primary/40 font-mono text-xs text-primary hover:bg-primary/10 transition-all disabled:opacity-50"
+                  >
+                    {thresholdSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                    SAVE
+                  </button>
+                </div>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-6">
+              <p className="font-mono text-xs text-primary/50 leading-relaxed">
+                Set the percentage at which JARVIS fires a resource alert. Changes take effect on the next monitor cycle.
+                Values are persisted per-user and override any server defaults.
+              </p>
+
+              {/* CPU threshold */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="font-mono text-xs text-primary/60 uppercase flex items-center gap-1.5">
+                    <Cpu className="w-3 h-3" /> CPU Alert Threshold
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={cpuThreshold}
+                      onChange={(e) => {
+                        const v = Math.min(100, Math.max(1, parseInt(e.target.value) || 1));
+                        setCpuThreshold(v);
+                        setThresholdDirty(true);
+                      }}
+                      className="w-16 bg-background border border-primary/30 px-2 py-1 font-mono text-xs text-primary text-center focus:border-primary focus:outline-none"
+                    />
+                    <span className="font-mono text-xs text-primary/50">%</span>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={100}
+                  value={cpuThreshold}
+                  onChange={(e) => {
+                    setCpuThreshold(parseInt(e.target.value));
+                    setThresholdDirty(true);
+                  }}
+                  className="w-full accent-primary h-1 bg-primary/20 appearance-none cursor-pointer"
+                />
+                <div className="flex justify-between font-mono text-[10px] text-primary/25">
+                  <span>1%</span>
+                  <span className={cpuThreshold >= 90 ? "text-[#f03248]" : cpuThreshold >= 70 ? "text-[#ffc820]" : "text-[#11d97a]"}>
+                    {cpuThreshold}% {cpuThreshold < 70 ? "(LOW)" : cpuThreshold < 90 ? "(MEDIUM)" : "(HIGH)"}
+                  </span>
+                  <span>100%</span>
+                </div>
+              </div>
+
+              {/* Memory threshold */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="font-mono text-xs text-primary/60 uppercase flex items-center gap-1.5">
+                    <HardDrive className="w-3 h-3" /> Memory Alert Threshold
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={memThreshold}
+                      onChange={(e) => {
+                        const v = Math.min(100, Math.max(1, parseInt(e.target.value) || 1));
+                        setMemThreshold(v);
+                        setThresholdDirty(true);
+                      }}
+                      className="w-16 bg-background border border-primary/30 px-2 py-1 font-mono text-xs text-primary text-center focus:border-primary focus:outline-none"
+                    />
+                    <span className="font-mono text-xs text-primary/50">%</span>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={100}
+                  value={memThreshold}
+                  onChange={(e) => {
+                    setMemThreshold(parseInt(e.target.value));
+                    setThresholdDirty(true);
+                  }}
+                  className="w-full accent-primary h-1 bg-primary/20 appearance-none cursor-pointer"
+                />
+                <div className="flex justify-between font-mono text-[10px] text-primary/25">
+                  <span>1%</span>
+                  <span className={memThreshold >= 90 ? "text-[#f03248]" : memThreshold >= 70 ? "text-[#ffc820]" : "text-[#11d97a]"}>
+                    {memThreshold}% {memThreshold < 70 ? "(LOW)" : memThreshold < 90 ? "(MEDIUM)" : "(HIGH)"}
+                  </span>
+                  <span>100%</span>
+                </div>
+              </div>
+
+              <div className="p-2 border border-primary/10 bg-primary/5 font-mono text-[11px] text-primary/40">
+                Default: CPU 80% · MEM 90%. Override with env vars CPU_ALERT_THRESHOLD / MEM_ALERT_THRESHOLD, or save here to override both.
+              </div>
+            </CardContent>
+          </Card>
 
           <div className="p-3 border border-primary/10 bg-primary/5 font-mono text-xs text-primary/40 space-y-1.5">
             <div className="text-primary/60 mb-1">DOCKER QUICK REFERENCE</div>

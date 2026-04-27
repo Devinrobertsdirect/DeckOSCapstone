@@ -2,6 +2,7 @@ import os from "os";
 import { statfs } from "fs/promises";
 import { Plugin } from "@workspace/event-bus";
 import type { PluginContext, BusEvent } from "@workspace/event-bus";
+import { db, userCognitiveModelTable } from "@workspace/db";
 
 const DEFAULT_POLL_INTERVAL_MS  = 4_000;
 const MEMORY_SNAPSHOT_INTERVAL  = 12;
@@ -154,7 +155,8 @@ export default class SystemMonitorPlugin extends Plugin {
         payload: metrics,
       });
 
-      this.checkThresholds(metrics.cpu.usage, metrics.memory.percentage, context);
+      const { cpu: liveCpuThr, mem: liveMemThr } = await this.readLiveThresholds();
+      this.checkThresholds(metrics.cpu.usage, metrics.memory.percentage, context, liveCpuThr, liveMemThr);
 
       if (this.pollCount % MEMORY_SNAPSHOT_INTERVAL === 0 && context.memory) {
         const summary = `CPU: ${metrics.cpu.usage}% (load: ${metrics.cpu.loadAverage[0].toFixed(2)}), Memory: ${metrics.memory.percentage}% used (${Math.round(metrics.memory.used / 1024 / 1024)}MB / ${Math.round(metrics.memory.total / 1024 / 1024)}MB), Disk: ${metrics.disk.percentage}% used, Network: ${metrics.network.interfaceCount} interfaces, Uptime: ${Math.floor(metrics.uptime / 3600)}h`;
@@ -175,8 +177,20 @@ export default class SystemMonitorPlugin extends Plugin {
     });
   }
 
-  private checkThresholds(cpu: number, mem: number, context: PluginContext): void {
-    if (cpu > this.cpuThreshold && !this.cpuAlerted) {
+  private async readLiveThresholds(): Promise<{ cpu: number; mem: number }> {
+    try {
+      const rows = await db.select().from(userCognitiveModelTable).limit(1);
+      const prefs = (rows[0]?.preferences ?? {}) as Record<string, unknown>;
+      const cpu = typeof prefs["cpuAlertThreshold"] === "number" ? prefs["cpuAlertThreshold"] : this.cpuThreshold;
+      const mem = typeof prefs["memAlertThreshold"] === "number" ? prefs["memAlertThreshold"] : this.memThreshold;
+      return { cpu, mem };
+    } catch {
+      return { cpu: this.cpuThreshold, mem: this.memThreshold };
+    }
+  }
+
+  private checkThresholds(cpu: number, mem: number, context: PluginContext, cpuThr: number, memThr: number): void {
+    if (cpu > cpuThr && !this.cpuAlerted) {
       this.cpuAlerted = true;
       context.emit({
         source: this.id,
@@ -185,21 +199,21 @@ export default class SystemMonitorPlugin extends Plugin {
         payload: {
           resource: "cpu",
           value: cpu,
-          threshold: this.cpuThreshold,
-          message: `CPU usage at ${cpu.toFixed(1)}% — exceeds ${this.cpuThreshold}% threshold`,
+          threshold: cpuThr,
+          message: `CPU usage at ${cpu.toFixed(1)}% — exceeds ${cpuThr}% threshold`,
         },
       });
-    } else if (cpu <= this.cpuThreshold && this.cpuAlerted) {
+    } else if (cpu <= cpuThr && this.cpuAlerted) {
       this.cpuAlerted = false;
       context.emit({
         source: this.id,
         target: null,
         type: "system.resource.clear",
-        payload: { resource: "cpu", value: cpu, threshold: this.cpuThreshold },
+        payload: { resource: "cpu", value: cpu, threshold: cpuThr },
       });
     }
 
-    if (mem > this.memThreshold && !this.memAlerted) {
+    if (mem > memThr && !this.memAlerted) {
       this.memAlerted = true;
       context.emit({
         source: this.id,
@@ -208,17 +222,17 @@ export default class SystemMonitorPlugin extends Plugin {
         payload: {
           resource: "memory",
           value: mem,
-          threshold: this.memThreshold,
-          message: `Memory usage at ${mem.toFixed(1)}% — exceeds ${this.memThreshold}% threshold`,
+          threshold: memThr,
+          message: `Memory usage at ${mem.toFixed(1)}% — exceeds ${memThr}% threshold`,
         },
       });
-    } else if (mem <= this.memThreshold && this.memAlerted) {
+    } else if (mem <= memThr && this.memAlerted) {
       this.memAlerted = false;
       context.emit({
         source: this.id,
         target: null,
         type: "system.resource.clear",
-        payload: { resource: "memory", value: mem, threshold: this.memThreshold },
+        payload: { resource: "memory", value: mem, threshold: memThr },
       });
     }
   }
