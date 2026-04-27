@@ -5,6 +5,7 @@ import {
   Volume2, Mic, Globe, HardDrive, ShieldCheck, RefreshCw, Database, Server,
   Info, Terminal, Download, Bell, BellOff, Rocket, SlidersHorizontal, Hand,
   Activity, Brain, Plug, Unplug, Heart, Trash2, ShieldAlert, RotateCw,
+  Smartphone, Copy,
 } from "lucide-react";
 import { ACERA_KEY } from "@/hooks/useAceraConnect";
 import { STARK_KEY } from "@/hooks/useStarkConnect";
@@ -19,7 +20,7 @@ type FeatureMap = {
   store: FeatureInfo;
 };
 
-type Tab = "connection" | "apikeys" | "models" | "system" | "about" | "vision" | "stark" | "admin";
+type Tab = "connection" | "apikeys" | "models" | "system" | "about" | "vision" | "stark" | "admin" | "mobile";
 
 type HealthStatus = {
   ok: boolean | null;
@@ -117,6 +118,12 @@ export default function Settings() {
   const [thresholdSaving, setThresholdSaving] = useState(false);
   const [thresholdSaveOk, setThresholdSaveOk] = useState(false);
   const [thresholdDirty, setThresholdDirty] = useState(false);
+
+  const [pairingCode, setPairingCode]       = useState<string | null>(null);
+  const [mobileUrl, setMobileUrl]           = useState<string>("");
+  const [pairingCopied, setPairingCopied]   = useState(false);
+  const [pairingResetting, setPairingResetting] = useState(false);
+  const [urlCopied, setUrlCopied]           = useState(false);
 
   const [version, setVersion]               = useState<string | null>(null);
   const [adminConfigured, setAdminConfigured] = useState<boolean | null>(null);
@@ -315,6 +322,14 @@ export default function Settings() {
         setAdminConfigured(false);
       });
   }, [tab, version]);
+
+  useEffect(() => {
+    if (tab !== "mobile" || pairingCode !== null) return;
+    fetch(`${import.meta.env.BASE_URL}api/pairing/code`)
+      .then((r) => r.json() as Promise<{ code: string; mobileUrl: string }>)
+      .then((d) => { setPairingCode(d.code); setMobileUrl(d.mobileUrl); })
+      .catch(() => {});
+  }, [tab, pairingCode]);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -583,6 +598,7 @@ export default function Settings() {
     { id: "vision",     label: "ACERA VISION",  icon: <Hand className="w-3 h-3" /> },
     { id: "stark",      label: "STARK CONNECT", icon: <Activity className="w-3 h-3" /> },
     { id: "about",      label: "ABOUT & UPDATE",icon: <Info className="w-3 h-3" /> },
+    { id: "mobile",     label: "MOBILE ACCESS", icon: <Smartphone className="w-3 h-3" /> },
     { id: "admin",      label: "ADMIN",         icon: <ShieldAlert className="w-3 h-3 text-red-400" /> },
   ];
 
@@ -2146,6 +2162,100 @@ export default function Settings() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Mobile Access Tab ─────────────────────────────────────────── */}
+      {tab === "mobile" && (
+        <div className="space-y-6">
+          <p className="font-mono text-xs text-primary/40 leading-relaxed">
+            Enter this code in the DeckOS Mobile app to link it to this instance. Once paired, the mobile app will have a stable identity and can access all AI, voice, and command features.
+          </p>
+
+          {/* Pairing Code */}
+          <div className="border border-primary/20 bg-primary/5 p-6 flex flex-col items-center gap-4">
+            {pairingCode ? (
+              <>
+                <p className="font-mono text-[10px] text-primary/30 uppercase tracking-widest">Instance Pairing Code</p>
+                <div className="font-mono text-5xl tracking-[0.3em] text-primary font-bold select-all">
+                  {pairingCode}
+                </div>
+                <p className="font-mono text-[10px] text-primary/25">
+                  Type this code in Settings → Link to Desktop on the mobile app
+                </p>
+                <button
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(pairingCode).catch(() => {});
+                    setPairingCopied(true);
+                    setTimeout(() => setPairingCopied(false), 2000);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 font-mono text-xs border border-primary/30 text-primary/60 hover:border-primary/60 hover:text-primary transition-colors"
+                >
+                  <Copy className="w-3 h-3" />
+                  {pairingCopied ? "COPIED!" : "COPY CODE"}
+                </button>
+              </>
+            ) : (
+              <div className="flex items-center gap-2 py-4">
+                <Loader2 className="w-4 h-4 text-primary/40 animate-spin" />
+                <span className="font-mono text-xs text-primary/40">Generating code…</span>
+              </div>
+            )}
+          </div>
+
+          {/* Mobile URL */}
+          {mobileUrl && (
+            <div className="space-y-2">
+              <p className="font-mono text-[10px] text-primary/30 uppercase tracking-widest">Mobile App URL</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 font-mono text-xs text-primary/60 bg-card/30 border border-primary/15 px-3 py-2 overflow-x-auto whitespace-nowrap">
+                  {mobileUrl}
+                </code>
+                <button
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(mobileUrl).catch(() => {});
+                    setUrlCopied(true);
+                    setTimeout(() => setUrlCopied(false), 2000);
+                  }}
+                  className="shrink-0 px-3 py-2 font-mono text-xs border border-primary/20 text-primary/50 hover:border-primary/50 hover:text-primary transition-colors"
+                >
+                  {urlCopied ? "✓" : <Copy className="w-3 h-3" />}
+                </button>
+              </div>
+              <p className="font-mono text-[10px] text-primary/20 leading-relaxed">
+                Open this URL on your phone, then enter the code above when prompted.
+              </p>
+            </div>
+          )}
+
+          {/* Reset code */}
+          <div className="border-t border-primary/10 pt-4 flex items-start gap-4">
+            <div className="flex-1">
+              <p className="font-mono text-[10px] text-primary/30 uppercase tracking-widest mb-1">Reset Pairing Code</p>
+              <p className="font-mono text-[10px] text-primary/20 leading-relaxed">
+                Generates a new code and invalidates all existing mobile pairings. You will need to re-enter the code on your phone.
+              </p>
+            </div>
+            <button
+              disabled={pairingResetting}
+              onClick={async () => {
+                setPairingResetting(true);
+                try {
+                  const r = await fetch(`${import.meta.env.BASE_URL}api/pairing/reset`, { method: "POST" });
+                  if (r.ok) {
+                    const d = await r.json() as { code: string };
+                    setPairingCode(d.code);
+                  }
+                } finally {
+                  setPairingResetting(false);
+                }
+              }}
+              className="shrink-0 flex items-center gap-2 px-4 py-2 font-mono text-xs border border-primary/20 text-primary/40 hover:border-red-400/40 hover:text-red-400/60 transition-colors disabled:opacity-40"
+            >
+              {pairingResetting ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+              RESET
+            </button>
           </div>
         </div>
       )}

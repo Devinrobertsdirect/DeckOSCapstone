@@ -29,6 +29,7 @@ import channelsRouter from "./channels";
 import adminRouter from "./admin";
 import openclawRouter from "./openclaw";
 import lieDetectorRouter from "./lie-detector";
+import pairingRouter from "./pairing";
 
 const router: IRouter = Router();
 
@@ -62,5 +63,6 @@ router.use(channelsRouter);
 router.use(adminRouter);
 router.use(openclawRouter);
 router.use(lieDetectorRouter);
+router.use(pairingRouter);
 
 export default router;

@@ -133,7 +133,24 @@ interface ChannelStatus {
   supported: string[];
 }
 
-const SESSION_ID = `mobile_${Math.random().toString(36).slice(2, 10)}`;
+const PAIRING_KEY     = "deckos_pairing_code";
+const SESSION_ID_KEY  = "deckos_session_id";
+
+/** Returns a stable SESSION_ID based on the stored pairing code.
+ *  Falls back to a random ID if the device hasn't been paired yet. */
+function resolveSessionId(): string {
+  const stored = localStorage.getItem(SESSION_ID_KEY);
+  if (stored) return stored;
+  const code = localStorage.getItem(PAIRING_KEY);
+  if (code) {
+    const sid = `mobile_p_${code.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+    localStorage.setItem(SESSION_ID_KEY, sid);
+    return sid;
+  }
+  return `mobile_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+const SESSION_ID = resolveSessionId();
 
 function useWebSocket(onMessage: (data: unknown) => void) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -177,7 +194,121 @@ function useWebSocket(onMessage: (data: unknown) => void) {
 
 type VoicePipelineState = "idle" | "listening" | "transcribing" | "chatting" | "speaking" | "error";
 
+function PairingGate({ onPaired }: { onPaired: () => void }) {
+  const [code, setCode] = useState("");
+  const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    const trimmed = code.trim().toUpperCase();
+    if (!trimmed) return;
+    setStatus("loading");
+    setErrorMsg("");
+    try {
+      const res = await fetch(`${API_BASE}/pairing/validate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: trimmed }),
+      });
+      if (!res.ok) { setStatus("error"); setErrorMsg("Server error. Try again."); return; }
+      const { valid } = await res.json() as { valid: boolean };
+      if (valid) {
+        localStorage.setItem(PAIRING_KEY, trimmed);
+        localStorage.removeItem(SESSION_ID_KEY);
+        onPaired();
+      } else {
+        setStatus("error");
+        setErrorMsg("Invalid code. Check the MOBILE ACCESS tab in desktop Settings.");
+      }
+    } catch {
+      setStatus("error");
+      setErrorMsg("Cannot reach the server. Make sure you're on the same network.");
+    }
+  };
+
+  const fmt = (v: string) => {
+    const clean = v.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 7);
+    if (clean.length > 3) return `${clean.slice(0, 3)}-${clean.slice(3)}`;
+    return clean;
+  };
+
+  return (
+    <div className="fixed inset-0 flex flex-col bg-background text-primary">
+      <div className="scanline pointer-events-none" />
+      <div className="flex-1 flex flex-col items-center justify-center px-8 gap-8">
+
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-16 h-16 rounded-full border-2 border-primary/40 flex items-center justify-center bg-primary/5">
+            <span className="font-mono text-2xl font-bold text-primary">J</span>
+          </div>
+          <div className="text-center">
+            <p className="font-mono text-sm text-primary tracking-widest uppercase">DeckOS Mobile</p>
+            <p className="font-mono text-[10px] text-primary/30 mt-1 uppercase tracking-widest">JARVIS Command Center</p>
+          </div>
+        </div>
+
+        <div className="text-center space-y-1">
+          <p className="font-mono text-xs text-primary/60">Enter your desktop pairing code</p>
+          <p className="font-mono text-[10px] text-primary/30 leading-relaxed">
+            Open DeckOS on your desktop → Settings → Mobile Access
+          </p>
+        </div>
+
+        <form onSubmit={(e) => void handleSubmit(e)} className="w-full max-w-xs space-y-4">
+          <div className="flex flex-col gap-2">
+            <input
+              value={code}
+              onChange={(e) => setCode(fmt(e.target.value))}
+              maxLength={8}
+              placeholder="XXX-0000"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              className={`w-full text-center bg-transparent border px-4 py-4 font-mono text-3xl tracking-[0.3em] text-primary placeholder-primary/15 outline-none transition-colors ${
+                status === "error" ? "border-[#f03248]/60" : "border-primary/30 focus:border-primary/60"
+              }`}
+            />
+            {status === "error" && (
+              <p className="font-mono text-[10px] text-[#f03248] text-center leading-relaxed">{errorMsg}</p>
+            )}
+          </div>
+          <button
+            type="submit"
+            disabled={code.length < 7 || status === "loading"}
+            className="w-full py-3 font-mono text-xs border border-primary/40 text-primary bg-primary/10 hover:bg-primary/20 disabled:opacity-30 transition-colors uppercase tracking-widest"
+          >
+            {status === "loading" ? "Linking…" : "Link to Desktop →"}
+          </button>
+        </form>
+
+        <p className="font-mono text-[9px] text-primary/15 text-center leading-relaxed max-w-xs">
+          The pairing code links your mobile device to a specific DeckOS instance. You only need to do this once.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  const [paired, setPaired] = useState(() => !!localStorage.getItem(PAIRING_KEY));
+
+  if (!paired) {
+    return (
+      <PairingGate
+        onPaired={() => {
+          setPaired(true);
+          window.location.reload();
+        }}
+      />
+    );
+  }
+
+  return <PairedApp />;
+}
+
+function PairedApp() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -915,6 +1046,29 @@ function SettingsPanel({
             >
               {saving ? "Saving…" : "Save Identity"}
             </button>
+
+            {/* Pairing status & re-link */}
+            {localStorage.getItem(PAIRING_KEY) && (
+              <div className="border-t border-primary/10 pt-3 flex items-center justify-between">
+                <div>
+                  <p className="font-mono text-[9px] text-primary/30 uppercase tracking-widest">Linked to Desktop</p>
+                  <p className="font-mono text-[10px] text-primary/50">
+                    Code: <span className="text-primary/70">{localStorage.getItem(PAIRING_KEY)}</span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.removeItem(PAIRING_KEY);
+                    localStorage.removeItem(SESSION_ID_KEY);
+                    window.location.reload();
+                  }}
+                  className="font-mono text-[10px] text-primary/30 border border-primary/15 px-2 py-1 hover:border-[#f03248]/40 hover:text-[#f03248]/60 transition-colors"
+                >
+                  RE-LINK
+                </button>
+              </div>
+            )}
           </form>
         )}
 
