@@ -1,9 +1,12 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { applyColor, getStoredColor, getStoredConfig, type ColorScheme } from "@/components/Onboarding";
 import { useAiName } from "@/hooks/useAiName";
 import { useUserName } from "@/hooks/useUserName";
 import { AIFace, useFaceStyle } from "@/components/AIFace";
 import { Link, useLocation } from "wouter";
+import { useAceraConnect } from "@/hooks/useAceraConnect";
+import { AceraOverlay } from "@/components/AceraOverlay";
+import type { DashboardAction } from "@/lib/aceraGestures";
 import {
   Activity, HardDrive, Cpu as Microchip, Network, Settings,
   TerminalSquare, AlertTriangle, CheckCircle2,
@@ -98,8 +101,14 @@ function eventToAction(type: string, payload: Record<string, unknown>): ActionFl
   return null;
 }
 
+const NAV_PAGE_ORDER = [
+  "/", "/ai", "/ai/personality", "/plugins", "/plugins/store",
+  "/memory", "/devices", "/commands", "/routines",
+  "/briefings", "/timeline", "/settings", "/map",
+] as const;
+
 export function Layout({ children }: { children: React.ReactNode }) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [autonomyOpen, setAutonomyOpen] = useState(false);
   const [eventLogOpen, setEventLogOpen] = useState(false);
@@ -122,6 +131,37 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const ollamaOnline = wsOllamaOnline ?? httpOllamaOnline;
   const showOllamaBanner = ollamaOnline === false && !ollamaBannerDismissed;
   const camera = useCamera();
+  const acera = useAceraConnect();
+
+  // Gesture → navigation handler
+  const handleGestureAction = useCallback((action: DashboardAction) => {
+    if (!action) return;
+    if (action === "nav:prev" || action === "nav:next") {
+      const idx = NAV_PAGE_ORDER.indexOf(location as (typeof NAV_PAGE_ORDER)[number]);
+      const current = idx >= 0 ? idx : 0;
+      const next = action === "nav:prev"
+        ? (current - 1 + NAV_PAGE_ORDER.length) % NAV_PAGE_ORDER.length
+        : (current + 1) % NAV_PAGE_ORDER.length;
+      navigate(NAV_PAGE_ORDER[next]!);
+    } else if (action === "nav:console") {
+      navigate("/commands");
+    } else if (action === "nav:ai") {
+      navigate("/ai");
+    }
+  }, [location, navigate]);
+
+  // Ctrl+Shift+G → toggle ACERA Connect
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.ctrlKey && e.shiftKey && e.key === "G") {
+        e.preventDefault();
+        acera.toggle();
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [acera]);
+
   const [autonomyConfig, setAutonomyConfig] = useState<AutonomyConfig | null>(null);
   const [recentActions, setRecentActions] = useState<ActionFlash[]>([]);
   const lastEventCount = useRef(0);
@@ -993,6 +1033,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
         wsEvents={events}
         onUnreadChange={setUnreadCount}
       />
+
+      {/* ACERA CONNECT OVERLAY */}
+      {acera.enabled && (
+        <AceraOverlay acera={acera} onAction={handleGestureAction} />
+      )}
     </div>
   );
 }

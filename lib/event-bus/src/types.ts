@@ -106,6 +106,13 @@ export const NotificationEventTypeSchema = z.enum([
   "notification.created",
 ]);
 
+export const AceraEventTypeSchema = z.enum([
+  "acera.tracking.started",
+  "acera.tracking.stopped",
+  "acera.gesture.detected",
+  "acera.scene.update",
+]);
+
 export const EventTypeSchema = z.union([
   SystemEventTypeSchema,
   PluginEventTypeSchema,
@@ -115,6 +122,7 @@ export const EventTypeSchema = z.union([
   AutonomyEventTypeSchema,
   ClientEventTypeSchema,
   NotificationEventTypeSchema,
+  AceraEventTypeSchema,
 ]);
 
 export type EventType = z.infer<typeof EventTypeSchema>;

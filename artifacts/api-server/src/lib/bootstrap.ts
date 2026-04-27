@@ -26,6 +26,33 @@ import { eq } from "drizzle-orm";
 
 export let registry: PluginRegistry;
 
+// ── ACERA scene context (updated by client every 500 ms) ─────────────────────
+interface AceraScenePayload {
+  handCount: number;
+  activity: string;
+  dominantGesture: string | null;
+  summary: string;
+  frameCount: number;
+  hands: Array<{
+    handedness: string;
+    gesture: string;
+    confidence: number;
+    palmX: number;
+    palmY: number;
+    fingers: boolean[];
+  }>;
+}
+
+let _aceraScene: AceraScenePayload | null = null;
+let _aceraLastMs = 0;
+const ACERA_STALE_MS = 5_000; // ignore if not updated for 5 s
+
+export function getAceraContext(): string | null {
+  if (!_aceraScene) return null;
+  if (Date.now() - _aceraLastMs > ACERA_STALE_MS) return null;
+  return _aceraScene.summary;
+}
+
 let mqttTransport: MqttTransport | null = null;
 let wsDeviceTransport: WsDeviceTransport | null = null;
 let stopSimDevices: (() => void) | null = null;
@@ -204,9 +231,13 @@ function registerQueryHandlers(deviceManager: DeviceManager): void {
       timestamp: new Date().toISOString(),
     });
 
-    const systemPrompt = await buildPersonalizedPrompt([], "console").catch(
+    const basePrompt = await buildPersonalizedPrompt([], "console").catch(
       () => "You are JARVIS, a precise and capable AI command center assistant.",
     );
+    const aceraCtx = getAceraContext();
+    const systemPrompt = aceraCtx
+      ? `${basePrompt}\n\n--- ACERA SCENE CONTEXT ---\n${aceraCtx}\n---`
+      : basePrompt;
 
     // ── Easter egg check ──────────────────────────────────────────────────
     const personaRows = await db.select().from(aiPersonaTable).limit(1).catch(() => []);
@@ -386,6 +417,16 @@ export async function bootstrap(): Promise<void> {
   const deviceManager = createDeviceManager(bus);
 
   registerQueryHandlers(deviceManager);
+
+  // ── ACERA scene update subscription ──────────────────────────────────────
+  bus.subscribe("acera.scene.update", (event: BusEvent) => {
+    if (event.type !== "acera.scene.update") return;
+    const p = event.payload as AceraScenePayload;
+    if (p && typeof p.summary === "string") {
+      _aceraScene  = p;
+      _aceraLastMs = Date.now();
+    }
+  });
 
   stopSimDevices = startSimulatedDevices(deviceManager);
 

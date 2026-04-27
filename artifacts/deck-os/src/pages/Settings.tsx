@@ -3,8 +3,9 @@ import {
   Settings as SettingsIcon, Wifi, Key, Cpu, CheckCircle2,
   XCircle, Loader2, Eye, EyeOff, Save, AlertTriangle, RotateCcw, Zap,
   Volume2, Mic, Globe, HardDrive, ShieldCheck, RefreshCw, Database, Server,
-  Info, Terminal, Download, Bell, BellOff, Rocket, SlidersHorizontal,
+  Info, Terminal, Download, Bell, BellOff, Rocket, SlidersHorizontal, Hand,
 } from "lucide-react";
+import { ACERA_KEY } from "@/hooks/useAceraConnect";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type FeatureInfo = { available: boolean; provider: string | null; local?: boolean };
@@ -16,7 +17,7 @@ type FeatureMap = {
   store: FeatureInfo;
 };
 
-type Tab = "connection" | "apikeys" | "models" | "system" | "about";
+type Tab = "connection" | "apikeys" | "models" | "system" | "about" | "vision";
 
 type HealthStatus = {
   ok: boolean | null;
@@ -83,6 +84,8 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [saveOk, setSaveOk] = useState(false);
   const [features, setFeatures] = useState<FeatureMap | null>(null);
+
+  const [aceraEnabled, setAceraEnabled] = useState<boolean>(() => localStorage.getItem(ACERA_KEY) === "true");
 
   const [testing, setTesting]       = useState(false);
   const [testResult, setTestResult] = useState<TestResult>(null);
@@ -527,6 +530,7 @@ export default function Settings() {
     { id: "apikeys",    label: "API KEYS",      icon: <Key className="w-3 h-3" /> },
     { id: "models",     label: "MODELS",        icon: <Cpu className="w-3 h-3" /> },
     { id: "system",     label: "SYSTEM HEALTH", icon: <ShieldCheck className="w-3 h-3" /> },
+    { id: "vision",     label: "ACERA VISION",  icon: <Hand className="w-3 h-3" /> },
     { id: "about",      label: "ABOUT & UPDATE",icon: <Info className="w-3 h-3" /> },
   ];
 
@@ -1367,6 +1371,136 @@ export default function Settings() {
           </Card>
         </div>
       )}
+      {/* ACERA VISION tab */}
+      {tab === "vision" && (
+        <div className="grid gap-6 max-w-2xl">
+          {/* Master toggle card */}
+          <Card className="bg-card/40 border-primary/20 rounded-none">
+            <CardHeader className="border-b border-primary/20 p-4">
+              <CardTitle className="font-mono text-xs text-primary flex items-center gap-2">
+                <Hand className="w-3.5 h-3.5" />
+                ACERA.CONNECT — VISION TRACKING SYSTEM
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-5">
+              {/* Toggle row */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <div className="font-mono text-sm text-primary">ACERA Connect</div>
+                  <div className="font-mono text-xs text-primary/50 max-w-xs leading-relaxed">
+                    Enables real-time hand tracking via your camera. Gesture commands control the dashboard
+                    and live scene data is fed to the AI as context.
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    const next = !aceraEnabled;
+                    localStorage.setItem(ACERA_KEY, String(next));
+                    setAceraEnabled(next);
+                  }}
+                  className={`relative w-12 h-6 rounded-full transition-colors border ${
+                    aceraEnabled
+                      ? "bg-[#00d4ff]/20 border-[#00d4ff]/60"
+                      : "bg-primary/5 border-primary/20"
+                  }`}
+                >
+                  <div className={`absolute top-0.5 w-5 h-5 rounded-full transition-all border ${
+                    aceraEnabled
+                      ? "left-6 bg-[#00d4ff] border-[#00d4ff]"
+                      : "left-0.5 bg-primary/30 border-primary/30"
+                  }`} />
+                </button>
+              </div>
+
+              {/* Status badge */}
+              <div className={`flex items-center gap-2 px-3 py-2 border font-mono text-xs ${
+                aceraEnabled
+                  ? "border-[#00d4ff]/30 bg-[#00d4ff]/5 text-[#00d4ff]"
+                  : "border-primary/15 bg-primary/5 text-primary/40"
+              }`}>
+                <div className={`w-1.5 h-1.5 rounded-full ${aceraEnabled ? "bg-[#00d4ff] animate-pulse" : "bg-primary/25"}`} />
+                <span>{aceraEnabled ? "ACERA tracking enabled — overlay visible in dashboard" : "ACERA tracking disabled"}</span>
+              </div>
+
+              {/* Tech note */}
+              <div className="text-xs font-mono text-primary/35 space-y-1 leading-relaxed">
+                <div>• Runs entirely in-browser using MediaPipe Tasks Vision (WebAssembly)</div>
+                <div>• WASM engine loads on first enable — requires internet connection</div>
+                <div>• Camera feed is processed locally — no video is ever transmitted</div>
+                <div>• Scene metadata is sent to {"{AI_NAME}"} every 500 ms via WebSocket</div>
+                <div>• Keyboard shortcut: <span className="text-primary/60">Ctrl+Shift+G</span> to toggle overlay</div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Gesture reference card */}
+          <Card className="bg-card/40 border-primary/20 rounded-none">
+            <CardHeader className="border-b border-primary/20 p-4">
+              <CardTitle className="font-mono text-xs text-primary flex items-center gap-2">
+                <Zap className="w-3.5 h-3.5" />
+                GESTURE COMMAND REFERENCE
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              <div className="grid grid-cols-2 gap-px bg-primary/10">
+                {[
+                  { icon: "←", gesture: "Swipe Left",    action: "Previous page",      color: "#00d4ff" },
+                  { icon: "→", gesture: "Swipe Right",   action: "Next page",          color: "#00d4ff" },
+                  { icon: "✌", gesture: "Peace Sign",    action: "Command Console",    color: "#ffc820" },
+                  { icon: "👍",gesture: "Thumbs Up",     action: "AI Router",          color: "#22ff44" },
+                  { icon: "✋",gesture: "Open Palm",     action: "Fullscreen / Focus", color: "#ff6a00" },
+                  { icon: "✊",gesture: "Closed Fist",   action: "Dismiss / Cancel",   color: "#f03248" },
+                  { icon: "🤟",gesture: "Three Fingers", action: "Confirm action",     color: "#a855f7" },
+                  { icon: "🤏",gesture: "Pinch",         action: "Select / Activate",  color: "#00d4ff" },
+                ].map(({ icon, gesture, action, color }) => (
+                  <div key={gesture} className="bg-card/60 p-3 flex items-start gap-3">
+                    <span className="text-lg flex-shrink-0 leading-none mt-0.5">{icon}</span>
+                    <div>
+                      <div className="font-mono text-xs font-bold" style={{ color }}>{gesture}</div>
+                      <div className="font-mono text-xs text-primary/50 mt-0.5">{action}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 text-xs font-mono text-primary/30 leading-relaxed">
+                Gestures must be held for ~400 ms to trigger an action. The overlay shows a visual
+                confirmation and gesture confidence score in real-time.
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Privacy card */}
+          <Card className="bg-card/40 border-primary/20 rounded-none">
+            <CardHeader className="border-b border-primary/20 p-4">
+              <CardTitle className="font-mono text-xs text-primary flex items-center gap-2">
+                <Eye className="w-3.5 h-3.5" />
+                PRIVACY &amp; SECURITY
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              <div className="space-y-3 font-mono text-xs text-primary/50 leading-relaxed">
+                <div className="flex gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#22ff44] flex-shrink-0 mt-0.5" />
+                  <span>All video processing happens locally in the browser. No frames leave your device.</span>
+                </div>
+                <div className="flex gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#22ff44] flex-shrink-0 mt-0.5" />
+                  <span>Only extracted hand position metadata and gesture labels are sent to the AI.</span>
+                </div>
+                <div className="flex gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#22ff44] flex-shrink-0 mt-0.5" />
+                  <span>Camera access is only requested when ACERA Connect is enabled.</span>
+                </div>
+                <div className="flex gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#22ff44] flex-shrink-0 mt-0.5" />
+                  <span>Toggle off at any time — camera is immediately released.</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* ABOUT & UPDATE tab */}
       {tab === "about" && (
         <div className="grid gap-6 max-w-2xl">
