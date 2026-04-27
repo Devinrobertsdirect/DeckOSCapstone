@@ -79,7 +79,7 @@ type TierStatus = {
 export default function AiControl() {
   const { sendEvent } = useWebSocket();
   const [prompt, setPrompt] = useState("");
-  const [currentMode, setCurrentMode] = useState<Mode>("DIRECT_EXECUTION");
+  const [currentMode, setCurrentMode] = useState<Mode>("DEEP_REASONING");
   const [sending, setSending] = useState(false);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
@@ -95,6 +95,26 @@ export default function AiControl() {
   const aiName = useAiName();
   const userName = useUserName();
   const { speak } = useAudioPlayback();
+
+  // ── Ollama auto-connect: call refresh endpoint on mount so the server
+  //    re-probes localhost:11434 immediately (without waiting for the 15s poll).
+  //    Also try a direct browser-side check so Ollama is detected even when
+  //    the server is cloud-hosted and can't reach the user's local Ollama.
+  useEffect(() => {
+    const refresh = async () => {
+      // 1) Server-side refresh
+      const data = await fetch(`${import.meta.env.BASE_URL}api/ai-router/refresh`, { method: "POST" })
+        .then(r => r.json() as Promise<{ ollamaAvailable?: boolean }>)
+        .catch(() => null);
+
+      // If server already sees Ollama, update our local state
+      if (data?.ollamaAvailable) {
+        setCurrentMode(m => m === "DIRECT_EXECUTION" ? "DEEP_REASONING" : m);
+      }
+    };
+    void refresh();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Greeting: fires once per browser session when this page mounts ──────
   useEffect(() => {
@@ -243,6 +263,17 @@ export default function AiControl() {
     const mode = routerStatus?.mode as Mode | undefined;
     if (mode && MODES.includes(mode)) setCurrentMode(mode);
   }, [routerStatus]);
+
+  // ── Auto-switch to DEEP_REASONING when Ollama becomes available ──────────
+  const prevOllamaRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    const available = tierStatus?.ollamaAvailable ?? false;
+    if (available && prevOllamaRef.current === false) {
+      // Ollama just came online — switch to LLM mode unless user already chose one
+      setCurrentMode(m => m === "DIRECT_EXECUTION" ? "DEEP_REASONING" : m);
+    }
+    prevOllamaRef.current = available;
+  }, [tierStatus?.ollamaAvailable]);
 
   useEffect(() => {
     if (!pendingRequestId) return;

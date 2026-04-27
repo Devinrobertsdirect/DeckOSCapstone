@@ -15,6 +15,7 @@ import {
   MODEL_CONFIG,
 } from "../lib/inference.js";
 import { bus } from "../lib/bus.js";
+import { broadcast } from "../lib/ws-server.js";
 import { getConfig } from "../lib/app-config.js";
 
 const router = Router();
@@ -36,13 +37,38 @@ async function detectCloud(): Promise<boolean> {
   );
 }
 
-refreshOllamaDetection().catch(() => {
-  getInferenceState().ollamaAvailable = false;
-});
+// ── Ollama availability broadcast helper ─────────────────────────────────────
+function broadcastOllamaStatus() {
+  const state = getInferenceState();
+  broadcast({
+    type: "ai.router.status",
+    source: "ai-router",
+    payload: {
+      ollamaAvailable:   state.ollamaAvailable  ?? false,
+      openclawAvailable: state.openclawAvailable ?? false,
+      lastDetectedAt:    state.lastDetected.toISOString(),
+    },
+    timestamp: new Date().toISOString(),
+  });
+}
+
+// ── Startup detection + periodic polling ─────────────────────────────────────
+refreshOllamaDetection()
+  .then(broadcastOllamaStatus)
+  .catch(() => {
+    getInferenceState().ollamaAvailable = false;
+  });
 
 setInterval(() => {
-  refreshOllamaDetection().catch(() => {});
-}, 30_000);
+  const wasAvailable = getInferenceState().ollamaAvailable;
+  refreshOllamaDetection()
+    .then(() => {
+      const nowAvailable = getInferenceState().ollamaAvailable;
+      // Broadcast whenever the availability flips (or always — cheap)
+      if (wasAvailable !== nowAvailable) broadcastOllamaStatus();
+    })
+    .catch(() => {});
+}, 15_000);
 
 const MODELS = [
   // ── Cortex / Thinking layer ────────────────────────────────────────────
@@ -245,6 +271,22 @@ router.put("/ai-router/mode", (req, res) => {
     preferLocal: true,
   });
   res.json(body);
+});
+
+// ── Force-refresh Ollama detection immediately ────────────────────────────────
+// Called by the frontend on page load so the server re-probes Ollama without
+// waiting for the next 15-second polling tick.
+router.post("/ai-router/refresh", async (req, res) => {
+  await refreshOllamaDetection().catch(() => {});
+  broadcastOllamaStatus();
+  const state = getInferenceState();
+  const cloudAvailable = await detectCloud();
+  res.json({
+    ollamaAvailable:   state.ollamaAvailable  ?? false,
+    openclawAvailable: state.openclawAvailable ?? false,
+    cloudAvailable,
+    lastDetectedAt:    state.lastDetected.toISOString(),
+  });
 });
 
 export default router;
