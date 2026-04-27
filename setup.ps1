@@ -130,8 +130,8 @@ $apiUp = $false; $webUp = $false
 for ($i = 0; $i -lt 20; $i++) {
   Start-Sleep -Seconds 3
   Write-Host "." -NoNewline -ForegroundColor Gray
-  try { Invoke-WebRequest "http://localhost:8080/api/healthz" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop | Out-Null; $apiUp = $true } catch {}
-  try { Invoke-WebRequest "http://localhost:3000" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop | Out-Null; $webUp = $true } catch {}
+  try { $t = New-Object System.Net.Sockets.TcpClient; $t.Connect("localhost", 8080); $t.Close(); $apiUp = $true } catch {}
+  try { $t = New-Object System.Net.Sockets.TcpClient; $t.Connect("localhost", 3000); $t.Close(); $webUp = $true } catch {}
   if ($apiUp -and $webUp) { break }
 }
 Write-Host ""
