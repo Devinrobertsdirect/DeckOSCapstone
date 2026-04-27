@@ -233,14 +233,13 @@ export default function Settings() {
   }, [updateLog]);
 
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const api = (window as any).electronAPI;
+    const api = window.electronAPI;
     if (!api?.getNotificationsEnabled) return;
     setIsElectron(true);
-    api.getNotificationsEnabled().then((v: boolean) => setDesktopNotifEnabled(v));
+    api.getNotificationsEnabled().then((v) => setDesktopNotifEnabled(v));
     let cleanup: (() => void) | undefined;
     if (api.onNotificationsEnabledChanged) {
-      cleanup = api.onNotificationsEnabledChanged((v: boolean) => setDesktopNotifEnabled(v));
+      cleanup = api.onNotificationsEnabledChanged((v) => setDesktopNotifEnabled(v));
     }
     return () => cleanup?.();
   }, []);
@@ -1035,8 +1034,7 @@ export default function Settings() {
                 </div>
                 <button
                   onClick={async () => {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const api = (window as any).electronAPI;
+                    const api = window.electronAPI;
                     if (!api?.setNotificationsEnabled) return;
                     const next = !desktopNotifEnabled;
                     setDesktopNotifEnabled(next);
