@@ -420,10 +420,11 @@ export default function App() {
       setMessages((prev) => [...prev.filter((m) => !m.pending), aiMsg]);
 
       setVoiceState("speaking");
+      const storedVoice = localStorage.getItem("deckos_voice") ?? undefined;
       const ttsRes = await fetch(`${API_BASE}/vision/tts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: chatData.response }),
+        body: JSON.stringify({ text: chatData.response, voice: storedVoice }),
       });
       if (ttsRes.ok) {
         const { audio } = await ttsRes.json() as { audio: string };
