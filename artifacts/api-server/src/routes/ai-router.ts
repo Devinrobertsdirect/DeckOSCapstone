@@ -12,6 +12,7 @@ import {
   runInference,
   refreshOllamaDetection,
   getInferenceState,
+  resolveBestModel,
   MODEL_CONFIG,
 } from "../lib/inference.js";
 import { bus } from "../lib/bus.js";
@@ -119,7 +120,11 @@ const MODE_DESCRIPTIONS: Record<IntelligenceMode, string> = {
 router.get("/ai-router/status", async (req, res) => {
   const cloudAvailable = await detectCloud();
   const state = getInferenceState();
-  const activeModel = state.ollamaAvailable ? MODEL_CONFIG.REASONING : null;
+
+  // Use resolved models (from Ollama discovery) so the UI always shows what's actually in use
+  const resolvedCortex = resolveBestModel("cortex", MODEL_CONFIG.REASONING);
+  const resolvedReflex  = resolveBestModel("reflex",  MODEL_CONFIG.FAST);
+  const activeModel     = state.ollamaAvailable ? resolvedCortex : null;
 
   const body = GetAiRouterStatusResponse.parse({
     mode: routerState.mode,
@@ -132,13 +137,13 @@ router.get("/ai-router/status", async (req, res) => {
     lastDetectedAt: state.lastDetected.toISOString(),
   });
 
-  // Attach extended tier stats alongside standard shape
   res.json({
     ...body,
     openclawAvailable: state.openclawAvailable ?? false,
+    ollamaModels: state.ollamaModels,
     models: {
-      cortex:    MODEL_CONFIG.REASONING,
-      reflex:    MODEL_CONFIG.FAST,
+      cortex:    resolvedCortex,
+      reflex:    resolvedReflex,
       autopilot: MODEL_CONFIG.RULE_ENGINE,
     },
     tierStats: {

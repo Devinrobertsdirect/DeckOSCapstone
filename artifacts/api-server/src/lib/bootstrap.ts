@@ -433,6 +433,10 @@ export async function bootstrap(): Promise<void> {
 
   await refreshOllamaDetection().catch(() => {});
 
+  // Re-probe Ollama every 30 s so it is discovered automatically when started
+  // after the server (e.g. user launches Ollama while Deck OS is already running).
+  setInterval(() => { void refreshOllamaDetection().catch(() => {}); }, 30_000);
+
   await registry.loadPluginsDir();
 
   const { loadEnabledCommunityPlugins } = await import("../routes/store.js");

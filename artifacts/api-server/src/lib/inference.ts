@@ -70,6 +70,8 @@ const inferenceState: {
   openWebUIAvailable: boolean | null;
   openclawAvailable: boolean | null;
   lastDetected: Date;
+  /** Models discovered from Ollama /api/tags — populated on each detection */
+  ollamaModels: string[];
 } = {
   totalRequests:      0,
   cacheHits:          0,
@@ -81,6 +83,7 @@ const inferenceState: {
   openWebUIAvailable: null,
   openclawAvailable:  null,
   lastDetected:       new Date(),
+  ollamaModels:       [],
 };
 
 export function getInferenceState() {
@@ -103,12 +106,18 @@ async function getDynamicModels(): Promise<{ reasoning: string; fast: string }> 
       getConfig("REASONING_MODEL"),
       getConfig("FAST_MODEL"),
     ]);
+    const configuredReasoning = reasoning ?? process.env["REASONING_MODEL"] ?? MODEL_CONFIG.REASONING;
+    const configuredFast      = fast      ?? process.env["FAST_MODEL"]      ?? MODEL_CONFIG.FAST;
+    // Use discovered Ollama models when available — overrides hardcoded defaults
     return {
-      reasoning: reasoning ?? process.env["REASONING_MODEL"] ?? MODEL_CONFIG.REASONING,
-      fast:      fast      ?? process.env["FAST_MODEL"]      ?? MODEL_CONFIG.FAST,
+      reasoning: resolveBestModel("cortex", configuredReasoning),
+      fast:      resolveBestModel("reflex", configuredFast),
     };
   } catch {
-    return { reasoning: MODEL_CONFIG.REASONING, fast: MODEL_CONFIG.FAST };
+    return {
+      reasoning: resolveBestModel("cortex", MODEL_CONFIG.REASONING),
+      fast:      resolveBestModel("reflex", MODEL_CONFIG.FAST),
+    };
   }
 }
 
@@ -117,15 +126,54 @@ export async function detectOllama(): Promise<boolean> {
   try {
     const base = await getOllamaBaseUrl();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch(`${base}/api/tags`, {
-      signal: controller.signal,
-    });
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(`${base}/api/tags`, { signal: controller.signal });
     clearTimeout(timeout);
-    return res.ok;
+    if (!res.ok) return false;
+    // Cache available models so inference can pick real ones
+    const data = await res.json() as { models?: Array<{ name: string }> };
+    const names = (data.models ?? []).map((m) => m.name).filter(Boolean);
+    if (names.length > 0) inferenceState.ollamaModels = names;
+    return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * Pick the best available Ollama model for the given tier.
+ * Falls back to whatever's installed rather than hardcoded names.
+ *
+ * Cortex (heavy reasoning): prefers gemma, llama, mistral, deepseek, qwen large
+ * Reflex (fast):            prefers phi, qwen-small, smollm, tinyllama
+ * Fallback:                 first model in the list, or the configured default
+ */
+export function resolveBestModel(tier: "cortex" | "reflex", configuredModel: string): string {
+  const available = inferenceState.ollamaModels;
+  if (available.length === 0) return configuredModel;
+
+  // First check: if the configured model is actually available, use it
+  if (available.some((m) => m === configuredModel || m.startsWith(configuredModel + ":"))) {
+    return configuredModel;
+  }
+
+  if (tier === "reflex") {
+    const fastPatterns = [/phi/i, /qwen.*[0-9]\.?[0-9]?b/i, /smollm/i, /tinyllama/i, /gemma.*2b/i, /llama.*1b/i];
+    for (const pat of fastPatterns) {
+      const match = available.find((m) => pat.test(m));
+      if (match) return match;
+    }
+  }
+
+  // Cortex or no reflex match found — prefer large capable models
+  const cortexPatterns = [/gemma/i, /llama/i, /mistral/i, /deepseek/i, /qwen/i, /phi/i, /mixtral/i];
+  for (const pat of cortexPatterns) {
+    const match = available.find((m) => pat.test(m));
+    if (match) return match;
+  }
+
+  // Last resort: use whatever is installed
+  return available[0]!;
 }
 
 export const OPENCLAW_BASE = "http://localhost:18789";
@@ -474,8 +522,13 @@ export async function runInferenceStreaming(
   const { prompt, mode, task, context = [], latencyBudgetMs, onTierResolved } = opts;
   inferenceState.totalRequests++;
 
-  const tier  = resolveGateway(task, mode, latencyBudgetMs);
-  const model = tierToModel(tier);
+  const tier = resolveGateway(task, mode, latencyBudgetMs);
+  // Use discovered Ollama models when available — never use hardcoded defaults blindly
+  const model = tier === "cortex"
+    ? resolveBestModel("cortex", MODEL_CONFIG.REASONING)
+    : tier === "reflex"
+      ? resolveBestModel("reflex", MODEL_CONFIG.FAST)
+      : MODEL_CONFIG.RULE_ENGINE;
   if (onTierResolved) onTierResolved(tier, model);
 
   const start = Date.now();

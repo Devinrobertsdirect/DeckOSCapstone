@@ -77,6 +77,20 @@ type TierStatus = {
   ollamaAvailable: boolean;
 };
 
+type LocalMessage = {
+  id?: string;
+  type: "ai.chat.response";
+  source: "browser-ollama";
+  timestamp: string;
+  payload: ChatResponsePayload;
+};
+
+type BrowserOllamaState = {
+  available: boolean;
+  model: string;
+  models: string[];
+};
+
 export default function AiControl() {
   const { sendEvent } = useWebSocket();
   const [prompt, setPrompt] = useState("");
@@ -88,29 +102,46 @@ export default function AiControl() {
   const [tierStatus, setTierStatus] = useState<TierStatus | null>(null);
   const [openclawStatus, setOpenclawStatus] = useState<OpenClawStatus | null>(null);
   const [greetingLoading, setGreetingLoading] = useState(true);
+  const [browserOllama, setBrowserOllama] = useState<BrowserOllamaState>({ available: false, model: "", models: [] });
+  const [localMessages, setLocalMessages] = useState<LocalMessage[]>([]);
   const processedTokenKeysRef = useRef(new Set<string>());
   const faceStyle = useFaceStyle();
   const aiName = useAiName();
   const userName = useUserName();
   const { speak, playbackState } = useAudioPlayback();
 
-  // ── Ollama auto-connect: call refresh endpoint on mount so the server
-  //    re-probes localhost:11434 immediately (without waiting for the 15s poll).
-  //    Also try a direct browser-side check so Ollama is detected even when
-  //    the server is cloud-hosted and can't reach the user's local Ollama.
+  // ── Browser-side Ollama detection ────────────────────────────────────────
+  // The server (Replit cloud) can't reach localhost:11434 on the user's machine.
+  // But the browser CAN — so we probe directly and route chat through the browser
+  // when Ollama is locally available.
   useEffect(() => {
-    const refresh = async () => {
-      // 1) Server-side refresh
-      const data = await fetch(`${import.meta.env.BASE_URL}api/ai-router/refresh`, { method: "POST" })
-        .then(r => r.json() as Promise<{ ollamaAvailable?: boolean }>)
-        .catch(() => null);
-
-      // If server already sees Ollama, update our local state
-      if (data?.ollamaAvailable) {
-        setCurrentMode(m => m === "DIRECT_EXECUTION" ? "DEEP_REASONING" : m);
+    const detect = async () => {
+      try {
+        const res = await fetch("http://localhost:11434/api/tags", {
+          signal: AbortSignal.timeout(2000),
+        });
+        if (res.ok) {
+          const data = await res.json() as { models?: Array<{ name: string }> };
+          const models = (data.models ?? []).map((m) => m.name);
+          const preferred = models.find(m => /gemma|llama|mistral|phi/i.test(m)) ?? models[0] ?? "";
+          setBrowserOllama({ available: true, model: preferred, models });
+          // Also notify the server so the status pills update
+          fetch(`${import.meta.env.BASE_URL}api/ai-router/refresh`, { method: "POST" }).catch(() => {});
+        } else {
+          setBrowserOllama({ available: false, model: "", models: [] });
+        }
+      } catch {
+        setBrowserOllama({ available: false, model: "", models: [] });
       }
     };
-    void refresh();
+    void detect();
+    const id = setInterval(detect, 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // ── Server-side Ollama refresh on mount ──────────────────────────────────
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}api/ai-router/refresh`, { method: "POST" }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -221,7 +252,6 @@ export default function AiControl() {
   }, []);
 
   const routerStatus = useLatestPayload<RouterStatusPayload>("ai.router.status");
-  const latestChatResponse = useLatestPayload<ChatResponsePayload>("ai.chat.response");
   const aiEvents = useWsEvents((e) =>
     e.type === "ai.router.status" ||
     e.type === "ai.inference_started" ||
@@ -274,6 +304,67 @@ export default function AiControl() {
     }
   }, [chatResponses, pendingRequestId]);
 
+  // ── Browser-direct Ollama streaming chat ────────────────────────────────
+  // Streams tokens from localhost:11434 directly in the browser — works even
+  // when the server is cloud-hosted and can't reach the user's local Ollama.
+  const sendBrowserChat = useCallback(async (promptText: string, requestId: string, model: string) => {
+    const start = Date.now();
+    try {
+      const res = await fetch("http://localhost:11434/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: "You are JARVIS, a precise and capable AI assistant integrated into DeckOS. Be concise and precise." },
+            { role: "user", content: promptText },
+          ],
+          stream: true,
+        }),
+        signal: AbortSignal.timeout(120_000),
+      });
+
+      if (!res.ok || !res.body) throw new Error(`Ollama ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        for (const line of chunk.split("\n").filter((l) => l.trim())) {
+          try {
+            const parsed = JSON.parse(line) as { message?: { content?: string }; done?: boolean };
+            const token = parsed.message?.content ?? "";
+            if (token) {
+              fullText += token;
+              setStreamingText((prev) => prev + token);
+            }
+          } catch { }
+        }
+      }
+
+      const latencyMs = Date.now() - start;
+      const msg: LocalMessage = {
+        id: requestId,
+        type: "ai.chat.response",
+        source: "browser-ollama",
+        timestamp: new Date().toISOString(),
+        payload: { requestId, response: fullText || "[No response from Ollama]", modelUsed: model, latencyMs, fromCache: false, mode: currentMode },
+      };
+      setLocalMessages((prev) => [...prev, msg]);
+    } catch {
+      // CORS or connection error — fall back to server WebSocket
+      sendEvent({ type: "ai.chat.request", payload: { prompt: promptText, mode: currentMode, requestId } });
+      return;
+    }
+    setSending(false);
+    setPendingRequestId(null);
+    setStreamingText("");
+  }, [currentMode, sendEvent]);
+
   const handleSetMode = (m: Mode) => {
     setCurrentMode(m);
     sendEvent({ type: "ai.mode.set", payload: { mode: m } });
@@ -283,29 +374,43 @@ export default function AiControl() {
     e.preventDefault();
     if (!prompt.trim() || sending) return;
     const requestId = `req-${Date.now()}`;
+    const promptText = prompt.trim();
     setSending(true);
     setPendingRequestId(requestId);
     setStreamingText("");
     processedTokenKeysRef.current.clear();
-    sendEvent({
-      type: "ai.chat.request",
-      payload: { prompt: prompt.trim(), mode: currentMode, requestId },
-    });
     setPrompt("");
+
+    // Route through browser → local Ollama when available (bypasses cloud server limitation)
+    if (browserOllama.available && browserOllama.model && currentMode !== "DIRECT_EXECUTION") {
+      void sendBrowserChat(promptText, requestId, browserOllama.model);
+    } else {
+      sendEvent({ type: "ai.chat.request", payload: { prompt: promptText, mode: currentMode, requestId } });
+    }
   };
 
-  const ollamaOk = routerStatus?.ollamaAvailable ?? false;
+  const ollamaOk = browserOllama.available || (routerStatus?.ollamaAvailable ?? false);
   const cloudOk = routerStatus?.cloudAvailable ?? false;
   const clawOk = openclawStatus?.running ?? (routerStatus?.openclawAvailable ?? false);
 
-  const outputItems = chatResponses.slice(-20).reverse();
+  // Merge WS responses and browser-direct local messages, sorted by time, newest last
+  const outputItems = [...chatResponses, ...localMessages]
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+    .slice(-20)
+    .reverse();
+
+  const ollamaDetail = browserOllama.available
+    ? `${browserOllama.model || "local"} · browser`
+    : ollamaOk
+      ? (tierStatus?.cortex ?? "server")
+      : "offline";
 
   return (
     <div className="flex flex-col h-full">
 
       {/* ── Top: connection status + mode selector ─────────────────────── */}
       <div className="shrink-0 border-b border-primary/25 bg-card/70 px-4 py-2.5 flex flex-wrap items-center gap-3 font-mono text-xs">
-        <ConnPill label="OLLAMA" ok={ollamaOk} detail={ollamaOk ? (tierStatus?.cortex ?? "gemma4") : "offline"} />
+        <ConnPill label="OLLAMA" ok={ollamaOk} detail={ollamaDetail} />
         <ConnPill label="OPENCLAW" ok={clawOk} detail={clawOk ? (openclawStatus?.gateway ?? ":18789") : "offline"} />
         <ConnPill label="CLOUD.API" ok={cloudOk} detail={cloudOk ? "available" : "unavailable"} />
         <div className="ml-auto flex items-center gap-1 flex-wrap">
