@@ -364,7 +364,7 @@ export default function CommandConsole() {
                   ) : line.output !== undefined ? (
                     <>
                       <div className="relative group/resp pl-4">
-                        <span className="whitespace-pre-wrap text-primary/80">
+                        <span className={`whitespace-pre-wrap ${line.model === "easter-egg-v1" ? "text-[#ffa040] italic" : "text-primary/80"}`}>
                           {line.output}
                           {line.streaming && (
                             <span className="inline-block w-[2px] h-[1em] bg-primary align-middle ml-[1px] animate-[blink_1s_step-end_infinite]" />
@@ -389,21 +389,30 @@ export default function CommandConsole() {
                       </div>
                       {!line.streaming && (
                         <div className="pl-4 flex items-center gap-3 text-primary/30">
-                          <CheckCircle2 className="w-3 h-3 text-[#22ff44]" />
-                          {line.latencyMs !== undefined && <span>{line.latencyMs}ms</span>}
-                          {line.tier && (
-                            <span className={`flex items-center gap-1 font-bold uppercase ${
-                              line.tier === "cortex"   ? "text-[#cc44ff]"
-                            : line.tier === "reflex"   ? "text-[#ffc820]"
-                            : "text-[#11d97a]"
-                            }`}>
-                              <Cpu className="w-3 h-3" />{line.tier}
+                          {line.model === "easter-egg-v1" ? (
+                            <span className="flex items-center gap-1.5 text-[#ff6a00] font-bold tracking-widest">
+                              <Zap className="w-3 h-3" />
+                              CORE.MEMORY // CLASSIFIED
                             </span>
-                          )}
-                          {line.model && <span>MODEL: {line.model}</span>}
-                          {line.fromCache && <span className="text-[#ffaa00]">CACHED</span>}
-                          {line.aiAssisted && (
-                            <span className="flex items-center gap-1 text-[#cc44ff]"><Brain className="w-3 h-3" /> AI-ASSISTED</span>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="w-3 h-3 text-[#22ff44]" />
+                              {line.latencyMs !== undefined && <span>{line.latencyMs}ms</span>}
+                              {line.tier && (
+                                <span className={`flex items-center gap-1 font-bold uppercase ${
+                                  line.tier === "cortex"   ? "text-[#cc44ff]"
+                                : line.tier === "reflex"   ? "text-[#ffc820]"
+                                : "text-[#11d97a]"
+                                }`}>
+                                  <Cpu className="w-3 h-3" />{line.tier}
+                                </span>
+                              )}
+                              {line.model && <span>MODEL: {line.model}</span>}
+                              {line.fromCache && <span className="text-[#ffaa00]">CACHED</span>}
+                              {line.aiAssisted && (
+                                <span className="flex items-center gap-1 text-[#cc44ff]"><Brain className="w-3 h-3" /> AI-ASSISTED</span>
+                              )}
+                            </>
                           )}
                         </div>
                       )}

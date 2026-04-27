@@ -9,6 +9,7 @@ import { presenceManager } from "../lib/presence-manager.js";
 import { buildPersonalizedPrompt, extractSelfUpdate } from "../lib/system-prompt.js";
 import { aiPersonaTable } from "@workspace/db";
 import { eq as drEq } from "drizzle-orm";
+import { checkEasterEgg } from "../lib/easter-eggs.js";
 
 const router = Router();
 
@@ -74,6 +75,15 @@ router.post("/chat", async (req, res) => {
     content: m.content,
   }));
 
+  // ── Easter eggs — check before touching the LLM ────────────────────────
+  // Fetch persona once so we have the AI name + gender for honourifics.
+  const personaRows = await db.select().from(aiPersonaTable).limit(1);
+  const personaCtx = personaRows.length > 0
+    ? { aiName: personaRows[0]!.aiName, gender: personaRows[0]!.gender }
+    : { aiName: "JARVIS", gender: "neutral" };
+
+  const eggResponse = checkEasterEgg(message, personaCtx);
+
   const systemPrompt = await buildPersonalizedPrompt(recentMemory.map((m) => m.content), channel);
 
   let response: string;
@@ -81,6 +91,12 @@ router.post("/chat", async (req, res) => {
   let fromCache: boolean;
   let tier: string | undefined;
 
+  if (eggResponse !== null) {
+    response  = eggResponse;
+    modelUsed = "easter-egg-v1";
+    fromCache = false;
+    tier      = "autopilot";
+  } else
   try {
     const result = await runInference({
       prompt:   message,

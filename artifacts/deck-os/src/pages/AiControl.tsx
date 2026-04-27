@@ -338,13 +338,28 @@ export default function AiControl() {
           {outputItems.map((item, i) => {
             const p = item.payload as ChatResponsePayload;
             const isCopied = copiedIdx === i;
+            const isEgg = (p.modelUsed ?? p.model ?? "") === "easter-egg-v1";
             return (
-              <div key={i} className="group/resp border border-primary/10 p-3 bg-background/50 space-y-1">
+              <div
+                key={i}
+                className={`group/resp border p-3 bg-background/50 space-y-1 transition-all ${
+                  isEgg
+                    ? "border-[#ff3c00]/40 bg-[#ff3c00]/[0.04]"
+                    : "border-primary/10"
+                }`}
+              >
                 <div className="flex justify-between text-primary/40">
-                  <span>MODEL: {p.modelUsed ?? p.model ?? "---"}</span>
+                  {isEgg ? (
+                    <span className="flex items-center gap-1.5 text-[#ff6a00] font-bold tracking-widest">
+                      <Zap className="w-3 h-3" />
+                      CORE.MEMORY // CLASSIFIED
+                    </span>
+                  ) : (
+                    <span>MODEL: {p.modelUsed ?? p.model ?? "---"}</span>
+                  )}
                   <span className="flex items-center gap-2">
                     {p.fromCache && <span className="text-[#ffaa00]">CACHED</span>}
-                    {p.latencyMs != null && <span>{p.latencyMs}ms</span>}
+                    {!isEgg && p.latencyMs != null && <span>{p.latencyMs}ms</span>}
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(p.response ?? "");
@@ -361,7 +376,9 @@ export default function AiControl() {
                     </button>
                   </span>
                 </div>
-                <div className="text-primary/90 whitespace-pre-wrap">{p.response ?? "---"}</div>
+                <div className={`whitespace-pre-wrap ${isEgg ? "text-[#ffa040] italic" : "text-primary/90"}`}>
+                  {p.response ?? "---"}
+                </div>
               </div>
             );
           })}

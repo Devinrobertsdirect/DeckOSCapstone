@@ -7,6 +7,8 @@ import {
   refreshOllamaDetection,
   getInferenceState,
 } from "../lib/inference.js";
+import { db, aiPersonaTable } from "@workspace/db";
+import { checkEasterEgg } from "../lib/easter-eggs.js";
 
 const MEMORY_CONTEXT_LIMIT = 5;
 
@@ -62,6 +64,35 @@ export default class AiChatPlugin extends Plugin {
         });
         return;
       }
+
+      // ── Easter egg short-circuit ───────────────────────────────────────
+      const personaRows = await db.select().from(aiPersonaTable).limit(1).catch(() => []);
+      const personaCtx = personaRows.length > 0
+        ? { aiName: personaRows[0]!.aiName, gender: personaRows[0]!.gender }
+        : { aiName: "JARVIS", gender: "neutral" };
+      const eggReply = checkEasterEgg(prompt, personaCtx);
+      if (eggReply !== null) {
+        context.emit({
+          source: this.id,
+          target: event.source,
+          type: "ai.chat.token",
+          payload: { requestId, token: eggReply },
+        });
+        context.emit({
+          source: this.id,
+          target: event.source,
+          type: "ai.chat.response",
+          payload: {
+            requestId,
+            response: eggReply,
+            modelUsed: "easter-egg-v1",
+            latencyMs: 1,
+            fromCache: false,
+          },
+        });
+        return;
+      }
+      // ──────────────────────────────────────────────────────────────────
 
       let enrichedPrompt = prompt;
       if (context.memory) {

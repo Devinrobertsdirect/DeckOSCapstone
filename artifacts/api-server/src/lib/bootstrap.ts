@@ -15,7 +15,8 @@ import { MqttTransport } from "./mqtt-transport.js";
 import { WsDeviceTransport } from "./ws-device-transport.js";
 import { startSimulatedDevices } from "./simulated-devices.js";
 import type { BusEvent } from "@workspace/event-bus";
-import { db, deviceLocationsTable, deviceProfilesTable, autonomyConfigTable, autonomyLogTable, routinesTable } from "@workspace/db";
+import { db, deviceLocationsTable, deviceProfilesTable, autonomyConfigTable, autonomyLogTable, routinesTable, aiPersonaTable } from "@workspace/db";
+import { checkEasterEgg } from "./easter-eggs.js";
 import { generateDeviceProfile } from "./profile-generator.js";
 import { cognitiveLoop } from "./cognitive-loop.js";
 import { memoryEnricher } from "./memory-enricher.js";
@@ -206,6 +207,38 @@ function registerQueryHandlers(deviceManager: DeviceManager): void {
     const systemPrompt = await buildPersonalizedPrompt([], "console").catch(
       () => "You are JARVIS, a precise and capable AI command center assistant.",
     );
+
+    // ── Easter egg check ──────────────────────────────────────────────────
+    const personaRows = await db.select().from(aiPersonaTable).limit(1).catch(() => []);
+    const personaCtx = personaRows.length > 0
+      ? { aiName: personaRows[0]!.aiName, gender: personaRows[0]!.gender }
+      : { aiName: "JARVIS", gender: "neutral" };
+    const eggReply = checkEasterEgg(prompt, personaCtx);
+
+    if (eggReply !== null) {
+      // Emit a brief fake token so the streaming cursor shows
+      broadcast({
+        type: "ai.chat.token",
+        source: "ai-router",
+        payload: { requestId, token: eggReply },
+        timestamp: new Date().toISOString(),
+      });
+      broadcast({
+        type: "ai.chat.response",
+        source: "ai-router",
+        payload: {
+          requestId,
+          response:  eggReply,
+          modelUsed: "easter-egg-v1",
+          latencyMs: 1,
+          fromCache:  false,
+          mode:       modeStr,
+        },
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+    // ─────────────────────────────────────────────────────────────────────
 
     try {
       const result = await runInferenceStreaming(

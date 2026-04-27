@@ -36,6 +36,10 @@ Initializes the EventBus, PluginRegistry (auto-scans `dist/plugins/`), MemorySer
 
 3-tier model routing gateway: CORTEX (gemma3:9b — chat/planning/reasoning), REFLEX (phi3 — classification/commands), AUTOPILOT (rule-engine — deterministic/offline). Model names and Ollama URL are configurable at runtime via `/api/config` and stored in `app_config` DB table; inference.ts reads them dynamically. The `ai_chat` plugin emits `ai.inference_started` with `{ tier, model, requestId }` before each LLM call so the frontend can show JARVIS's thinking state in real time.
 
+## Easter Egg Engine
+
+`artifacts/api-server/src/lib/easter-eggs.ts` — pre-LLM intercept layer that checks the user's message against a library of Iron Man / Tony Stark movie quote triggers. When a match is found, the scripted in-universe response is returned instantly (`modelUsed: "easter-egg-v1"`) without touching the LLM. Checks run in both the WS chat handler (`lib/bootstrap.ts`) and the `ai_chat` plugin. Responses are persona-aware: they use the AI's configured name and the correct honorific (sir/ma'am) based on the persona gender. The UI renders egg responses with a hot-rod orange `⚡ CORE.MEMORY // CLASSIFIED` badge in both the AI Chat Console and Command Console.
+
 ## Plugin System
 
 Dynamically loaded from `dist/plugins/`, each plugin is an esbuild bundle.
