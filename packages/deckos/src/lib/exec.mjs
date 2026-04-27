@@ -1,11 +1,12 @@
 import { spawnSync, execSync } from 'node:child_process';
 
-export function sh(cmd, cwd) {
+export function sh(cmd, cwd, env) {
   const result = spawnSync(cmd, {
     cwd,
     stdio: 'inherit',
     encoding: 'utf8',
     shell: true,
+    env: { ...process.env, ...(env || {}) },
   });
   if (result.error) {
     throw new Error(`Could not run command: ${result.error.message}`);

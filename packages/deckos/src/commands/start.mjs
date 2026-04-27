@@ -152,7 +152,7 @@ export async function startCmd(opts = {}) {
   {
     const sp = spinner('Applying schema...');
     try {
-      sh('pnpm --filter @workspace/db run push', repoDir);
+      sh('pnpm --filter @workspace/db run push', repoDir, env);
       sp.stop('Database schema up to date');
     } catch (e) {
       sp.fail('Migration failed');
