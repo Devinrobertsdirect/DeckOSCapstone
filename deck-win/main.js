@@ -116,6 +116,16 @@ function handleWsEventForNotification(msg) {
       break;
     }
 
+    case "system.error": {
+      const message = payload.message ?? payload.error ?? "An unexpected system error occurred.";
+      showNotification(
+        "system.error",
+        "JARVIS — System Error",
+        message
+      );
+      break;
+    }
+
     case "ai.inference_completed": {
       // Only notify when the window is hidden — not useful if user is looking at the chat
       if (mainWindow && !mainWindow.isVisible()) {
@@ -470,5 +480,9 @@ ipcMain.handle("set-notifications-enabled", (_event, enabled) => {
   notificationsEnabled = Boolean(enabled);
   saveSettings();
   tray.setContextMenu(buildTrayMenu());
+  // Keep all renderer listeners in sync regardless of who triggered the change
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("notifications-enabled-changed", notificationsEnabled);
+  }
   return notificationsEnabled;
 });
