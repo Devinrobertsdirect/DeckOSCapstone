@@ -18,6 +18,7 @@ function Write-Step($n, $total, $msg) {
 
 function Write-Ok($msg)    { Write-Host "        Done: $msg" -ForegroundColor Green }
 function Write-Info($msg)  { Write-Host "        $msg" -ForegroundColor Gray }
+function Write-Warn($msg)  { Write-Host "        WARNING: $msg" -ForegroundColor Yellow }
 function Write-Err($msg)   { Write-Host ""; Write-Host "  ERROR: $msg" -ForegroundColor Red; Write-Host "" }
 
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -27,10 +28,10 @@ Write-Header
 Write-Host "  This script will set up and launch Deck OS on your computer." -ForegroundColor Gray
 Write-Host "  It only needs to do the full setup once. Future launches are faster." -ForegroundColor Gray
 Write-Host ""
-Write-Host "  Do not close this window until you see 'Deck OS is running!'" -ForegroundColor Yellow
+Write-Host "  Do not close this window until you see the final status message." -ForegroundColor Yellow
 Write-Host ""
 
-# ── Step 1: Node.js ──────────────────────────────────────────────────────────
+# 1. Node.js
 Write-Step 1 6 "Checking for Node.js..."
 Write-Info "Node.js is the engine that runs Deck OS. Checking if it is installed..."
 try {
@@ -48,7 +49,7 @@ try {
   exit 1
 }
 
-# ── Step 2: pnpm ─────────────────────────────────────────────────────────────
+# 2. pnpm
 Write-Step 2 6 "Checking for pnpm (package manager)..."
 Write-Info "pnpm manages all the code libraries Deck OS depends on..."
 $pnpmOk = $false
@@ -59,8 +60,7 @@ if (-not $pnpmOk) {
   if ($LASTEXITCODE -ne 0) {
     Write-Err "Could not install pnpm automatically."
     Write-Host "  What to do:" -ForegroundColor Yellow
-    Write-Host "    Right-click START_WINDOWS.bat and choose 'Run as Administrator'" -ForegroundColor Yellow
-    Write-Host ""
+    Write-Host "    Right-click START_WINDOWS.bat and choose Run as Administrator" -ForegroundColor Yellow
     Read-Host "  Press Enter to close"; exit 1
   }
   Write-Ok "pnpm installed successfully"
@@ -69,7 +69,7 @@ if (-not $pnpmOk) {
   Write-Ok "pnpm $pnpmVer is installed"
 }
 
-# ── Step 3: .env configuration ───────────────────────────────────────────────
+# 3. .env
 Write-Step 3 6 "Checking configuration file (.env)..."
 Write-Info "The .env file stores your database connection and other settings..."
 if (-not (Test-Path ".env")) {
@@ -85,13 +85,12 @@ if (-not (Test-Path ".env")) {
     Start-Process notepad ".env"
     Read-Host "  Press Enter to close"; exit 0
   }
-  Write-Err "No .env settings file found."
+  Write-Err "No .env file found."
   Write-Host "  Create a file named .env in this folder with your DATABASE_URL." -ForegroundColor Yellow
   Read-Host "  Press Enter to close"; exit 1
 }
 Write-Ok ".env settings file found"
 
-# Load .env vars into session
 Get-Content ".env" | ForEach-Object {
   if ($_ -match "^\s*([^#=][^=]*)=(.*)$") {
     $k = $Matches[1].Trim()
@@ -100,7 +99,7 @@ Get-Content ".env" | ForEach-Object {
   }
 }
 
-# ── Step 4: Install dependencies ─────────────────────────────────────────────
+# 4. Dependencies
 Write-Step 4 6 "Installing dependencies..."
 Write-Info "Downloading all the code libraries Deck OS needs to run."
 Write-Info "This only happens on the first run and may take 1-2 minutes."
@@ -110,7 +109,6 @@ Write-Host ""
 if ($LASTEXITCODE -ne 0) {
   Write-Err "Dependency installation failed."
   Write-Host "  Check your internet connection and try again." -ForegroundColor Yellow
-  Write-Host "  If it keeps failing, delete the node_modules folder and try again." -ForegroundColor Yellow
   Read-Host "  Press Enter to close"; exit 1
 }
 Write-Info "Finalizing native components..."
@@ -118,7 +116,7 @@ Write-Info "Finalizing native components..."
 & pnpm rebuild 2>&1 | Out-Null
 Write-Ok "All dependencies installed and ready"
 
-# ── Step 5: Desktop shortcut ─────────────────────────────────────────────────
+# 5. Desktop shortcut
 Write-Step 5 6 "Creating desktop shortcut..."
 Write-Info "Adding a Deck OS shortcut to your Desktop for easy access..."
 try {
@@ -137,32 +135,53 @@ try {
   Write-Host "        Could not create shortcut -- use START_WINDOWS.bat directly" -ForegroundColor Gray
 }
 
-# ── Step 6: Launch ───────────────────────────────────────────────────────────
+# 6. Launch
 Write-Step 6 6 "Starting Deck OS..."
-Write-Info "Starting the API server (backend)..."
-Start-Process cmd -ArgumentList "/c title Deck OS API && pnpm --filter @workspace/api-server run dev" -WindowStyle Minimized
-Start-Sleep -Seconds 4
-Write-Info "Starting the frontend (dashboard interface)..."
-Start-Process cmd -ArgumentList "/c title Deck OS Frontend && pnpm --filter @workspace/deck-os run dev" -WindowStyle Minimized
-Write-Info "Giving services time to start up (about 15 seconds)..."
-Start-Sleep -Seconds 15
-Write-Info "Opening your browser..."
-Start-Process "http://localhost:3000"
+Write-Info "Starting the API server (backend) -- a window will open..."
+Start-Process cmd -ArgumentList "/c title Deck OS API && pnpm --filter @workspace/api-server run dev" -WindowStyle Normal
+Start-Sleep -Seconds 5
+Write-Info "Starting the frontend (dashboard) -- another window will open..."
+Start-Process cmd -ArgumentList "/c title Deck OS Frontend && pnpm --filter @workspace/deck-os run dev" -WindowStyle Normal
 
 Write-Host ""
-Write-Host "  ==========================================" -ForegroundColor Green
-Write-Host "   Deck OS is running!" -ForegroundColor Green
+Write-Info "Waiting up to 60 seconds for services to start..."
+$apiUp = $false
+$webUp = $false
+for ($i = 0; $i -lt 20; $i++) {
+  Start-Sleep -Seconds 3
+  Write-Host "." -NoNewline -ForegroundColor Gray
+  try { Invoke-WebRequest "http://localhost:8080/api/healthz" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop | Out-Null; $apiUp = $true } catch {}
+  try { Invoke-WebRequest "http://localhost:3000" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop | Out-Null; $webUp = $true } catch {}
+  if ($apiUp -and $webUp) { break }
+}
 Write-Host ""
-Write-Host "   Your browser should now show the dashboard." -ForegroundColor White
-Write-Host "   If the page is blank, wait 30 seconds" -ForegroundColor Gray
-Write-Host "   and press F5 to refresh." -ForegroundColor Gray
+
 Write-Host ""
-Write-Host "   A 'Deck OS' shortcut was added to your" -ForegroundColor White
-Write-Host "   Desktop. Use it to launch Deck OS anytime." -ForegroundColor Gray
+Write-Host "  ==========================================" -ForegroundColor Cyan
+
+if ($webUp) {
+  Write-Host "   Deck OS is running!" -ForegroundColor Green
+  Write-Host ""
+  Write-Host "   Opening browser to http://localhost:3000" -ForegroundColor White
+  Start-Process "http://localhost:3000"
+} else {
+  Write-Host "   Services did not start within 60 seconds." -ForegroundColor Yellow
+  Write-Host ""
+  if (-not $apiUp) {
+    Write-Warn "API server (port 8080) did not respond."
+    Write-Host "        Check the 'Deck OS API' window for error messages." -ForegroundColor Yellow
+  }
+  if (-not $webUp) {
+    Write-Warn "Frontend (port 3000) did not respond."
+    Write-Host "        Check the 'Deck OS Frontend' window for error messages." -ForegroundColor Yellow
+  }
+  Write-Host ""
+  Write-Host "   Paste any errors from those windows here for help." -ForegroundColor Gray
+}
+
 Write-Host ""
-Write-Host "   To STOP Deck OS: look in your taskbar for" -ForegroundColor Gray
-Write-Host "   'Deck OS API' and 'Deck OS Frontend' and" -ForegroundColor Gray
-Write-Host "   close both windows." -ForegroundColor Gray
-Write-Host "  ==========================================" -ForegroundColor Green
+Write-Host "   Desktop shortcut: double-click 'Deck OS' on your Desktop" -ForegroundColor Gray
+Write-Host "   To STOP: close the Deck OS API and Deck OS Frontend windows" -ForegroundColor Gray
+Write-Host "  ==========================================" -ForegroundColor Cyan
 Write-Host ""
 Read-Host "  Press Enter to close this setup window"
