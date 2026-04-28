@@ -199,7 +199,7 @@ foreach ($port in @(8080, 5173)) {
 Write-Info "Starting API server (port 8080)..."
 $apiArgs = @{
   FilePath               = "cmd"
-  ArgumentList           = "/c set PORT=8080 && set NODE_ENV=development && `"$pnpmExe`" --filter @workspace/api-server run dev"
+  ArgumentList           = "/c set PORT=8080 && set NODE_ENV=development && set BASE_PATH=/ && `"$pnpmExe`" --filter @workspace/api-server run dev"
   WorkingDirectory       = $dir
   RedirectStandardOutput = $apiLog
   RedirectStandardError  = $apiErrLog
@@ -213,7 +213,7 @@ Start-Sleep -Seconds 5
 Write-Info "Starting frontend (port 5173)..."
 $webArgs = @{
   FilePath               = "cmd"
-  ArgumentList           = "/c set PORT=5173 && set NODE_ENV=development && `"$pnpmExe`" --filter @workspace/deck-os run dev"
+  ArgumentList           = "/c set PORT=5173 && set NODE_ENV=development && set BASE_PATH=/ && `"$pnpmExe`" --filter @workspace/deck-os run dev"
   WorkingDirectory       = $dir
   RedirectStandardOutput = $webLog
   RedirectStandardError  = $webErrLog
