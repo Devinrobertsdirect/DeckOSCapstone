@@ -26,13 +26,6 @@ function Write-Err($msg)  {
   Write-Host ""
 }
 
-# Run a command through cmd.exe to avoid PowerShell's stderr-as-error behaviour.
-# Returns the process exit code.
-function Invoke-Cmd($command) {
-  $proc = Start-Process cmd -ArgumentList "/c $command" -Wait -PassThru -NoNewWindow
-  return $proc.ExitCode
-}
-
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $dir
 
@@ -57,60 +50,77 @@ Write-Ok "Node.js $nodeVer is installed"
 Write-Step 2 6 "Checking for pnpm (package manager)..."
 Write-Info "pnpm manages all the libraries Deck OS depends on..."
 
-# The standalone pnpm installer puts its binary at %LOCALAPPDATA%\pnpm.
-# Registry PATH changes never affect the current running session automatically,
-# so we inject the directory into $env:PATH right now.
-$pnpmHome = Join-Path $env:LOCALAPPDATA "pnpm"
-if ((Test-Path $pnpmHome) -and ($env:PATH -notlike "*$pnpmHome*")) {
-  $env:PATH = "$pnpmHome;$env:PATH"
+# Locate pnpm.exe by direct filesystem check -- never relies on PATH or cmd.
+# Checks the standard standalone-install location, then npm's global bin dir,
+# then each PATH entry (skipping internal .tools subdirectories).
+function Find-PnpmExe {
+  # 1. Standalone installer default: %LOCALAPPDATA%\pnpm\pnpm.exe
+  $candidate = Join-Path $env:LOCALAPPDATA "pnpm\pnpm.exe"
+  if (Test-Path $candidate) { return $candidate }
+
+  # 2. npm global prefix (covers npm install -g pnpm)
+  $npmPrefix = (& npm config get prefix 2>$null)
+  if ($npmPrefix -and $npmPrefix -notmatch 'undefined') {
+    foreach ($ext in @("pnpm.exe", "pnpm.cmd")) {
+      $candidate = Join-Path $npmPrefix.Trim() $ext
+      if (Test-Path $candidate) { return $candidate }
+    }
+  }
+
+  # 3. Walk PATH entries (skip .tools cache dirs used by the standalone installer)
+  foreach ($entry in ($env:PATH -split ';')) {
+    $e = $entry.Trim()
+    if (-not $e -or $e -match '\\\.tools\\') { continue }
+    foreach ($ext in @("pnpm.exe", "pnpm.cmd")) {
+      $candidate = Join-Path $e $ext
+      if (Test-Path $candidate) { return $candidate }
+    }
+  }
+
+  return $null
 }
 
-$pnpmOk = ((Invoke-Cmd "pnpm --version >nul 2>&1") -eq 0)
-if (-not $pnpmOk) {
+$pnpmExe = Find-PnpmExe
+
+if (-not $pnpmExe) {
   Write-Info "Not found -- installing via standalone installer..."
   try {
     Invoke-WebRequest "https://get.pnpm.io/install.ps1" -UseBasicParsing | Invoke-Expression
-    # Installer updates the registry but NOT this session -- inject it now
-    if ((Test-Path $pnpmHome) -and ($env:PATH -notlike "*$pnpmHome*")) {
-      $env:PATH = "$pnpmHome;$env:PATH"
-    }
-    # Also re-read registry in case the installer chose a different directory
-    $uPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
-    $mPath = [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
-    $env:PATH = "$pnpmHome;$uPath;$mPath"
   } catch {
     Write-Info "Standalone installer failed -- trying npm fallback..."
-    $code = Invoke-Cmd "npm install -g pnpm"
-    if ($code -ne 0) {
+    # Run npm in a subshell; ignore stderr (funding notices go to stderr)
+    $proc = Start-Process "npm" -ArgumentList "install", "-g", "pnpm" -Wait -PassThru -NoNewWindow -UseShellExecute $false
+    if ($proc.ExitCode -ne 0) {
       Write-Err "Could not install pnpm. Right-click setup.ps1 and choose Run as Administrator."
       Read-Host "  Press Enter to close"
       exit 1
     }
   }
+  # After install the registry PATH is updated but this session doesn't see it.
+  # Add the known standalone location immediately so Find-PnpmExe succeeds.
+  $pnpmHome = Join-Path $env:LOCALAPPDATA "pnpm"
+  if ((Test-Path $pnpmHome) -and ($env:PATH -notlike "*$pnpmHome*")) {
+    $env:PATH = "$pnpmHome;$env:PATH"
+  }
+  $pnpmExe = Find-PnpmExe
 }
 
-# Verify pnpm is reachable via cmd (never the PS1 shim)
-$pnpmVer = (& cmd /c "pnpm --version 2>nul")
-if (-not $pnpmVer) {
-  # Last resort: find pnpm.exe anywhere under LOCALAPPDATA and add its folder to PATH
-  Write-Info "Searching for pnpm.exe in user data folder..."
-  $found = (Get-ChildItem -Path $env:LOCALAPPDATA -Filter "pnpm.exe" -Recurse -Depth 6 -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1)
-  if ($found) {
-    $env:PATH = "$($found.DirectoryName);$env:PATH"
-    $pnpmVer  = (& cmd /c "pnpm --version 2>nul")
-    if ($pnpmVer) { Write-Info "Found pnpm at $($found.FullName)" }
-  }
-}
-if (-not $pnpmVer) {
-  Write-Err "pnpm could not be added to PATH automatically."
+if (-not $pnpmExe) {
+  Write-Err "pnpm could not be located after installation."
   Write-Host "  Open a NEW PowerShell window and run setup.ps1 again." -ForegroundColor Yellow
-  Write-Host "  (The installer updated your user PATH -- a new window will see it.)" -ForegroundColor Gray
+  Write-Host "  (A fresh window picks up the PATH entry the installer registered.)" -ForegroundColor Gray
   Read-Host "  Press Enter to close"
   exit 0
 }
-Write-Ok "pnpm $pnpmVer is installed"
+
+# Confirm the binary actually runs
+$pnpmVer = (& "$pnpmExe" --version 2>$null)
+if (-not $pnpmVer) {
+  Write-Err "Found pnpm at $pnpmExe but it did not return a version number."
+  Read-Host "  Press Enter to close"
+  exit 1
+}
+Write-Ok "pnpm $pnpmVer -- $pnpmExe"
 
 # ── 3. .env ───────────────────────────────────────────────────────────────────
 Write-Step 3 6 "Checking configuration (.env)..."
@@ -142,13 +152,16 @@ Write-Info "This may take 1-2 minutes on first run. Please wait..."
 Write-Info "Removing Linux lockfile so Windows packages resolve correctly..."
 if (Test-Path "pnpm-lock.yaml") { Remove-Item "pnpm-lock.yaml" -Force }
 
-$code = Invoke-Cmd "pnpm install --ignore-scripts"
-if ($code -ne 0) {
+# Call pnpm.exe directly -- no PATH or cmd indirection
+$installSplat = @{ FilePath = "$pnpmExe"; ArgumentList = "install", "--ignore-scripts"; WorkingDirectory = $dir; Wait = $true; PassThru = $true; NoNewWindow = $true; UseShellExecute = $false }
+$proc = Start-Process @installSplat
+if ($proc.ExitCode -ne 0) {
   Write-Err "Dependency install failed. Check your internet connection and try again."
   Read-Host "  Press Enter to close"
   exit 1
 }
-Invoke-Cmd "pnpm rebuild >nul 2>&1" | Out-Null
+$rebuildSplat = @{ FilePath = "$pnpmExe"; ArgumentList = "rebuild"; WorkingDirectory = $dir; Wait = $true; NoNewWindow = $true; UseShellExecute = $false }
+$null = Start-Process @rebuildSplat
 Write-Ok "All dependencies installed and ready"
 
 # ── 5. Desktop shortcut ───────────────────────────────────────────────────────
@@ -183,10 +196,11 @@ foreach ($port in @(8080, 5173)) {
   }
 }
 
+# Launch via cmd using the FULL path to pnpm.exe -- no PATH lookup needed
 Write-Info "Starting API server (port 8080)..."
 $apiArgs = @{
   FilePath               = "cmd"
-  ArgumentList           = "/c set PORT=8080 && set NODE_ENV=development && pnpm --filter @workspace/api-server run dev"
+  ArgumentList           = "/c set PORT=8080 && set NODE_ENV=development && `"$pnpmExe`" --filter @workspace/api-server run dev"
   WorkingDirectory       = $dir
   RedirectStandardOutput = $apiLog
   RedirectStandardError  = $apiErrLog
@@ -200,7 +214,7 @@ Start-Sleep -Seconds 5
 Write-Info "Starting frontend (port 5173)..."
 $webArgs = @{
   FilePath               = "cmd"
-  ArgumentList           = "/c set PORT=5173 && set NODE_ENV=development && pnpm --filter @workspace/deck-os run dev"
+  ArgumentList           = "/c set PORT=5173 && set NODE_ENV=development && `"$pnpmExe`" --filter @workspace/deck-os run dev"
   WorkingDirectory       = $dir
   RedirectStandardOutput = $webLog
   RedirectStandardError  = $webErrLog
@@ -266,7 +280,6 @@ $wslExe       = "C:\Windows\System32\wsl.exe"
 $wslAvailable = (Test-Path $wslExe)
 
 if ($wslAvailable) {
-  # Check Ubuntu distro is present (output may have UTF-16 null bytes on older Windows)
   $distros  = (& $wslExe --list --quiet 2>$null) -replace '\0', '' |
               Where-Object { $_ -match '\S' }
   $ubuntuOk = $distros | Where-Object { $_ -match '^Ubuntu' }
@@ -281,7 +294,7 @@ if (-not $wslAvailable) {
     & C:\Windows\System32\dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart 2>$null | Out-Null
     Write-Host "  WSL2 features enabled. RESTART your PC, then run: wsl --install -d Ubuntu" -ForegroundColor Yellow
   } else {
-    Write-Host "  After Ubuntu is installed, run setup.ps1 again and it will auto-start OpenClaw." -ForegroundColor Gray
+    Write-Host "  After Ubuntu is installed, run setup.ps1 again and OpenClaw will start automatically." -ForegroundColor Gray
     Write-Host "  To install Ubuntu: wsl --install -d Ubuntu" -ForegroundColor Gray
   }
 } else {
@@ -302,8 +315,8 @@ if (-not $wslAvailable) {
 
     if ($openclawInstalled) {
       Write-Info "Starting OpenClaw gateway via Ubuntu..."
-      $launchCmd = "nohup openclaw gateway > ~/.openclaw/logs/gateway.log 2>&1 &"
-      Start-Process $wslExe -ArgumentList "-d Ubuntu -- bash -c `"$launchCmd`"" -WindowStyle Hidden
+      $launchCmd = "mkdir -p ~/.openclaw/logs && nohup openclaw gateway > ~/.openclaw/logs/gateway.log 2>&1 &"
+      Start-Process $wslExe -ArgumentList "-d", "Ubuntu", "--", "bash", "-c", $launchCmd -WindowStyle Hidden
       Start-Sleep -Seconds 6
       try {
         $t = New-Object System.Net.Sockets.TcpClient
