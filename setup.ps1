@@ -57,15 +57,27 @@ Write-Ok "Node.js $nodeVer is installed"
 Write-Step 2 6 "Checking for pnpm (package manager)..."
 Write-Info "pnpm manages all the libraries Deck OS depends on..."
 
+# The standalone pnpm installer puts its binary at %LOCALAPPDATA%\pnpm.
+# Registry PATH changes never affect the current running session automatically,
+# so we inject the directory into $env:PATH right now.
+$pnpmHome = Join-Path $env:LOCALAPPDATA "pnpm"
+if ((Test-Path $pnpmHome) -and ($env:PATH -notlike "*$pnpmHome*")) {
+  $env:PATH = "$pnpmHome;$env:PATH"
+}
+
 $pnpmOk = ((Invoke-Cmd "pnpm --version >nul 2>&1") -eq 0)
 if (-not $pnpmOk) {
   Write-Info "Not found -- installing via standalone installer..."
   try {
     Invoke-WebRequest "https://get.pnpm.io/install.ps1" -UseBasicParsing | Invoke-Expression
-    # Refresh PATH so pnpm is visible in this session
-    $userPath    = [System.Environment]::GetEnvironmentVariable("PATH", "User")
-    $machinePath = [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
-    $env:PATH    = "$userPath;$machinePath"
+    # Installer updates the registry but NOT this session -- inject it now
+    if ((Test-Path $pnpmHome) -and ($env:PATH -notlike "*$pnpmHome*")) {
+      $env:PATH = "$pnpmHome;$env:PATH"
+    }
+    # Also re-read registry in case the installer chose a different directory
+    $uPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+    $mPath = [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
+    $env:PATH = "$pnpmHome;$uPath;$mPath"
   } catch {
     Write-Info "Standalone installer failed -- trying npm fallback..."
     $code = Invoke-Cmd "npm install -g pnpm"
@@ -77,11 +89,24 @@ if (-not $pnpmOk) {
   }
 }
 
-# Verify pnpm reachable -- always call via cmd, never via the PS1 shim
+# Verify pnpm is reachable via cmd (never the PS1 shim)
 $pnpmVer = (& cmd /c "pnpm --version 2>nul")
 if (-not $pnpmVer) {
-  Write-Warn "pnpm installed but not yet on PATH for this session."
-  Write-Host "  Close this window and run setup.ps1 again -- it will work on the next run." -ForegroundColor Yellow
+  # Last resort: find pnpm.exe anywhere under LOCALAPPDATA and add its folder to PATH
+  Write-Info "Searching for pnpm.exe in user data folder..."
+  $found = (Get-ChildItem -Path $env:LOCALAPPDATA -Filter "pnpm.exe" -Recurse -Depth 6 -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1)
+  if ($found) {
+    $env:PATH = "$($found.DirectoryName);$env:PATH"
+    $pnpmVer  = (& cmd /c "pnpm --version 2>nul")
+    if ($pnpmVer) { Write-Info "Found pnpm at $($found.FullName)" }
+  }
+}
+if (-not $pnpmVer) {
+  Write-Err "pnpm could not be added to PATH automatically."
+  Write-Host "  Open a NEW PowerShell window and run setup.ps1 again." -ForegroundColor Yellow
+  Write-Host "  (The installer updated your user PATH -- a new window will see it.)" -ForegroundColor Gray
   Read-Host "  Press Enter to close"
   exit 0
 }
