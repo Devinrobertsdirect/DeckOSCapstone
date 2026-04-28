@@ -152,16 +152,15 @@ Write-Info "This may take 1-2 minutes on first run. Please wait..."
 Write-Info "Removing Linux lockfile so Windows packages resolve correctly..."
 if (Test-Path "pnpm-lock.yaml") { Remove-Item "pnpm-lock.yaml" -Force }
 
-# Call pnpm.exe directly -- no PATH or cmd indirection
-$installSplat = @{ FilePath = "$pnpmExe"; ArgumentList = "install", "--ignore-scripts"; WorkingDirectory = $dir; Wait = $true; PassThru = $true; NoNewWindow = $true; UseShellExecute = $false }
-$proc = Start-Process @installSplat
-if ($proc.ExitCode -ne 0) {
+# Call pnpm.exe directly via the & operator -- inherits this session's env,
+# works on Windows PowerShell 5.1 without any Start-Process flags
+& "$pnpmExe" install --ignore-scripts
+if ($LASTEXITCODE -ne 0) {
   Write-Err "Dependency install failed. Check your internet connection and try again."
   Read-Host "  Press Enter to close"
   exit 1
 }
-$rebuildSplat = @{ FilePath = "$pnpmExe"; ArgumentList = "rebuild"; WorkingDirectory = $dir; Wait = $true; NoNewWindow = $true; UseShellExecute = $false }
-$null = Start-Process @rebuildSplat
+& "$pnpmExe" rebuild 2>$null
 Write-Ok "All dependencies installed and ready"
 
 # ── 5. Desktop shortcut ───────────────────────────────────────────────────────
