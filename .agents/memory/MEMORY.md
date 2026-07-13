@@ -1,1 +1,2 @@
 - [Artifact re-registration after GitHub import](artifact-reregistration.md) — pnpm-workspace projects with orphaned `.replit-artifact/artifact.toml` files (empty `listArtifacts()`) can be re-registered via one `verifyAndReplaceArtifactToml` round-trip.
+- [Event bus strict-enum validation](event-bus-strict-enum.md) — api-server's bus.emit() silently drops+logs any event type missing from lib/event-bus/src/types.ts enums; add new types there when adding emit calls.

@@ -95,6 +95,17 @@ export const AutonomyEventTypeSchema = z.enum([
   "routine.triggered",
   "routine.completed",
   "briefing.generated",
+  "initiative.nudge_created",
+  "narrative.thread_resolved",
+]);
+
+export const LieDetectorEventTypeSchema = z.enum([
+  "lie_detector.session.started",
+  "lie_detector.question.started",
+  "lie_detector.question.committed",
+  "lie_detector.session.finished",
+  "lie_detector.analyze.request",
+  "lie_detector.analysis.complete",
 ]);
 
 export const ClientEventTypeSchema = z.enum([
@@ -137,6 +148,7 @@ export const EventTypeSchema = z.union([
   NotificationEventTypeSchema,
   AceraEventTypeSchema,
   StarkEventTypeSchema,
+  LieDetectorEventTypeSchema,
   CustomEventTypeSchema,
 ]);
 

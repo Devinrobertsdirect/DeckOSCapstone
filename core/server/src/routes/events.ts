@@ -9,9 +9,9 @@ const router = Router();
 const CATEGORY_PREFIXES: Record<string, string[]> = {
   system:   ["system.", "health.", "ws.", "connection."],
   device:   ["device.", "sensor.", "iot.", "mqtt."],
-  ai:       ["ai.", "llm.", "chat.", "initiative.", "insight.", "briefing."],
+  ai:       ["ai.", "llm.", "chat.", "initiative.", "insight.", "briefing.", "lie_detector."],
   memory:   ["memory.", "goal.", "feedback."],
-  autonomy: ["autonomy.", "routine.", "action."],
+  autonomy: ["autonomy.", "routine.", "action.", "narrative."],
 };
 
 const VALID_CATEGORIES = new Set(Object.keys(CATEGORY_PREFIXES));
