@@ -1,0 +1,1 @@
+- [Artifact re-registration after GitHub import](artifact-reregistration.md) — pnpm-workspace projects with orphaned `.replit-artifact/artifact.toml` files (empty `listArtifacts()`) can be re-registered via one `verifyAndReplaceArtifactToml` round-trip.

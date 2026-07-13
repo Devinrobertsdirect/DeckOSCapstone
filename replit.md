@@ -1,3 +1,14 @@
+# Running on Replit
+
+This project was re-imported from GitHub with its multi-artifact structure already on disk (`.replit-artifact/artifact.toml` per artifact) but not registered with Replit's runtime. Setup performed:
+
+- Registered the 4 artifacts (`api-server`, `deck-os`, `deck-mobile`, `mockup-sandbox`) and their managed workflows.
+- Ran `pnpm install` and pushed the Drizzle schema to the pre-provisioned Replit PostgreSQL database (`DATABASE_URL` is already set — no manual Postgres setup needed).
+- Started workflows: `artifacts/deck-os: web` (root `/`), `artifacts/deck-mobile: web` (`/mobile/`), `artifacts/api-server: API Server` (`/api`). `artifacts/mockup-sandbox` (design/canvas tool) is registered but left stopped since it isn't part of the running product.
+- `.replit` already has `[deployment]` configured for autoscale, so Publish should work as-is.
+
+Local AI (Ollama), voice, MQTT, and other optional integrations in `.env.example` are not configured — the app runs without them; add those keys later if needed.
+
 # Overview
 
 This project is a pnpm workspace monorepo utilizing TypeScript to build a comprehensive, AI-powered cyberdeck dashboard inspired by JARVIS. It aims to create a central command center for personal AI, focusing on spatial awareness, cognitive modeling, goal management, and autonomous operation. The system integrates various components, including a web-based dashboard (Deck OS), a command-line interface (DeckOS CLI), a mobile chat interface (DeckOS Mobile), and a robust API server. The overarching vision is to provide a highly interactive, intelligent, and customizable interface for managing digital and physical environments.
