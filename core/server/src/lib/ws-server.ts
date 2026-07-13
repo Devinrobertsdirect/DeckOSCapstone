@@ -5,8 +5,8 @@ import { bus } from "./bus.js";
 import { logger } from "./logger.js";
 import type { BusEvent } from "@workspace/event-bus";
 import { BusEventSchema } from "@workspace/event-bus";
-import { db, systemEventsTable } from "@workspace/db";
-import { desc } from "drizzle-orm";
+import { db, systemEventsTable, nudgesTable } from "@workspace/db";
+import { desc, eq, and, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 const MAX_QUEUE_SIZE = 500;
@@ -27,6 +27,40 @@ const IncomingCommandSchema = z.object({
   payload: z.unknown(),
   target: z.string().nullable().optional(),
 });
+
+const NudgeAckPayloadSchema = z.object({
+  nudgeIds: z.array(z.number().int()).min(1),
+});
+
+// Reconciliation: nudges are written to the DB before the "initiative.nudge_created"
+// bus event is emitted for live delivery. If the process crashes or no client is
+// connected in that window, the emit never lands and the nudge would otherwise sit
+// undelivered until a client happens to fetch history. surfacedAt tracks whether a
+// nudge has actually reached a client (live or backlog); querying for undismissed +
+// unsurfaced rows on every new connection guarantees eventual delivery.
+async function getUnsurfacedNudges(): Promise<Array<typeof nudgesTable.$inferSelect>> {
+  try {
+    return await db
+      .select()
+      .from(nudgesTable)
+      .where(and(eq(nudgesTable.dismissed, false), isNull(nudgesTable.surfacedAt)))
+      .orderBy(desc(nudgesTable.createdAt));
+  } catch (err) {
+    logger.error({ err }, "ws-server: failed to load unsurfaced nudges");
+    return [];
+  }
+}
+
+async function markNudgesSurfaced(nudgeIds: number[]): Promise<void> {
+  if (!nudgeIds.length) return;
+  try {
+    for (const id of nudgeIds) {
+      await db.update(nudgesTable).set({ surfacedAt: new Date() }).where(eq(nudgesTable.id, id));
+    }
+  } catch (err) {
+    logger.error({ err, nudgeIds }, "ws-server: failed to mark nudges surfaced");
+  }
+}
 
 async function getHistoryEvents(limit = 50): Promise<unknown[]> {
   try {
@@ -143,6 +177,32 @@ export function attachWebSocketServer(server: Server): WebSocketServer {
         timestamp: new Date().toISOString(),
       });
 
+      // Reconciliation pass: deliver any nudge that was written to the DB but
+      // never successfully surfaced to a client (crash/disconnect window),
+      // regardless of whether it's still sitting in systemEventsTable history.
+      const backlog = await getUnsurfacedNudges();
+      if (backlog.length) {
+        sendDirect(ws, {
+          type: "nudge.backlog",
+          payload: {
+            nudges: backlog.map((n) => ({
+              nudgeId: n.id,
+              category: n.category,
+              content: n.content,
+              urgencyScore: n.urgencyScore,
+              targetGoalId: n.targetGoalId,
+              targetThreadId: n.targetThreadId,
+              createdAt: n.createdAt.toISOString(),
+            })),
+            count: backlog.length,
+          },
+          timestamp: new Date().toISOString(),
+        });
+        // Not marked surfaced here — we wait for the client's "nudge.ack" so a
+        // send that never actually reaches the client (dropped connection,
+        // queue eviction) leaves the nudge eligible for the next reconnect.
+      }
+
       for (const json of state.preliveBuf) {
         enqueue(state, json);
       }
@@ -177,6 +237,23 @@ export function attachWebSocketServer(server: Server): WebSocketServer {
       }
 
       const { type, payload, target } = result.data;
+
+      // Client acknowledgment of nudge delivery. Handled outside the bus
+      // entirely — it's not a domain event, just the confirmation that closes
+      // the delivery loop and lets us safely mark nudges surfaced.
+      if (type === "nudge.ack") {
+        const ackResult = NudgeAckPayloadSchema.safeParse(payload);
+        if (!ackResult.success) {
+          sendDirect(ws, {
+            type: "ws.error",
+            payload: { error: "Malformed nudge.ack: expected { nudgeIds: number[] }", issues: ackResult.error.issues },
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+        void markNudgesSurfaced(ackResult.data.nudgeIds);
+        return;
+      }
 
       const preCheck = BusEventSchema.safeParse({
         id: "00000000-0000-0000-0000-000000000000",
@@ -253,6 +330,14 @@ export function broadcast(data: unknown): void {
   if (sentLive > 0 || bufferedPrelive > 0) {
     logger.debug({ sentLive, bufferedPrelive, clientCount: clientStates.size }, "WS broadcast");
   }
+
+  // Deliberately does NOT mark nudges surfaced here. Being handed to `enqueue`
+  // only means the message entered a client's outgoing queue — under
+  // backpressure that queue evicts its oldest entries (see enqueue's
+  // MAX_QUEUE_SIZE handling) before they ever reach the socket. Treating
+  // "queued" as "delivered" would let a nudge be silently dropped and never
+  // reconciled. surfacedAt is only set once the client explicitly
+  // acknowledges receipt — see handleNudgeAck / the "nudge.ack" message type.
 }
 
 export function getClientCount(): number {

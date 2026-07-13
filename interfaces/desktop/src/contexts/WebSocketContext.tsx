@@ -75,6 +75,17 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       setStatus("connected");
     };
 
+    // Acknowledges nudge delivery back to the server so it can mark the row
+    // surfaced. This only fires once the message has actually been parsed and
+    // handed to the UI here — a dropped connection or an evicted send-queue
+    // entry never reaches this point, so the nudge correctly stays
+    // unsurfaced and gets redelivered on the next reconnect.
+    const ackNudges = (nudgeIds: number[]) => {
+      const ids = nudgeIds.filter((id): id is number => typeof id === "number");
+      if (!ids.length || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ type: "nudge.ack", payload: { nudgeIds: ids } }));
+    };
+
     ws.onmessage = (evt) => {
       if (unmountedRef.current) return;
       try {
@@ -85,7 +96,35 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         if (msg["type"] === "history.replay") {
           const payload = msg["payload"] as Record<string, unknown> | undefined;
           const evts = (payload?.["events"] as WsEvent[] | undefined) ?? [];
-          if (evts.length > 0) pushEvents(evts);
+          if (evts.length > 0) {
+            pushEvents(evts);
+            const nudgeIds = evts
+              .filter((e) => e.type === "initiative.nudge_created")
+              .map((e) => (e.payload as Record<string, unknown> | undefined)?.["nudgeId"])
+              .filter((id): id is number => typeof id === "number");
+            if (nudgeIds.length) ackNudges(nudgeIds);
+          }
+          return;
+        }
+
+        // Nudges that were written to the DB but never made it out live
+        // (crash/disconnect window) are redelivered here on connect. Fan
+        // them out as regular "initiative.nudge_created" events so existing
+        // UI that listens for that type picks them up unchanged, then ack
+        // each one so the server can mark it surfaced.
+        if (msg["type"] === "nudge.backlog") {
+          const payload = msg["payload"] as Record<string, unknown> | undefined;
+          const nudges = (payload?.["nudges"] as Array<Record<string, unknown>> | undefined) ?? [];
+          if (nudges.length > 0) {
+            pushEvents(nudges.map((n) => ({
+              type: "initiative.nudge_created",
+              source: "initiative-engine",
+              target: null,
+              payload: n,
+              timestamp: (n["createdAt"] as string | undefined) ?? new Date().toISOString(),
+            })));
+            ackNudges(nudges.map((n) => n["nudgeId"] as number));
+          }
           return;
         }
 
@@ -99,6 +138,14 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
             payload: msg["payload"],
             timestamp: msg["timestamp"] as string,
           }]);
+
+          // Live nudge push (and any nudge_created entries replayed via
+          // history.replay's generic branch above) get acked here too.
+          if (msg["type"] === "initiative.nudge_created") {
+            const payload = msg["payload"] as Record<string, unknown> | undefined;
+            const nudgeId = payload?.["nudgeId"];
+            if (typeof nudgeId === "number") ackNudges([nudgeId]);
+          }
         }
       } catch {
       }

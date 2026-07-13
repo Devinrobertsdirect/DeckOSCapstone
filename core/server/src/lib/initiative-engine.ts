@@ -45,23 +45,33 @@ async function createNudge(data: {
   targetGoalId?: number;
   targetThreadId?: number;
 }): Promise<void> {
-  await db.insert(nudgesTable).values({
+  const [created] = await db.insert(nudgesTable).values({
     category: data.category,
     content: data.content,
     urgencyScore: data.urgencyScore,
     targetGoalId: data.targetGoalId ?? null,
     targetThreadId: data.targetThreadId ?? null,
     dismissed: false,
-  });
+  }).returning();
 
+  // Note: surfacedAt is intentionally NOT set here. This emit is a best-effort
+  // live push — if the process crashes or no client is connected before it
+  // goes out, the nudge stays unsurfaced and ws-server's connect-time
+  // reconciliation (see attachWebSocketServer) will deliver it later and mark
+  // it surfaced then. That's the single source of truth for delivery.
   bus.emit({
     source: "initiative-engine",
     target: null,
     type: "initiative.nudge_created",
-    payload: { category: data.category, content: data.content, urgencyScore: data.urgencyScore },
+    payload: {
+      nudgeId: created.id,
+      category: data.category,
+      content: data.content,
+      urgencyScore: data.urgencyScore,
+    },
   });
 
-  logger.info({ category: data.category, score: data.urgencyScore }, "Nudge created");
+  logger.info({ nudgeId: created.id, category: data.category, score: data.urgencyScore }, "Nudge created");
 }
 
 function computeGoalUrgency(goal: {
