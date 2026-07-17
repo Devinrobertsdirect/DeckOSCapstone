@@ -3,10 +3,11 @@
   "compileOnSave": false,
   "files": [],
   "references": [
-    { "path": "./lib/db" },
-    { "path": "./lib/api-client-react" },
-    { "path": "./lib/api-zod" },
-    { "path": "./lib/integrations-openai-ai-server" },
-    { "path": "./lib/integrations-openai-ai-react" }
+    { "path": "./core/lib/db" },
+    { "path": "./core/lib/event-bus" },
+    { "path": "./core/lib/api-client-react" },
+    { "path": "./core/lib/api-zod" },
+    { "path": "./core/lib/integrations-openai-ai-server" },
+    { "path": "./core/lib/integrations-openai-ai-react" }
   ]
 }

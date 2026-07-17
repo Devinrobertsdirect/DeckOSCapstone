@@ -46,7 +46,7 @@ services:
   migrate:
     build:
       context: .
-      dockerfile: artifacts/api-server/Dockerfile
+      dockerfile: core/server/Dockerfile
     command: ["sh", "-c", "cd /app && pnpm --filter @workspace/db run push"]
     restart: "no"
     depends_on:
@@ -61,7 +61,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: artifacts/api-server/Dockerfile
+      dockerfile: core/server/Dockerfile
     restart: unless-stopped
     depends_on:
       postgres:
@@ -118,7 +118,7 @@ services:
   web:
     build:
       context: .
-      dockerfile: artifacts/deck-os/Dockerfile
+      dockerfile: interfaces/desktop/Dockerfile
       args:
         # Vite config requires PORT and BASE_PATH at build time.
         PORT: "80"
