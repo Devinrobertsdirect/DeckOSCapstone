@@ -1,16 +1,16 @@
 ---
 name: Deploy promote-step failures
-description: How to diagnose publishes that fail after a successful build phase, and the two root causes seen in this project
+description: Diagnosing Autoscale publishes that fail after "Creating Autoscale service" — which paths health probes actually hit, and where the real error text lives.
 ---
 
-# Deploy promote-step failures
+# Autoscale promote-step failures
 
-Build logs ending at "Creating Autoscale service" with status `failed` = promote-step (health check) failure, NOT a build problem. The build compiled fine; the deployed service never became healthy.
+**Rule:** The deployment health layer probes the **bare service path prefix** (e.g. `GET /api`) and the container root `/` — not only the path configured in `[services.production.health.startup]`. Every one of those surfaces must return 2xx from the API container, or the promote step fails even though the configured health endpoint is perfectly healthy.
 
-**Root causes found in this project:**
+**Why:** Publishes failed six times in a row with build logs ending at `Creating Autoscale service` (~60s later, no error line) while `/api/healthz` returned 200 everywhere. The deployer's own log — visible only in the user's Publishing pane, absent from the build-log API — showed `healthcheck failed error=healthcheck /api returned status 500`. An earlier app version passed only because an SPA catch-all served index.html (200) on every path; the rewritten app 404'd bare `/api` and `/`, and explicit 200 routes on both were required.
 
-1. **Stale paths in artifact.toml production configs after directory restructures.** When packages moved `artifacts/` → `interfaces/` + `core/`, three production settings kept old paths: web artifacts' `publicDir` (static server served an empty dir) and the API server's `production.run` args (node binary path didn't exist, process exited instantly, `/api/healthz` never answered). After any restructure, audit every `.replit-artifact/artifact.toml` `[services.production]` section for path literals.
-
-2. **Publish reads the committed git tree, not the working tree.** A publish clicked before a fix is committed still runs the old config. When a "fixed" build fails identically, compare the build's `timeCreated` against `git log --format=%cI` — the fix may have landed after the build started.
-
-**How to verify before suggesting republish:** run the production command locally (e.g. `NODE_ENV=production PORT=9999 node <dist entry>`) and curl the health path from `[services.production.health.startup]` — it must return 200 quickly.
+**How to apply:**
+- When a build log's last line is `Creating Autoscale service` (success logs continue with `upsertCloudRunService completed`), it's a container readiness failure, not a build failure.
+- Curl every probe surface locally against the production bundle: `/`, the bare path prefix (`/api`), and the configured startup path — all must be 2xx. A scrubbed-env boot test (`env -i` with only NODE_ENV/PORT/secrets/DATABASE_URL) proves or rules out env issues.
+- Runtime logs of *failed* promote attempts are not fetchable via the deployment-logs API; ask the user for the error text in the Publishing pane — the deployer's `System` lines there name the exact probed path and status.
+- Secondary checklist: stale `artifact.toml` paths after directory restructures (publicDir, run args), and remember publish reads the **committed** git tree — fixes must be committed before the build starts.

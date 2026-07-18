@@ -56,4 +56,11 @@ if (frontendDist && fs.existsSync(path.join(frontendDist, "index.html"))) {
   });
 }
 
+// Container-level probe fallback: when no dashboard build is bundled (e.g. the
+// production API container), deployment probes on "/" must still get a 2xx.
+// Unreachable when the static block above is active — it handles "/" first.
+app.get("/", (_req, res) => {
+  res.json({ status: "ok", service: "deck-os-api" });
+});
+
 export default app;

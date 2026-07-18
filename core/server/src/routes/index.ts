@@ -40,6 +40,13 @@ import agentRouter from "./agent";
 
 const router: IRouter = Router();
 
+// Deployment health probes hit the bare service path prefix ("/api"), not
+// only the configured startup path. This must return 2xx or publishing
+// fails at the promote step (probe logs: "healthcheck /api returned status 500").
+router.get("/", (_req, res) => {
+  res.json({ status: "ok", service: "deck-os-api" });
+});
+
 router.use(chatRouter);
 router.use("/chat", chatStreamRouter);
 router.use(healthRouter);
