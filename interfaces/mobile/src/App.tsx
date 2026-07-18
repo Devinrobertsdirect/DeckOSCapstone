@@ -224,6 +224,92 @@ function useWebSocket(onMessage: (data: unknown) => void) {
 
 type VoicePipelineState = "idle" | "listening" | "transcribing" | "chatting" | "speaking" | "error";
 
+interface MobileNudge {
+  nudgeId: number;
+  category: string;
+  content: string;
+  urgencyScore: number;
+  createdAt?: string;
+}
+
+const CATEGORY_LABEL: Record<string, string> = {
+  goal_decay:        "DECAY",
+  deadline:          "DEADLINE",
+  check_in:          "CHECK-IN",
+  continuation:      "THREAD",
+  insight:           "INSIGHT",
+  thread_resurfaced: "THREAD",
+};
+
+const URGENCY_COLOR = (s: number) =>
+  s > 0.8 ? "#ff3333" : s > 0.6 ? "#ffcc00" : "#00c8ff";
+
+function NudgeBanner({
+  nudges,
+  onDismiss,
+}: {
+  nudges: MobileNudge[];
+  onDismiss: (nudgeId: number) => void;
+}) {
+  const [idx, setIdx] = useState(0);
+  const current = nudges[Math.min(idx, nudges.length - 1)];
+  if (!current) return null;
+
+  const total   = nudges.length;
+  const label   = CATEGORY_LABEL[current.category] ?? current.category.toUpperCase();
+  const urgency = current.urgencyScore ?? 0;
+  const color   = URGENCY_COLOR(urgency);
+
+  return (
+    <div
+      className="shrink-0 border-b font-mono"
+      style={{ borderColor: `${color}40`, background: `${color}08` }}
+    >
+      <div className="flex items-start gap-2 px-3 py-2">
+        {/* urgency dot */}
+        <span
+          className="mt-0.5 shrink-0 w-1.5 h-1.5 rounded-full animate-pulse"
+          style={{ backgroundColor: color }}
+        />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-[9px] tracking-widest uppercase" style={{ color }}>
+              {label}
+            </span>
+            {total > 1 && (
+              <span className="text-[9px] text-primary/30 ml-auto">
+                {Math.min(idx, nudges.length - 1) + 1}/{total}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-foreground/80 leading-relaxed break-words">{current.content}</p>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0 ml-1">
+          {total > 1 && (
+            <button
+              onClick={() => setIdx((i) => (i + 1) % total)}
+              className="text-[10px] text-primary/30 hover:text-primary/70 transition-colors px-1"
+              aria-label="Next nudge"
+            >
+              ›
+            </button>
+          )}
+          <button
+            onClick={() => {
+              onDismiss(current.nudgeId);
+              if (idx >= total - 1) setIdx(Math.max(0, total - 2));
+            }}
+            className="text-[10px] text-primary/30 hover:text-primary/70 transition-colors px-1 py-0.5 border border-primary/15 hover:border-primary/40"
+            aria-label="Dismiss nudge"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PairingGate({ onPaired }: { onPaired: () => void }) {
   const [code, setCode] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -356,6 +442,7 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
   const [persona, setPersona] = useState<Persona | null>(null);
   const [channelStatus, setChannelStatus] = useState<ChannelStatus | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [nudges, setNudges] = useState<MobileNudge[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const voicePressedRef = useRef(false);
@@ -379,6 +466,8 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
   const { speak } = useAudioPlayback();
 
   const tierByRequestRef = useRef<Map<string, string>>(new Map());
+  // Ref so handleWsMessage (defined before sendMessage) can fire nudge.ack
+  const wsRef_ack = useRef<((ids: number[]) => void) | null>(null);
 
   const handleWsMessage = useCallback((data: unknown) => {
     const msg = data as { type?: string; payload?: Record<string, unknown> };
@@ -404,10 +493,52 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
         applyAccentColor(incoming.textColor);
       }
     }
+
+    // Backlog of unsurfaced nudges delivered on (re)connect
+    if (msg.type === "nudge.backlog" && msg.payload?.nudges) {
+      const incoming = (msg.payload.nudges as MobileNudge[]).filter(Boolean);
+      if (incoming.length > 0) {
+        setNudges((prev) => {
+          const existingIds = new Set(prev.map((n) => n.nudgeId));
+          const fresh = incoming.filter((n) => !existingIds.has(n.nudgeId));
+          return fresh.length ? [...prev, ...fresh] : prev;
+        });
+        // Acknowledge so the server marks them surfaced
+        wsRef_ack.current?.(incoming.map((n) => n.nudgeId));
+      }
+    }
+
+    // Live nudge pushed in real-time
+    if (msg.type === "initiative.nudge_created" && msg.payload?.nudgeId) {
+      const n: MobileNudge = {
+        nudgeId:     msg.payload.nudgeId as number,
+        category:    (msg.payload.category as string) ?? "insight",
+        content:     (msg.payload.content  as string) ?? "",
+        urgencyScore:(msg.payload.urgencyScore as number) ?? 0.5,
+        createdAt:   new Date().toISOString(),
+      };
+      setNudges((prev) =>
+        prev.some((x) => x.nudgeId === n.nudgeId) ? prev : [...prev, n],
+      );
+      wsRef_ack.current?.([n.nudgeId]);
+    }
   }, [setPersona, setAiName, setUserName]);
 
   const { wsState, sendMessage } = useWebSocket(handleWsMessage);
   useSensorBridge(sendMessage, wsState);
+
+  // Keep the ack callback up-to-date whenever sendMessage changes
+  useEffect(() => {
+    wsRef_ack.current = (ids: number[]) =>
+      sendMessage({ type: "nudge.ack", payload: { nudgeIds: ids } });
+  }, [sendMessage]);
+
+  const dismissNudge = useCallback(async (nudgeId: number) => {
+    setNudges((prev) => prev.filter((n) => n.nudgeId !== nudgeId));
+    try {
+      await fetch(`${API_BASE}/presence/nudges/${nudgeId}/dismiss`, { method: "PUT" });
+    } catch {}
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.add("dark");
@@ -696,6 +827,11 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
           </button>
         </div>
       </header>
+
+      {/* NUDGE BANNER */}
+      {nudges.length > 0 && (
+        <NudgeBanner nudges={nudges} onDismiss={(id) => void dismissNudge(id)} />
+      )}
 
       {/* MESSAGES */}
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-3 overscroll-contain">
