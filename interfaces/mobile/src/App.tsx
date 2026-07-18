@@ -164,8 +164,29 @@ interface ChannelStatus {
   supported: string[];
 }
 
-const PAIRING_KEY     = "deckos_pairing_code";
-const SESSION_ID_KEY  = "deckos_session_id";
+const PAIRING_KEY        = "deckos_pairing_code";
+const SESSION_ID_KEY     = "deckos_session_id";
+const NUDGE_INBOX_KEY    = "deckos_nudge_inbox";
+const NUDGE_INBOX_MAX    = 50;
+
+/** Load persisted nudges from sessionStorage (survives reload, cleared on tab close). */
+function loadInboxFromStorage(): MobileNudge[] {
+  try {
+    const raw = sessionStorage.getItem(NUDGE_INBOX_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as MobileNudge[];
+  } catch {
+    return [];
+  }
+}
+
+/** Persist nudges to sessionStorage, capped at NUDGE_INBOX_MAX (drops oldest). */
+function saveInboxToStorage(nudges: MobileNudge[]): void {
+  try {
+    const capped = nudges.slice(-NUDGE_INBOX_MAX);
+    sessionStorage.setItem(NUDGE_INBOX_KEY, JSON.stringify(capped));
+  } catch {}
+}
 
 /** Returns a stable SESSION_ID based on the stored pairing code.
  *  Falls back to a random ID if the device hasn't been paired yet. */
@@ -311,6 +332,146 @@ function NudgeBanner({
   );
 }
 
+function fmtInboxTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMin = Math.floor(diffMs / 60_000);
+    if (diffMin < 1)  return "just now";
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffH = Math.floor(diffMin / 60);
+    return `${diffH}h ago`;
+  } catch {
+    return "";
+  }
+}
+
+function NudgeInbox({
+  open,
+  onClose,
+  nudges,
+  onDismiss,
+  onClearAll,
+}: {
+  open: boolean;
+  onClose: () => void;
+  nudges: MobileNudge[];
+  onDismiss: (nudgeId: number) => void;
+  onClearAll: () => void;
+}) {
+  return (
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div
+          className="fixed inset-0 z-40 bg-black/30"
+          onClick={onClose}
+        />
+      )}
+
+      {/* Slide-out panel */}
+      <div
+        className={`fixed top-0 right-0 h-full w-72 z-50 bg-card border-l border-primary/20 flex flex-col
+          transition-transform duration-300 ease-in-out
+          ${open ? "translate-x-0" : "translate-x-full"}`}
+      >
+        {/* Header */}
+        <div className="h-14 shrink-0 flex items-center justify-between px-4 border-b border-primary/20">
+          <div className="flex items-center gap-2 font-mono text-xs text-primary">
+            {/* inbox icon */}
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>
+              <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
+            </svg>
+            <span className="uppercase tracking-widest">Nudge Inbox</span>
+            {nudges.length > 0 && (
+              <span className="bg-primary/20 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                {nudges.length}
+              </span>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="text-primary/40 hover:text-primary transition-colors font-mono text-xs"
+            aria-label="Close inbox"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Action bar */}
+        <div className="shrink-0 flex items-center justify-between px-3 py-2 border-b border-primary/10">
+          <span className="font-mono text-[10px] text-primary/25 uppercase tracking-widest">Session nudges</span>
+          <button
+            onClick={onClearAll}
+            disabled={nudges.length === 0}
+            className="font-mono text-[10px] text-primary/30 hover:text-[#f03248]/70 border border-primary/10 hover:border-[#f03248]/30 px-2 py-1 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            Clear all
+          </button>
+        </div>
+
+        {/* List */}
+        <div className="flex-1 overflow-y-auto">
+          {nudges.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-40 text-primary/25 font-mono text-xs gap-2">
+              <svg className="w-6 h-6 opacity-30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>
+                <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
+              </svg>
+              <span className="uppercase tracking-wider">No nudges yet</span>
+            </div>
+          )}
+
+          {/* Newest first */}
+          {[...nudges].reverse().map((n) => {
+            const label   = CATEGORY_LABEL[n.category] ?? n.category.toUpperCase();
+            const urgency = n.urgencyScore ?? 0;
+            const color   = URGENCY_COLOR(urgency);
+            return (
+              <div
+                key={n.nudgeId}
+                className="mx-2 my-2 p-2.5 border font-mono text-xs"
+                style={{ borderColor: `${color}25`, background: `${color}06` }}
+              >
+                <div className="flex items-start gap-2">
+                  <span
+                    className="mt-0.5 shrink-0 w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: color }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1 mb-0.5">
+                      <span className="text-[9px] tracking-widest uppercase" style={{ color }}>
+                        {label}
+                      </span>
+                      <button
+                        onClick={() => onDismiss(n.nudgeId)}
+                        className="text-primary/30 hover:text-primary/70 transition-colors shrink-0"
+                        aria-label="Dismiss nudge"
+                      >
+                        <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                      </button>
+                    </div>
+                    <p className="text-xs text-foreground/70 leading-relaxed break-words">{n.content}</p>
+                    {n.createdAt && (
+                      <span className="text-primary/25 text-[10px] mt-1 block">
+                        {fmtInboxTime(n.createdAt)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+}
+
 function PairingGate({ onPaired }: { onPaired: () => void }) {
   const [code, setCode] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -444,6 +605,8 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
   const [channelStatus, setChannelStatus] = useState<ChannelStatus | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [nudges, setNudges] = useState<MobileNudge[]>([]);
+  const [inboxNudges, setInboxNudges] = useState<MobileNudge[]>(() => loadInboxFromStorage());
+  const [showInbox, setShowInbox] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const voicePressedRef = useRef(false);
@@ -507,6 +670,10 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
       setNudges((prev) =>
         prev.some((x) => x.nudgeId === n.nudgeId) ? prev : [...prev, n],
       );
+      // Also add to persistent inbox (survives reload)
+      setInboxNudges((prev) =>
+        prev.some((x) => x.nudgeId === n.nudgeId) ? prev : [...prev, n],
+      );
       sendMessageRef.current({ type: "nudge.ack", payload: { nudgeIds: [n.nudgeId] } });
     }
 
@@ -519,33 +686,56 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
           const fresh = incoming.filter((n) => !existingIds.has(n.nudgeId));
           return fresh.length ? [...prev, ...fresh] : prev;
         });
+        // Add to inbox — give each backlog item a createdAt if missing
+        setInboxNudges((prev) => {
+          const existingIds = new Set(prev.map((n) => n.nudgeId));
+          const fresh = incoming
+            .filter((n) => !existingIds.has(n.nudgeId))
+            .map((n) => ({ ...n, createdAt: n.createdAt ?? new Date().toISOString() }));
+          return fresh.length ? [...prev, ...fresh] : prev;
+        });
         sendMessageRef.current({ type: "nudge.ack", payload: { nudgeIds: incoming.map((n) => n.nudgeId) } });
       }
     }
-  }, [setPersona, setAiName, setUserName]);
+  }, [setPersona, setAiName, setUserName, setInboxNudges]);
 
   const { wsState, sendMessage } = useWebSocket(handleWsMessage);
   // Keep the ref current so handleWsMessage can ack nudges without being in the dep array
   sendMessageRef.current = sendMessage;
   useSensorBridge(sendMessage, wsState);
 
-  const dismissNudge = useCallback(async (nudgeId: number) => {
+  // Keep sessionStorage in sync whenever the inbox changes
+  useEffect(() => {
+    saveInboxToStorage(inboxNudges);
+  }, [inboxNudges]);
+
+  /** Remove from banner only — nudge stays visible in the inbox */
+  const dismissFromBanner = useCallback((nudgeId: number) => {
+    setNudges((prev) => prev.filter((n) => n.nudgeId !== nudgeId));
+  }, []);
+
+  /** Remove from inbox (and banner if still present); notify server */
+  const dismissFromInbox = useCallback(async (nudgeId: number) => {
+    setInboxNudges((prev) => prev.filter((n) => n.nudgeId !== nudgeId));
     setNudges((prev) => prev.filter((n) => n.nudgeId !== nudgeId));
     try {
       await fetch(`${API_BASE}/presence/nudges/${nudgeId}/dismiss`, { method: "PUT" });
     } catch {}
   }, []);
 
-  // Auto-dismiss nudges after 8 s (high urgency gets 12 s)
+  /** Legacy alias kept for any callers that need full dismiss (banner + server) */
+  const dismissNudge = dismissFromInbox;
+
+  // Auto-dismiss from banner after 8 s (high urgency gets 12 s); nudge stays in inbox
   useEffect(() => {
     if (nudges.length === 0) return;
     const timers = nudges.map((n) => {
       const ttl = n.urgencyScore >= 0.7 ? 12_000 : 8_000;
-      return setTimeout(() => void dismissNudge(n.nudgeId), ttl);
+      return setTimeout(() => dismissFromBanner(n.nudgeId), ttl);
     });
     return () => timers.forEach(clearTimeout);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nudges.map((n) => n.nudgeId).join(","), dismissNudge]);
+  }, [nudges.map((n) => n.nudgeId).join(","), dismissFromBanner]);
 
 
   useEffect(() => {
@@ -821,8 +1011,26 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <WsIndicator state={wsState} />
+
+          {/* Nudge Inbox button */}
+          <button
+            onClick={() => setShowInbox(true)}
+            className="relative w-8 h-8 flex items-center justify-center border border-primary/20 text-primary/40 hover:border-primary/50 hover:text-primary/70 transition-colors"
+            aria-label="Nudge inbox"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>
+              <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
+            </svg>
+            {inboxNudges.length > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 bg-primary/70 text-background text-[9px] font-bold min-w-[14px] h-[14px] rounded-full flex items-center justify-center leading-none px-0.5">
+                {inboxNudges.length > 99 ? "99+" : inboxNudges.length}
+              </span>
+            )}
+          </button>
+
           <button
             onClick={() => setShowSettings(true)}
             className="w-8 h-8 flex items-center justify-center border border-primary/20 text-primary/40 hover:border-primary/50 hover:text-primary/70 transition-colors"
@@ -874,7 +1082,19 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
         </div>
       )}
 
-      {/* NUDGE BANNERS — fixed overlay, stacked below header */}
+      {/* NUDGE INBOX — slide-out drawer */}
+      <NudgeInbox
+        open={showInbox}
+        onClose={() => setShowInbox(false)}
+        nudges={inboxNudges}
+        onDismiss={(id) => void dismissFromInbox(id)}
+        onClearAll={() => {
+          setInboxNudges([]);
+          setNudges([]);
+          saveInboxToStorage([]);
+        }}
+      />
+
       {/* SETTINGS PANEL */}
       {showSettings && (
         <SettingsPanel
