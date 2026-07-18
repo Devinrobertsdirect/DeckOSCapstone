@@ -19,7 +19,7 @@ run = "pnpm --filter @workspace/deck-os run dev"
 
 [services.production]
 build = [ "pnpm", "--filter", "@workspace/deck-os", "run", "build" ]
-publicDir = "artifacts/deck-os/dist/public"
+publicDir = "interfaces/desktop/dist/public"
 serve = "static"
 
 [[services.production.rewrites]]
