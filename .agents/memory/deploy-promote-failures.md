@@ -9,6 +9,8 @@ description: Diagnosing Autoscale publishes that fail after "Creating Autoscale 
 
 **Why:** Publishes failed six times in a row with build logs ending at `Creating Autoscale service` (~60s later, no error line) while `/api/healthz` returned 200 everywhere. The deployer's own log — visible only in the user's Publishing pane, absent from the build-log API — showed `healthcheck failed error=healthcheck /api returned status 500`. An earlier app version passed only because an SPA catch-all served index.html (200) on every path; the rewritten app 404'd bare `/api` and `/`, and explicit 200 routes on both were required.
 
+**Outcome addendum:** Probe-surface 200s and boot hardening (no import-time throws, port bound before bootstrap) can still leave publishes failing silently at this step. When the container provably listens instantly and all probe paths are 2xx, the remaining suspect is the platform's existing service record — especially after a repo/artifact restructure since the last successful publish. Replit docs (build/troubleshooting): a promote-phase failure with no error = config/service mismatch; the documented reset is **unpublish, then publish fresh** (new service record). Escalate to Replit support only after a fresh publish also fails.
+
 **How to apply:**
 - When a build log's last line is `Creating Autoscale service` (success logs continue with `upsertCloudRunService completed`), it's a container readiness failure, not a build failure.
 - Curl every probe surface locally against the production bundle: `/`, the bare path prefix (`/api`), and the configured startup path — all must be 2xx. A scrubbed-env boot test (`env -i` with only NODE_ENV/PORT/secrets/DATABASE_URL) proves or rules out env issues.
