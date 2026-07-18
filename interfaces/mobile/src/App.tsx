@@ -100,6 +100,7 @@ interface ChatMsg {
   pending?: boolean;
 }
 
+
 interface VoiceIdentity {
   voiceId: string;
   tone: string;
@@ -446,6 +447,8 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const voicePressedRef = useRef(false);
+  // Ref so handleWsMessage (defined before useWebSocket) can call sendMessage for nudge.ack
+  const sendMessageRef = useRef<(data: unknown) => void>(() => {});
 
   /* Silent startup re-validation — if the desktop reset its code, send user back to pairing gate */
   useEffect(() => {
@@ -466,8 +469,6 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
   const { speak } = useAudioPlayback();
 
   const tierByRequestRef = useRef<Map<string, string>>(new Map());
-  // Ref so handleWsMessage (defined before sendMessage) can fire nudge.ack
-  const wsRef_ack = useRef<((ids: number[]) => void) | null>(null);
 
   const handleWsMessage = useCallback((data: unknown) => {
     const msg = data as { type?: string; payload?: Record<string, unknown> };
@@ -494,6 +495,21 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
       }
     }
 
+    // Live nudge pushed in real-time
+    if (msg.type === "initiative.nudge_created" && msg.payload?.nudgeId) {
+      const n: MobileNudge = {
+        nudgeId:      msg.payload.nudgeId as number,
+        category:     (msg.payload.category as string) ?? "insight",
+        content:      (msg.payload.content  as string) ?? "",
+        urgencyScore: (msg.payload.urgencyScore as number) ?? 0.5,
+        createdAt:    new Date().toISOString(),
+      };
+      setNudges((prev) =>
+        prev.some((x) => x.nudgeId === n.nudgeId) ? prev : [...prev, n],
+      );
+      sendMessageRef.current({ type: "nudge.ack", payload: { nudgeIds: [n.nudgeId] } });
+    }
+
     // Backlog of unsurfaced nudges delivered on (re)connect
     if (msg.type === "nudge.backlog" && msg.payload?.nudges) {
       const incoming = (msg.payload.nudges as MobileNudge[]).filter(Boolean);
@@ -503,35 +519,15 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
           const fresh = incoming.filter((n) => !existingIds.has(n.nudgeId));
           return fresh.length ? [...prev, ...fresh] : prev;
         });
-        // Acknowledge so the server marks them surfaced
-        wsRef_ack.current?.(incoming.map((n) => n.nudgeId));
+        sendMessageRef.current({ type: "nudge.ack", payload: { nudgeIds: incoming.map((n) => n.nudgeId) } });
       }
-    }
-
-    // Live nudge pushed in real-time
-    if (msg.type === "initiative.nudge_created" && msg.payload?.nudgeId) {
-      const n: MobileNudge = {
-        nudgeId:     msg.payload.nudgeId as number,
-        category:    (msg.payload.category as string) ?? "insight",
-        content:     (msg.payload.content  as string) ?? "",
-        urgencyScore:(msg.payload.urgencyScore as number) ?? 0.5,
-        createdAt:   new Date().toISOString(),
-      };
-      setNudges((prev) =>
-        prev.some((x) => x.nudgeId === n.nudgeId) ? prev : [...prev, n],
-      );
-      wsRef_ack.current?.([n.nudgeId]);
     }
   }, [setPersona, setAiName, setUserName]);
 
   const { wsState, sendMessage } = useWebSocket(handleWsMessage);
+  // Keep the ref current so handleWsMessage can ack nudges without being in the dep array
+  sendMessageRef.current = sendMessage;
   useSensorBridge(sendMessage, wsState);
-
-  // Keep the ack callback up-to-date whenever sendMessage changes
-  useEffect(() => {
-    wsRef_ack.current = (ids: number[]) =>
-      sendMessage({ type: "nudge.ack", payload: { nudgeIds: ids } });
-  }, [sendMessage]);
 
   const dismissNudge = useCallback(async (nudgeId: number) => {
     setNudges((prev) => prev.filter((n) => n.nudgeId !== nudgeId));
@@ -539,6 +535,18 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
       await fetch(`${API_BASE}/presence/nudges/${nudgeId}/dismiss`, { method: "PUT" });
     } catch {}
   }, []);
+
+  // Auto-dismiss nudges after 8 s (high urgency gets 12 s)
+  useEffect(() => {
+    if (nudges.length === 0) return;
+    const timers = nudges.map((n) => {
+      const ttl = n.urgencyScore >= 0.7 ? 12_000 : 8_000;
+      return setTimeout(() => void dismissNudge(n.nudgeId), ttl);
+    });
+    return () => timers.forEach(clearTimeout);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nudges.map((n) => n.nudgeId).join(","), dismissNudge]);
+
 
   useEffect(() => {
     document.documentElement.classList.add("dark");
@@ -866,6 +874,7 @@ function PairedApp({ onUnpair }: { onUnpair: () => void }) {
         </div>
       )}
 
+      {/* NUDGE BANNERS — fixed overlay, stacked below header */}
       {/* SETTINGS PANEL */}
       {showSettings && (
         <SettingsPanel
