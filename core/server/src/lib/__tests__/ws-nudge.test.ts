@@ -124,8 +124,13 @@ vi.mock("@workspace/db", () => {
         onFulfilled: (v: unknown[]) => unknown,
         onRejected: (e: unknown) => unknown,
       ) {
+        // Mirror the real query: only undismissed nudges with surfacedAt NULL.
         const rows =
-          table === nudgesTableSym ? [...hoisted.unsurfacedNudges] : [];
+          table === nudgesTableSym
+            ? hoisted.unsurfacedNudges.filter(
+                (n) => !n.dismissed && n.surfacedAt === null,
+              )
+            : [];
         return Promise.resolve(rows).then(onFulfilled, onRejected);
       },
     };
@@ -136,12 +141,22 @@ vi.mock("@workspace/db", () => {
     db: {
       select: () => makeSelectChain(),
       update: (_table: unknown) => ({
-        set: (_values: unknown) => ({
-          where: (_cond: unknown) => {
-            // We can't easily recover the id from the mock eq() result, so
-            // we push a sentinel to signal the call happened. Tests that need
-            // specific IDs use the real markNudgesSurfaced code path instead.
-            hoisted.updateCalls.push({ ids: [] });
+        set: (values: unknown) => ({
+          where: (cond: unknown) => {
+            // markNudgesSurfaced calls .where(eq(nudgesTable.id, id)); our
+            // mock eq() returns { __eq: args }, so args[1] is the nudge id.
+            const args = (cond as { __eq?: unknown[] })?.__eq ?? [];
+            const id = args[1];
+            const ids: number[] = [];
+            if (typeof id === "number") {
+              ids.push(id);
+              const nudge = hoisted.unsurfacedNudges.find((n) => n.id === id);
+              if (nudge) {
+                const surfacedAt = (values as { surfacedAt?: Date })?.surfacedAt;
+                nudge.surfacedAt = surfacedAt ?? new Date();
+              }
+            }
+            hoisted.updateCalls.push({ ids });
             return Promise.resolve();
           },
         }),
@@ -149,13 +164,22 @@ vi.mock("@workspace/db", () => {
     },
     systemEventsTable: systemEventsTableSym,
     nudgesTable: nudgesTableSym,
-    // Drizzle helpers referenced by ws-server.ts
-    eq: (..._args: unknown[]) => Symbol("eq"),
+    // Drizzle helpers in case they're re-exported from @workspace/db
+    eq: (...args: unknown[]) => ({ __eq: args }),
     and: (..._args: unknown[]) => Symbol("and"),
     isNull: (..._args: unknown[]) => Symbol("isNull"),
     desc: (..._args: unknown[]) => Symbol("desc"),
   };
 });
+
+// ws-server.ts imports query helpers directly from drizzle-orm; mock them so
+// the db.update mock above can recover the nudge id from eq()'s arguments.
+vi.mock("drizzle-orm", () => ({
+  eq: (...args: unknown[]) => ({ __eq: args }),
+  and: (..._args: unknown[]) => Symbol("and"),
+  isNull: (..._args: unknown[]) => Symbol("isNull"),
+  desc: (..._args: unknown[]) => Symbol("desc"),
+}));
 
 // The bus mock is a proxy to hoisted.state.bus so tests can swap instances.
 vi.mock("../bus.js", () => ({
@@ -351,6 +375,96 @@ describe("nudge pipeline – backlog delivery on reconnect", () => {
     expect(frame.payload.nudges[0].nudgeId).toBe(99);
     expect(frame.payload.nudges[0].category).toBe("goal_decay");
     expect(frame.payload.nudges[0].urgencyScore).toBe(0.75);
+  });
+
+  it("re-delivers the nudge to a new client if the first client disconnects without acking", async () => {
+    hoisted.unsurfacedNudges.push({
+      id: 101,
+      category: "deadline",
+      content: "Unacked nudge",
+      urgencyScore: 0.8,
+      targetGoalId: null,
+      targetThreadId: null,
+      dismissed: false,
+      surfacedAt: null,
+      createdAt: new Date("2026-07-18T00:00:00Z"),
+    });
+
+    // First client receives the backlog but drops without sending nudge.ack.
+    const ws1 = connectWs(port);
+    openClients.push(ws1);
+    const frame1 = await waitForFrame<{
+      type: string;
+      payload: { nudges: Array<{ nudgeId: number }> };
+    }>(ws1, (m) => m.type === "nudge.backlog");
+    expect(frame1.payload.nudges[0].nudgeId).toBe(101);
+
+    await new Promise<void>((res) => {
+      ws1.on("close", () => res());
+      ws1.close();
+    });
+
+    // surfacedAt must still be NULL — the send alone doesn't count as delivery.
+    expect(hoisted.unsurfacedNudges[0].surfacedAt).toBeNull();
+    expect(hoisted.updateCalls.length).toBe(0);
+
+    // Second client reconnects and receives the SAME nudge again.
+    const ws2 = connectWs(port);
+    openClients.push(ws2);
+    const frame2 = await waitForFrame<{
+      type: string;
+      payload: { nudges: Array<{ nudgeId: number }>; count: number };
+    }>(ws2, (m) => m.type === "nudge.backlog");
+
+    expect(frame2.payload.count).toBe(1);
+    expect(frame2.payload.nudges[0].nudgeId).toBe(101);
+  });
+
+  it("does NOT re-deliver a nudge that was acked before disconnect", async () => {
+    hoisted.unsurfacedNudges.push({
+      id: 202,
+      category: "check_in",
+      content: "Acked nudge",
+      urgencyScore: 0.5,
+      targetGoalId: null,
+      targetThreadId: null,
+      dismissed: false,
+      surfacedAt: null,
+      createdAt: new Date("2026-07-18T00:00:00Z"),
+    });
+
+    // First client receives the backlog and acknowledges it.
+    const ws1 = connectWs(port);
+    openClients.push(ws1);
+    await waitForFrame(ws1, (m) => m.type === "nudge.backlog");
+    ws1.send(
+      JSON.stringify({ type: "nudge.ack", payload: { nudgeIds: [202] } }),
+    );
+
+    // Give the server a moment to process the ack, then verify surfacing.
+    await vi.waitFor(() => {
+      expect(hoisted.updateCalls).toContainEqual({ ids: [202] });
+    });
+    expect(hoisted.unsurfacedNudges[0].surfacedAt).not.toBeNull();
+
+    await new Promise<void>((res) => {
+      ws1.on("close", () => res());
+      ws1.close();
+    });
+
+    // Second client reconnects — no nudge.backlog frame should arrive.
+    const ws2 = connectWs(port);
+    openClients.push(ws2);
+    const seenTypes: string[] = [];
+    ws2.on("message", (raw) => {
+      try {
+        seenTypes.push((JSON.parse(raw.toString()) as { type: string }).type);
+      } catch { /* ignore */ }
+    });
+    await waitForFrame(ws2, (m) => m.type === "history.replay");
+    await new Promise((res) => setTimeout(res, 300));
+
+    expect(seenTypes).not.toContain("nudge.backlog");
   });
 
   it("does NOT send nudge.backlog when there are no unsurfaced nudges", async () => {
