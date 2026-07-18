@@ -26,6 +26,22 @@ process.on("unhandledRejection", (reason) => {
 });
 
 async function main() {
+  const server = http.createServer(app);
+  attachWebSocketServer(server);
+
+  // Bind the port BEFORE bootstrapping services: deployment health probes
+  // only pass once the container listens, and bootstrap can be slow or fail
+  // (unreachable database, plugin errors). Bootstrap problems must degrade
+  // features — never block readiness. (Local-first: the brain never goes silent.)
+  server.listen(port, (err?: Error) => {
+    if (err) {
+      logger.error({ err }, "Error listening on port");
+      process.exit(1);
+    }
+
+    logger.info({ port, daemon: isDaemon }, "Server listening (HTTP + WebSocket)");
+  });
+
   try {
     await bootstrap();
   } catch (err) {
@@ -35,9 +51,6 @@ async function main() {
     );
   }
 
-  const server = http.createServer(app);
-  attachWebSocketServer(server);
-
   // Push face-node input (touch/knob/press) to clients so the buddy reacts —
   // tap to wake, knob to tune, press to interrupt. Lazy face link; sim-safe.
   void getFace().then((face) => {
@@ -45,15 +58,6 @@ async function main() {
       broadcast({ type: "atlas.faceInput", source: "face", payload: msg, timestamp: new Date().toISOString() });
     });
   }).catch(() => { /* no face link — fine */ });
-
-  server.listen(port, (err?: Error) => {
-    if (err) {
-      logger.error({ err }, "Error listening on port");
-      process.exit(1);
-    }
-
-    logger.info({ port, daemon: isDaemon }, "Server listening (HTTP + WebSocket)");
-  });
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Received shutdown signal");

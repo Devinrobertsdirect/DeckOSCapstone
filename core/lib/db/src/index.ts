@@ -4,9 +4,17 @@ import * as schema from "./schema";
 
 const { Pool } = pg;
 
-if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
+// Do NOT throw at import time when DATABASE_URL is missing: this module is
+// loaded before the HTTP server binds its port, so an import-time throw
+// crash-loops production containers with zero diagnostics (the deployment
+// revision dies before listening). Instead, log loudly and let queries fail
+// at runtime — the server stays up and /api/healthz reports db:false.
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  // eslint-disable-next-line no-console
+  console.error(
+    "[db] DATABASE_URL is not set — database queries will fail until it is provided. " +
+      "Did you forget to provision or link a database?",
   );
 }
 
@@ -38,7 +46,7 @@ function pinSslMode(connectionString: string): string {
 }
 
 export const pool = new Pool({
-  connectionString: pinSslMode(process.env.DATABASE_URL),
+  connectionString: connectionString ? pinSslMode(connectionString) : undefined,
 });
 export const db = drizzle(pool, { schema });
 
